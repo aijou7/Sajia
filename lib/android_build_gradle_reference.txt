@@ -1,0 +1,21 @@
+// File: android/app/build.gradle
+// Cari bagian defaultConfig dan pastikan minSdkVersion minimal 21
+
+android {
+    namespace "id.aksaldev.sajia"  // package name Google Play
+    compileSdkVersion 34
+
+    defaultConfig {
+        applicationId "id.aksaldev.sajia"  // package name Google Play
+        minSdkVersion 21        // ← WAJIB minimal 21 untuk Drift + Supabase
+        targetSdkVersion 34
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+        }
+    }
+}

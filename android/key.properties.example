@@ -1,0 +1,7 @@
+# Template lama ini sengaja diarahkan ke root project.
+# Pakai file ../key.properties.example, lalu copy menjadi ../key.properties.
+# Jangan commit key.properties atau file .jks.
+storePassword=GANTI_DENGAN_PASSWORD_KEYSTORE
+keyPassword=GANTI_DENGAN_PASSWORD_KEY
+keyAlias=sajia_upload
+storeFile=android/app/sajia-upload-key.jks

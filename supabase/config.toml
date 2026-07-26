@@ -1,0 +1,8 @@
+[functions.create-plan-checkout]
+verify_jwt = false
+
+[functions.get-plan-status]
+verify_jwt = false
+
+[functions.midtrans-webhook]
+verify_jwt = false

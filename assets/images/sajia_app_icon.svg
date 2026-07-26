@@ -1,0 +1,16 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="226" fill="#1B6CA8"/>
+  <rect width="1024" height="1024" rx="226" fill="url(#sajia-gradient)"/>
+  <circle cx="512" cy="560" r="260" stroke="white" stroke-width="52" fill="none" stroke-opacity="0.95"/>
+  <line x1="512" y1="300" x2="512" y2="420" stroke="white" stroke-width="52" stroke-linecap="round"/>
+  <path d="M370 415 Q370 260 512 260 Q654 260 654 415" stroke="white" stroke-width="52" fill="none" stroke-linecap="round"/>
+  <line x1="330" y1="560" x2="694" y2="560" stroke="white" stroke-width="24" stroke-linecap="round" stroke-opacity="0.35"/>
+  <circle cx="730" cy="310" r="130" fill="#EF9F27"/>
+  <text x="730" y="365" text-anchor="middle" fill="white" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="130" font-weight="800">Rp</text>
+  <defs>
+    <linearGradient id="sajia-gradient" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2D9CDB" stop-opacity="0.42"/>
+      <stop offset="100%" stop-color="#07395F" stop-opacity="0.55"/>
+    </linearGradient>
+  </defs>
+</svg>
