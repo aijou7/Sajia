@@ -6,6 +6,7 @@ import 'package:drift/drift.dart' show Value;
 
 import '../../core/providers.dart';
 import '../../core/brand.dart';
+import '../../core/onboarding_service.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
@@ -115,12 +116,26 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
           : assignedOutletIds.isEmpty
               ? <String>[user.outletId]
               : assignedOutletIds;
-      if (user.role != 'owner' &&
-          !accessibleOutletIds.contains(currentOutletId) &&
+
+      final currentOutletExists = currentOutletId.isNotEmpty &&
+          await (db.select(db.outlets)
+                    ..where((outlet) => outlet.id.equals(currentOutletId)))
+                  .getSingleOrNull() !=
+              null;
+      var targetOutletId = currentOutletId;
+      if (user.role == 'owner') {
+        if (!currentOutletExists || currentOutletId == 'default-outlet') {
+          targetOutletId = user.outletId;
+        }
+      } else if (!accessibleOutletIds.contains(currentOutletId) &&
           accessibleOutletIds.isNotEmpty) {
-        ref.read(currentOutletIdProvider.notifier).state =
-            accessibleOutletIds.first;
+        targetOutletId = accessibleOutletIds.first;
       }
+      if (targetOutletId != currentOutletId) {
+        ref.read(currentOutletIdProvider.notifier).state = targetOutletId;
+        await OnboardingService().saveCurrentOutletId(targetOutletId);
+      }
+      if (!mounted) return;
       HapticFeedback.mediumImpact();
       ref.read(currentUserProvider.notifier).state = AppUser(
         id: user.id,

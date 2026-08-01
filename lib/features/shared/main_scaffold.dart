@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/theme.dart';
 import '../../core/providers.dart';
@@ -22,6 +21,7 @@ class MainScaffold extends ConsumerStatefulWidget {
 
 class _MainScaffoldState extends ConsumerState<MainScaffold> {
   late int _currentIndex;
+  late final List<Widget?> _pages;
 
   Widget _pageForIndex(int index) => switch (index) {
         0 => const CashierPage(),
@@ -38,6 +38,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   void initState() {
     super.initState();
     _currentIndex = widget.currentIndex;
+    _pages = List<Widget?>.filled(7, null);
+    _pages[_currentIndex] = _pageForIndex(_currentIndex);
   }
 
   @override
@@ -45,29 +47,31 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.currentIndex != widget.currentIndex) {
       _currentIndex = widget.currentIndex;
+      _pages[_currentIndex] ??= _pageForIndex(_currentIndex);
     }
   }
 
-  void _goTo(int index, String path) {
-    if (_currentIndex != index) {
-      setState(() => _currentIndex = index);
-    }
-
-    final currentPath = GoRouterState.of(context).uri.path;
-    if (currentPath != path) {
-      context.go(path);
-    }
+  void _goTo(int index) {
+    if (_currentIndex == index) return;
+    setState(() {
+      _pages[index] ??= _pageForIndex(index);
+      _currentIndex = index;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
     final canViewFinancialReports = user?.canViewFinancialReports == true;
+    final canManageOperations = user?.canManageOperations == true;
 
     return Scaffold(
-      body: KeyedSubtree(
-        key: ValueKey('main-page-$_currentIndex'),
-        child: _pageForIndex(_currentIndex),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: List<Widget>.generate(
+          _pages.length,
+          (index) => _pages[index] ?? const SizedBox.shrink(),
+        ),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -91,28 +95,28 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
                 activeIcon: Icons.point_of_sale_rounded,
                 label: 'Kasir',
                 selected: _currentIndex == 0,
-                onTap: () => _goTo(0, '/cashier'),
+                onTap: () => _goTo(0),
               ),
               _NavItem(
                 icon: Icons.table_bar_outlined,
                 activeIcon: Icons.table_bar_rounded,
                 label: 'Meja',
                 selected: _currentIndex == 1,
-                onTap: () => _goTo(1, '/tables'),
+                onTap: () => _goTo(1),
               ),
               _NavItem(
                 icon: Icons.menu_book_outlined,
                 activeIcon: Icons.menu_book_rounded,
                 label: 'Menu',
                 selected: _currentIndex == 2,
-                onTap: () => _goTo(2, '/menu'),
+                onTap: () => _goTo(2),
               ),
               _NavItem(
                 icon: Icons.history_outlined,
                 activeIcon: Icons.history_rounded,
                 label: 'Riwayat',
                 selected: _currentIndex == 3,
-                onTap: () => _goTo(3, '/history'),
+                onTap: () => _goTo(3),
               ),
               if (canViewFinancialReports) ...[
                 _NavItem(
@@ -120,23 +124,24 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
                   activeIcon: Icons.dashboard_rounded,
                   label: 'Dashboard',
                   selected: _currentIndex == 4,
-                  onTap: () => _goTo(4, '/dashboard'),
+                  onTap: () => _goTo(4),
                 ),
                 _NavItem(
                   icon: Icons.bar_chart_outlined,
                   activeIcon: Icons.bar_chart_rounded,
                   label: 'Laporan',
                   selected: _currentIndex == 5,
-                  onTap: () => _goTo(5, '/reports'),
+                  onTap: () => _goTo(5),
                 ),
               ],
-              _NavItem(
-                icon: Icons.settings_outlined,
-                activeIcon: Icons.settings_rounded,
-                label: 'Setting',
-                selected: _currentIndex == 6,
-                onTap: () => _goTo(6, '/settings'),
-              ),
+              if (canManageOperations)
+                _NavItem(
+                  icon: Icons.settings_outlined,
+                  activeIcon: Icons.settings_rounded,
+                  label: 'Setting',
+                  selected: _currentIndex == 6,
+                  onTap: () => _goTo(6),
+                ),
             ]),
           ),
         ),
@@ -163,43 +168,49 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              width: selected ? 38 : 34,
-              height: 30,
-              decoration: BoxDecoration(
-                color: selected ? AppTheme.primaryLight : Colors.transparent,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: AnimatedScale(
-                scale: selected ? 1.05 : 1,
-                duration: const Duration(milliseconds: 180),
-                child: Icon(
-                  selected ? activeIcon : icon,
-                  color: selected ? AppTheme.primary : const Color(0xFFB0B7C3),
-                  size: 22,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOutCubic,
+                  width: 38,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color:
+                        selected ? AppTheme.primaryLight : Colors.transparent,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Icon(
+                    selected ? activeIcon : icon,
+                    color:
+                        selected ? AppTheme.primary : const Color(0xFFB0B7C3),
+                    size: 22,
+                  ),
                 ),
-              ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                    color:
+                        selected ? AppTheme.primary : const Color(0xFFB0B7C3),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 9.5,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                color: selected ? AppTheme.primary : const Color(0xFFB0B7C3),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

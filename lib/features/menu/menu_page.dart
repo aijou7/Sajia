@@ -4,11 +4,14 @@ import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart' show Value;
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
 import '../shared/polish_widgets.dart';
+import '../shared/product_image.dart';
 
 class MenuPage extends ConsumerStatefulWidget {
   const MenuPage({super.key});
@@ -231,24 +234,13 @@ class _ProductTile extends ConsumerWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(13),
-          child: product.imageUrl == null
-              ? _imgPlaceholder()
-              : (product.imageUrl!.startsWith('/') ||
-                      product.imageUrl!.startsWith('file://')
-                  ? Image.file(
-                      File(_localImagePath(product.imageUrl!)),
-                      width: 52,
-                      height: 52,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _imgPlaceholder(),
-                    )
-                  : Image.network(
-                      product.imageUrl!,
-                      width: 52,
-                      height: 52,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _imgPlaceholder(),
-                    )),
+          child: ProductImage(
+            source: product.imageUrl,
+            width: 52,
+            height: 52,
+            fit: BoxFit.cover,
+            fallback: _imgPlaceholder(),
+          ),
         ),
         title: Text(product.name,
             style: const TextStyle(
@@ -316,11 +308,6 @@ class _ProductTile extends ConsumerWidget {
         child: const Icon(Icons.fastfood_rounded,
             color: AppTheme.primary, size: 24),
       );
-
-  String _localImagePath(String rawPath) {
-    if (rawPath.startsWith('file://')) return Uri.parse(rawPath).toFilePath();
-    return rawPath;
-  }
 }
 
 // ── CATEGORY TAB ──────────────────────────────────────────────
@@ -513,7 +500,21 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
       imageQuality: 85,
     );
     if (picked != null && mounted) {
-      setState(() => _imagePath = picked.path);
+      final appDirectory = await getApplicationDocumentsDirectory();
+      final imageDirectory = Directory(
+        path.join(appDirectory.path, 'product_images'),
+      );
+      await imageDirectory.create(recursive: true);
+
+      final pickedExtension = path.extension(picked.path).toLowerCase();
+      final safeExtension = pickedExtension.isEmpty ? '.jpg' : pickedExtension;
+      final permanentPath = path.join(
+        imageDirectory.path,
+        'product_${const Uuid().v4()}$safeExtension',
+      );
+      await File(picked.path).copy(permanentPath);
+
+      if (mounted) setState(() => _imagePath = permanentPath);
     }
   }
 
@@ -609,10 +610,16 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                   child: _imagePath != null
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(12),
-                          child: Image.file(
-                            File(_imagePath!),
+                          child: ProductImage(
+                            source: _imagePath,
                             fit: BoxFit.cover,
                             width: double.infinity,
+                            fallback: const Center(
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
                           ),
                         )
                       : Column(

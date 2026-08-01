@@ -159,8 +159,12 @@ class CartPanel extends ConsumerWidget {
         double.tryParse(outlet?.serviceChargePercent ?? '0') ?? 0;
     final total = cart.total(taxPercent, servicePercent);
 
+    final bottomPadding = scrollController == null
+        ? 16.0
+        : bottomSheetSafePadding(context, extra: 0);
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPadding),
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: AppTheme.borderColor)),
       ),

@@ -62,11 +62,19 @@ class FinanceDao extends DatabaseAccessor<AppDatabase> with _$FinanceDaoMixin {
     DateTime to,
   ) async {
     final allOutlets = await select(outlets).get();
+    final realOutlets = allOutlets
+        .where((outlet) =>
+            outlet.id != 'default-outlet' ||
+            outlet.name.trim().toLowerCase() != 'nama kafe saya')
+        .toList();
+    final visibleOutlets = realOutlets.isEmpty ? allOutlets : realOutlets;
     return getBranchSummariesForOutlets(
-      allOutlets.map((outlet) => outlet.id).toList(),
+      visibleOutlets.map((outlet) => outlet.id).toList(),
       from,
       to,
-      outletNames: {for (final outlet in allOutlets) outlet.id: outlet.name},
+      outletNames: {
+        for (final outlet in visibleOutlets) outlet.id: outlet.name
+      },
     );
   }
 

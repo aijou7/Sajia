@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
 import '../../domain/entities/entities.dart';
+import '../shared/product_image.dart';
 import 'cart_panel.dart';
 import 'payment_sheet.dart';
 
@@ -505,14 +506,12 @@ class _MenuCardState extends State<_MenuCard> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      widget.product.imageUrl != null
-                          ? Image.network(
-                              widget.product.imageUrl!,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              errorBuilder: (_, __, ___) => _imgPlaceholder(),
-                            )
-                          : _imgPlaceholder(),
+                      ProductImage(
+                        source: widget.product.imageUrl,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        fallback: _imgPlaceholder(),
+                      ),
                       Positioned(
                         right: 8,
                         top: 8,

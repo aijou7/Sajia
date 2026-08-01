@@ -23,6 +23,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
   String _method = 'cash';
   double _paidAmount = 0;
   bool _isProcessing = false;
+  String? _validationMessage;
   final _paidController = TextEditingController();
 
   @override
@@ -61,15 +62,17 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
 
   Future<void> _processPayment() async {
     if (_method == 'cash' && _paidAmount < _total) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Uang bayar kurang'),
-            backgroundColor: AppTheme.danger),
-      );
+      setState(() {
+        _validationMessage =
+            'Uang bayar kurang ${(_total - _paidAmount).toRupiah}.';
+      });
       return;
     }
 
-    setState(() => _isProcessing = true);
+    setState(() {
+      _validationMessage = null;
+      _isProcessing = true;
+    });
 
     try {
       final cart = ref.read(cartProvider);
@@ -203,9 +206,9 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
       _showSuccessDialog(total, changeAmt, orderNum, itemLabels, receiptData);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.danger),
-      );
+      setState(() {
+        _validationMessage = 'Pembayaran gagal disimpan. Coba lagi.';
+      });
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -488,7 +491,10 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                     icon: Icons.payments_outlined,
                     label: 'Tunai',
                     selected: _method == 'cash',
-                    onTap: () => setState(() => _method = 'cash'),
+                    onTap: () => setState(() {
+                      _method = 'cash';
+                      _validationMessage = null;
+                    }),
                   ),
                   const SizedBox(width: 10),
                   _MethodCard(
@@ -498,6 +504,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                     onTap: () => setState(() {
                       _method = 'qris';
                       _paidAmount = total;
+                      _validationMessage = null;
                     }),
                   ),
                 ],
@@ -536,7 +543,10 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                     ),
                   ),
                   onChanged: (v) {
-                    setState(() => _paidAmount = double.tryParse(v) ?? 0);
+                    setState(() {
+                      _paidAmount = double.tryParse(v) ?? 0;
+                      _validationMessage = null;
+                    });
                   },
                 ),
                 const SizedBox(height: 10),
@@ -546,7 +556,10 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                     return GestureDetector(
                       onTap: () {
                         _paidController.text = amt.toInt().toString();
-                        setState(() => _paidAmount = amt);
+                        setState(() {
+                          _paidAmount = amt;
+                          _validationMessage = null;
+                        });
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -616,6 +629,42 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                   ),
                 ),
                 const SizedBox(height: 20),
+              ],
+              if (_validationMessage != null) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFFECACA)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: AppTheme.danger,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _validationMessage!,
+                          style: const TextStyle(
+                            color: AppTheme.danger,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
               ],
               Container(
                 width: double.infinity,
