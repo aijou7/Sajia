@@ -118,7 +118,7 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (snapshot.hasError) {
+          if (snapshot.hasError || !snapshot.hasData) {
             return _ErrorState(onRetry: _refresh);
           }
           final data = snapshot.data!;
@@ -215,6 +215,7 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _ExpenseSheet(),
     );
@@ -421,6 +422,21 @@ class _ProfitLossTab extends ConsumerWidget {
                   to,
                 ),
             builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const ModernCard(
+                  child: SizedBox(
+                    height: 72,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                );
+              }
+              if (snapshot.hasError || !snapshot.hasData) {
+                return const _EmptyCard(
+                  icon: Icons.cloud_off_outlined,
+                  message:
+                      'Daftar pengeluaran belum bisa dimuat. Buka ulang dashboard untuk mencoba lagi.',
+                );
+              }
               final expenses = snapshot.data ?? [];
               if (expenses.isEmpty) {
                 return const _EmptyCard(
@@ -1049,85 +1065,88 @@ class _ExpenseSheetState extends ConsumerState<_ExpenseSheet> {
   }
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-        top: false,
-        child: Container(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            10,
-            20,
-            bottomSheetSafePadding(context),
-          ),
-          decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+  Widget build(BuildContext context) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+        ),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          10,
+          20,
+          bottomSheetSafePadding(context),
+        ),
+        decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           child: Form(
-              key: _formKey,
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                        color: AppTheme.borderColor,
-                        borderRadius: BorderRadius.circular(99))),
-                const SizedBox(height: 18),
-                const Row(children: [
-                  Icon(Icons.add_card_rounded, color: AppTheme.primary),
-                  SizedBox(width: 9),
-                  Text('Catat pengeluaran',
-                      style:
-                          TextStyle(fontSize: 17, fontWeight: FontWeight.w800))
-                ]),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: _category,
-                  decoration: const InputDecoration(labelText: 'Kategori'),
-                  items: const [
-                    'Operasional',
-                    'Gaji',
-                    'Sewa',
-                    'Utilitas',
-                    'Pemasaran',
-                    'Lainnya'
-                  ]
-                      .map((item) =>
-                          DropdownMenuItem(value: item, child: Text(item)))
-                      .toList(),
-                  onChanged: (value) =>
-                      setState(() => _category = value ?? _category),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _amount,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                      labelText: 'Nominal', prefixText: 'Rp '),
-                  validator: (value) =>
-                      (value ?? '').replaceAll(RegExp(r'[^0-9]'), '').isEmpty
-                          ? 'Nominal wajib diisi'
-                          : null,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                    controller: _note,
-                    decoration: const InputDecoration(
-                        labelText: 'Keterangan (opsional)'),
-                    maxLines: 2),
-                const SizedBox(height: 18),
-                SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                        onPressed: _saving ? null : _save,
-                        icon: _saving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.check_rounded),
-                        label: Text(
-                            _saving ? 'Menyimpan...' : 'Simpan pengeluaran'))),
-              ])),
+            key: _formKey,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: AppTheme.borderColor,
+                      borderRadius: BorderRadius.circular(99))),
+              const SizedBox(height: 18),
+              const Row(children: [
+                Icon(Icons.add_card_rounded, color: AppTheme.primary),
+                SizedBox(width: 9),
+                Text('Catat pengeluaran',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800))
+              ]),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: _category,
+                decoration: const InputDecoration(labelText: 'Kategori'),
+                items: const [
+                  'Operasional',
+                  'Gaji',
+                  'Sewa',
+                  'Utilitas',
+                  'Pemasaran',
+                  'Lainnya'
+                ]
+                    .map((item) =>
+                        DropdownMenuItem(value: item, child: Text(item)))
+                    .toList(),
+                onChanged: (value) =>
+                    setState(() => _category = value ?? _category),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _amount,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                    labelText: 'Nominal', prefixText: 'Rp '),
+                validator: (value) =>
+                    (value ?? '').replaceAll(RegExp(r'[^0-9]'), '').isEmpty
+                        ? 'Nominal wajib diisi'
+                        : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                  controller: _note,
+                  decoration:
+                      const InputDecoration(labelText: 'Keterangan (opsional)'),
+                  maxLines: 2),
+              const SizedBox(height: 18),
+              SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                      onPressed: _saving ? null : _save,
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.check_rounded),
+                      label: Text(
+                          _saving ? 'Menyimpan...' : 'Simpan pengeluaran'))),
+            ]),
+          ),
         ),
       );
 }

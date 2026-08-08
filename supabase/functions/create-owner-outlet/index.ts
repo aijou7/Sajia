@@ -43,53 +43,30 @@ const handler = async (req: Request) => {
     return json({ error: "Data cabang tidak valid" }, 400);
   }
 
-  const { data: ownerOutlets, error: ownerOutletsError } = await supabase
-    .from("outlets")
-    .select("id, license_key")
-    .ilike("owner_email", ownerEmail);
-  if (ownerOutletsError) return json({ error: "Gagal memeriksa lisensi owner" }, 500);
-
-  const hasPro = (ownerOutlets || []).some((outlet) =>
-    String(outlet.license_key || "").trim().toUpperCase().startsWith("PRO")
-  );
-  if ((ownerOutlets || []).length > 0 && !hasPro) {
-    return json({ error: "Tambah cabang membutuhkan Sajia Pro" }, 403);
-  }
-
-  const { data: existingOutlet, error: existingError } = await supabase
-    .from("outlets")
-    .select("id, owner_email")
-    .eq("id", id)
-    .maybeSingle();
-  if (existingError) return json({ error: "Gagal memeriksa cabang" }, 500);
-  if (existingOutlet) {
-    const existingOwner = String(existingOutlet.owner_email || "").trim().toLowerCase();
-    if (existingOwner && existingOwner !== ownerEmail) {
+  const { data, error } = await supabase.rpc("create_owner_outlet_secure", {
+    p_id: id,
+    p_name: name,
+    p_address: cleanOptionalText(payload.address, 300),
+    p_phone: cleanOptionalText(payload.phone, 40),
+    p_owner_email: ownerEmail,
+  });
+  if (error) {
+    const message = String(error.message || "");
+    if (message.includes("SAJIA_PRO_REQUIRED_FOR_ADDITIONAL_OUTLET")) {
+      return json({ error: "Tambah cabang membutuhkan Sajia Pro" }, 403);
+    }
+    if (message.includes("OUTLET_ID_ALREADY_EXISTS")) {
       return json({ error: "ID cabang sudah digunakan" }, 409);
     }
+    console.error("Secure outlet creation failed", error);
+    return json({ error: "Gagal membuat cabang" }, 500);
+  }
+  if (!data || typeof data !== "object") {
+    return json({ error: "Gagal membuat cabang" }, 500);
   }
 
-  const { data: outlet, error: upsertError } = await supabase
-    .from("outlets")
-    .upsert({
-      id,
-      name,
-      address: cleanOptionalText(payload.address, 300),
-      phone: cleanOptionalText(payload.phone, 40),
-      owner_email: ownerEmail,
-      license_key: hasPro ? "PRO" : "FREE",
-      license_expiry: null,
-      cloud_expiry: null,
-    }, { onConflict: "id" })
-    .select("id, name, address, phone, cloud_expiry")
-    .single();
-  if (upsertError || !outlet) return json({ error: "Gagal membuat cabang" }, 500);
-
-  return json({
-    outlet,
-    is_pro: hasPro,
-    is_cloud: false,
-  }, 201);
+  const response = data as Record<string, unknown>;
+  return json(response, response.created === false ? 200 : 201);
 };
 
 export default {

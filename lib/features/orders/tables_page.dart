@@ -124,7 +124,10 @@ class TablesPage extends ConsumerWidget {
                                 MediaQuery.of(context).size.width > 600 ? 4 : 3,
                             crossAxisSpacing: 12,
                             mainAxisSpacing: 12,
-                            childAspectRatio: 1.1,
+                            childAspectRatio:
+                                MediaQuery.of(context).size.width > 600
+                                    ? 1.05
+                                    : 0.78,
                           ),
                           itemCount: areaT.length,
                           itemBuilder: (_, i) => _TableCard(
@@ -146,11 +149,20 @@ class TablesPage extends ConsumerWidget {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (_, __) => const SizedBox(),
+            error: (_, __) => ErrorStateView(
+              title: 'Status meja belum bisa dimuat',
+              subtitle:
+                  'Daftar meja aman. Muat ulang untuk mengecek order aktif.',
+              onRetry: () => ref.invalidate(activeOrdersProvider),
+            ),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (_, __) => ErrorStateView(
+          title: 'Daftar meja belum bisa dimuat',
+          subtitle: 'Coba muat ulang data meja outlet ini.',
+          onRetry: () => ref.invalidate(tablesProvider),
+        ),
       ),
     );
   }
@@ -162,6 +174,7 @@ class TablesPage extends ConsumerWidget {
       showModalBottomSheet(
         context: ctx,
         isScrollControlled: true,
+        useSafeArea: true,
         backgroundColor: Colors.transparent,
         builder: (_) => _ActiveOrderSheet(table: table, order: activeOrder),
       );
@@ -186,6 +199,7 @@ class TablesPage extends ConsumerWidget {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _TableFormSheet(),
     );
@@ -195,6 +209,7 @@ class TablesPage extends ConsumerWidget {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _TableFormSheet(table: table),
     );
@@ -260,21 +275,22 @@ class _TableCard extends StatelessWidget {
             if (canManage)
               Align(
                 alignment: Alignment.centerRight,
-                child: GestureDetector(
-                  onTap: onLongPress,
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    margin: const EdgeInsets.only(top: 6, right: 6),
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.76),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppTheme.subtleBorder),
-                    ),
-                    child: const Icon(
+                child: SizedBox.square(
+                  dimension: 48,
+                  child: IconButton(
+                    tooltip: 'Edit ${table.tableLabel}',
+                    onPressed: onLongPress,
+                    icon: const Icon(
                       Icons.edit_outlined,
-                      size: 15,
+                      size: 18,
                       color: AppTheme.textSecondary,
+                    ),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: 0.84),
+                      side: const BorderSide(color: AppTheme.subtleBorder),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
@@ -379,138 +395,165 @@ class _ActiveOrderSheet extends ConsumerWidget {
         ref.watch(currentUserProvider)?.canManageOperations == true;
 
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-              child: Container(
-            width: 36,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE5E7EB),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          )),
-          Row(
-            children: [
-              Text(table.tableLabel,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppTheme.tableOccupied.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(order.orderNumber,
-                    style: const TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.tableOccupied,
-                        fontWeight: FontWeight.w600)),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        12,
+        20,
+        bottomSheetSafePadding(context),
+      ),
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+                child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE5E7EB),
+                borderRadius: BorderRadius.circular(2),
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Items
-          itemsAsync.when(
-            data: (items) => Column(
-              children: items
-                  .map((item) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Text('${item.quantity}x ',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.primary)),
-                            Expanded(
-                                child: Text(item.productName,
-                                    style: const TextStyle(fontSize: 13))),
-                            Text('Rp ${item.subtotal}',
-                                style: const TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w500)),
-                          ],
-                        ),
-                      ))
-                  .toList(),
+            )),
+            Row(
+              children: [
+                Text(table.tableLabel,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w700)),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppTheme.tableOccupied.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(order.orderNumber,
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.tableOccupied,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ],
             ),
-            loading: () => const CircularProgressIndicator(),
-            error: (_, __) => const SizedBox(),
-          ),
+            const SizedBox(height: 16),
 
-          const Divider(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Total',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              Text('Rp ${order.total}',
-                  style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.primary)),
-            ],
-          ),
-          const SizedBox(height: 16),
+            // Items
+            itemsAsync.when(
+              data: (items) => Column(
+                children: items
+                    .map((item) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Text('${item.quantity}x ',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: AppTheme.primary)),
+                              Expanded(
+                                  child: Text(item.productName,
+                                      style: const TextStyle(fontSize: 13))),
+                              Text('Rp ${item.subtotal}',
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                        ))
+                    .toList(),
+              ),
+              loading: () => const CircularProgressIndicator(),
+              error: (_, __) => Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => ref.invalidate(orderItemsProvider(order.id)),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Muat ulang detail item'),
+                ),
+              ),
+            ),
 
-          // Actions
-          Row(
-            children: [
-              if (canCorrectOrders) ...[
+            const Divider(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Total',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                Text('Rp ${order.total}',
+                    style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.primary)),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Actions
+            Row(
+              children: [
+                if (canCorrectOrders) ...[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        // Set meja ke cart untuk edit order
+                        ref
+                            .read(cartProvider.notifier)
+                            .setTable(table.id, table.tableLabel);
+                        Navigator.pop(context);
+                      },
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('Edit Order'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primary,
+                        side: const BorderSide(color: AppTheme.primary),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      // Set meja ke cart untuk edit order
-                      ref
-                          .read(cartProvider.notifier)
-                          .setTable(table.id, table.tableLabel);
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      final navigatorContext =
+                          Navigator.of(context, rootNavigator: true).context;
                       Navigator.pop(context);
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!navigatorContext.mounted) return;
+                        showModalBottomSheet(
+                          context: navigatorContext,
+                          isScrollControlled: true,
+                          useSafeArea: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) =>
+                              _OrderPaymentSheet(table: table, order: order),
+                        );
+                      });
                     },
-                    icon: const Icon(Icons.edit_outlined, size: 16),
-                    label: const Text('Edit Order'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.primary,
-                      side: const BorderSide(color: AppTheme.primary),
+                    icon: const Icon(Icons.payment_rounded, size: 16),
+                    label: const Text('Bayar'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.success,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
               ],
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) =>
-                          _OrderPaymentSheet(table: table, order: order),
-                    );
-                  },
-                  icon: const Icon(Icons.payment_rounded, size: 16),
-                  label: const Text('Bayar'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.success,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -571,8 +614,9 @@ class _OrderPaymentSheetState extends ConsumerState<_OrderPaymentSheet> {
         );
 
     if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
     Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    messenger.showSnackBar(SnackBar(
       content: Text('Order ${widget.order.orderNumber} sudah dibayar'),
       backgroundColor: AppTheme.success,
       behavior: SnackBarBehavior.floating,
@@ -582,6 +626,9 @@ class _OrderPaymentSheetState extends ConsumerState<_OrderPaymentSheet> {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -592,110 +639,115 @@ class _OrderPaymentSheetState extends ConsumerState<_OrderPaymentSheet> {
         top: 12,
         bottom: bottomSheetSafePadding(context),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE5E7EB),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          Text(
-            'Bayar ${widget.table.tableLabel}',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          Text(widget.order.orderNumber,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
-          const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Total',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              Text(
-                _total.toRupiah,
-                style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.primary),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: _PaymentChoice(
-                  label: 'Tunai',
-                  icon: Icons.payments_outlined,
-                  selected: _method == 'cash',
-                  onTap: () => setState(() => _method = 'cash'),
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _PaymentChoice(
-                  label: 'QRIS',
-                  icon: Icons.qr_code_rounded,
-                  selected: _method == 'qris',
-                  onTap: () => setState(() => _method = 'qris'),
-                ),
-              ),
-            ],
-          ),
-          if (_method == 'cash') ...[
-            const SizedBox(height: 16),
-            TextField(
-              controller: _paidCtrl,
-              keyboardType: TextInputType.number,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                labelText: 'Uang diterima',
-                prefixText: 'Rp ',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
             ),
-            const SizedBox(height: 10),
             Text(
-              'Kembalian: ${_change.toRupiah}',
-              style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.success),
+              'Bayar ${widget.table.tableLabel}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(widget.order.orderNumber,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Total',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                Text(
+                  _total.toRupiah,
+                  style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.primary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: _PaymentChoice(
+                    label: 'Tunai',
+                    icon: Icons.payments_outlined,
+                    selected: _method == 'cash',
+                    onTap: () => setState(() => _method = 'cash'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _PaymentChoice(
+                    label: 'QRIS',
+                    icon: Icons.qr_code_rounded,
+                    selected: _method == 'qris',
+                    onTap: () => setState(() => _method = 'qris'),
+                  ),
+                ),
+              ],
+            ),
+            if (_method == 'cash') ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _paidCtrl,
+                keyboardType: TextInputType.number,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'Uang diterima',
+                  prefixText: 'Rp ',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Kembalian: ${_change.toRupiah}',
+                style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.success),
+              ),
+            ],
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isSaving ? null : _save,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.check_circle_outline),
+                label:
+                    Text(_isSaving ? 'Memproses...' : 'Selesaikan Pembayaran'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.success,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
             ),
           ],
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _isSaving ? null : _save,
-              icon: _isSaving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.check_circle_outline),
-              label: Text(_isSaving ? 'Memproses...' : 'Selesaikan Pembayaran'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.success,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -943,9 +995,10 @@ class _TableFormSheetState extends ConsumerState<_TableFormSheet> {
                   onTap: () {
                     if (_capacity > 1) setState(() => _capacity--);
                   },
+                  behavior: HitTestBehavior.opaque,
                   child: Container(
-                    width: 36,
-                    height: 36,
+                    width: 48,
+                    height: 48,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF3F4F6),
                       borderRadius: BorderRadius.circular(8),
@@ -962,9 +1015,10 @@ class _TableFormSheetState extends ConsumerState<_TableFormSheet> {
                 ),
                 GestureDetector(
                   onTap: () => setState(() => _capacity++),
+                  behavior: HitTestBehavior.opaque,
                   child: Container(
-                    width: 36,
-                    height: 36,
+                    width: 48,
+                    height: 48,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF3F4F6),
                       borderRadius: BorderRadius.circular(8),

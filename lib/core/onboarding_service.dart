@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -9,7 +11,11 @@ class OnboardingService {
   static const _keyIsSetupDone = 'onboarding_done';
   static const _keyOwnerEmail = 'owner_email';
   static const _keyCurrentOutletId = 'current_outlet_id';
+  static const _keyLastOtpEmail = 'last_otp_email';
+  static const _keyLastOtpSentAt = 'last_otp_sent_at';
+  static const otpCooldown = Duration(seconds: 60);
   String? lastOtpError;
+  Duration? lastOtpRetryAfter;
 
   SupabaseClient get _supabase => Supabase.instance.client;
   Future<bool> accountExists(String email) async {
@@ -74,6 +80,48 @@ class OnboardingService {
 
   String normalizeEmail(String email) => email.trim().toLowerCase();
 
+  Future<Duration> otpCooldownRemaining(String email) async {
+    final normalizedEmail = normalizeEmail(email);
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString(_keyLastOtpEmail) != normalizedEmail) {
+      return Duration.zero;
+    }
+    final sentAtValue = prefs.getInt(_keyLastOtpSentAt);
+    if (sentAtValue == null) return Duration.zero;
+    final sentAt = DateTime.fromMillisecondsSinceEpoch(sentAtValue);
+    final remaining = otpCooldown - DateTime.now().difference(sentAt);
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  Future<void> _rememberOtpSent(String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyLastOtpEmail, email);
+    await prefs.setInt(
+      _keyLastOtpSentAt,
+      DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  Duration _retryAfterFromMessage(String message) {
+    final match = RegExp(
+      r'(?:after|in|wait)\s+(\d+)\s*(?:second|seconds|sec)',
+      caseSensitive: false,
+    ).firstMatch(message);
+    final seconds = int.tryParse(match?.group(1) ?? '');
+    if (seconds == null) return otpCooldown;
+    return Duration(seconds: seconds.clamp(1, 3600));
+  }
+
+  bool _looksLikeNetworkFailure(Object error) {
+    final message = error.toString().toLowerCase();
+    return error is TimeoutException ||
+        message.contains('socketexception') ||
+        message.contains('failed host lookup') ||
+        message.contains('network') ||
+        message.contains('connection') ||
+        message.contains('timeout');
+  }
+
   Future<OtpResult> sendOtp(
     String email, {
     required bool shouldCreateUser,
@@ -81,21 +129,39 @@ class OnboardingService {
     final normalizedEmail = normalizeEmail(email);
     try {
       lastOtpError = null;
-      await _supabase.auth.signInWithOtp(
-        email: normalizedEmail,
-        shouldCreateUser: shouldCreateUser,
-      );
+      lastOtpRetryAfter = null;
+      final cooldown = await otpCooldownRemaining(normalizedEmail);
+      if (cooldown > Duration.zero) {
+        lastOtpRetryAfter = cooldown;
+        return OtpResult.cooldown;
+      }
+      await _supabase.auth
+          .signInWithOtp(
+            email: normalizedEmail,
+            shouldCreateUser: shouldCreateUser,
+          )
+          .timeout(const Duration(seconds: 25));
+      await _rememberOtpSent(normalizedEmail);
       await saveOwnerEmail(normalizedEmail);
       return OtpResult.sent;
     } on AuthException catch (e) {
       lastOtpError = e.message;
       final message = e.message.toLowerCase();
       if (message.contains('rate limit') || message.contains('too many')) {
+        lastOtpRetryAfter = _retryAfterFromMessage(message);
         return OtpResult.rateLimited;
       }
+      if (!shouldCreateUser &&
+          (message.contains('user not found') ||
+              message.contains('signup') ||
+              message.contains('not registered'))) {
+        return OtpResult.accountNotFound;
+      }
+      if (_looksLikeNetworkFailure(e)) return OtpResult.networkUnavailable;
       return OtpResult.failed;
     } catch (e) {
       lastOtpError = e.toString();
+      if (_looksLikeNetworkFailure(e)) return OtpResult.networkUnavailable;
       return OtpResult.failed;
     }
   }
@@ -118,11 +184,14 @@ class OnboardingService {
     // produce misleading expired/invalid errors after a successful send.
     try {
       lastOtpError = null;
-      final response = await _supabase.auth.verifyOTP(
-        email: normalizedEmail,
-        token: normalizedOtp,
-        type: OtpType.email,
-      );
+      if (normalizedOtp.length != 6) return OtpVerifyResult.invalid;
+      final response = await _supabase.auth
+          .verifyOTP(
+            email: normalizedEmail,
+            token: normalizedOtp,
+            type: OtpType.email,
+          )
+          .timeout(const Duration(seconds: 25));
       if (response.user != null || response.session != null) {
         return OtpVerifyResult.success;
       }
@@ -133,9 +202,15 @@ class OnboardingService {
       if (message.contains('expired')) {
         return OtpVerifyResult.expired;
       }
+      if (message.contains('rate limit') || message.contains('too many')) {
+        return OtpVerifyResult.rateLimited;
+      }
       return OtpVerifyResult.invalid;
     } catch (e) {
       lastOtpError = e.toString();
+      if (_looksLikeNetworkFailure(e)) {
+        return OtpVerifyResult.networkUnavailable;
+      }
       return OtpVerifyResult.failed;
     }
   }
@@ -147,6 +222,20 @@ class OnboardingService {
   }
 }
 
-enum OtpResult { sent, rateLimited, failed }
+enum OtpResult {
+  sent,
+  cooldown,
+  rateLimited,
+  accountNotFound,
+  networkUnavailable,
+  failed,
+}
 
-enum OtpVerifyResult { success, invalid, expired, failed }
+enum OtpVerifyResult {
+  success,
+  invalid,
+  expired,
+  rateLimited,
+  networkUnavailable,
+  failed,
+}

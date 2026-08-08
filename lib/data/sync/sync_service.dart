@@ -20,8 +20,15 @@ class SyncService {
   StreamSubscription? _connectivitySub;
   Timer? _periodicSync;
   bool _isSyncing = false;
+  final Set<String>? Function()? _operationalOutletScope;
+  bool _strictRecoveryPull = false;
+  bool _recoveryPullFailed = false;
 
-  SyncService(this._db, this._supabase);
+  SyncService(
+    this._db,
+    this._supabase, {
+    Set<String>? Function()? operationalOutletScope,
+  }) : _operationalOutletScope = operationalOutletScope;
 
   void start() {
     if (!isEnabled) {
@@ -61,14 +68,18 @@ class SyncService {
 
       // Transaction history, shifts, expenses, and cross-device live sync
       // remain part of the Cloud entitlement.
-      if (!await _hasCloudEntitlement()) {
+      final cloudOutletIds = await _cloudEntitledOutletIds();
+      final scopedCloudOutletIds = _scopeOperationalOutlets(cloudOutletIds);
+      if (scopedCloudOutletIds.isEmpty) {
         debugPrint(
           '[SyncService] Recovery data synced; operational Cloud sync skipped',
         );
         return;
       }
-      await _pushOperationalData();
-      await _pullOperationalData(outletIds);
+      await _pushOperationalData(scopedCloudOutletIds);
+      await _pullOperationalData(
+        outletIds.where(scopedCloudOutletIds.contains).toList(),
+      );
     } catch (e) {
       debugPrint('[SyncService] syncAll error: $e');
     } finally {
@@ -84,14 +95,22 @@ class SyncService {
 
       // Explicit device recovery must work even when a build was produced
       // with background cloud sync disabled.
+      _strictRecoveryPull = true;
+      _recoveryPullFailed = false;
       final outletIds = await _pullRecoveryData(seedOutletId: outletId);
-      if (await _hasCloudEntitlement()) {
-        await _pullOperationalData(outletIds);
+      if (_recoveryPullFailed || outletIds.isEmpty) return false;
+
+      final cloudOutletIds = await _cloudEntitledOutletIds();
+      final entitledOutlets = outletIds.where(cloudOutletIds.contains).toList();
+      if (entitledOutlets.isNotEmpty) {
+        await _pullOperationalData(entitledOutlets);
       }
-      return true;
+      return !_recoveryPullFailed;
     } catch (e) {
       debugPrint('[SyncService] pullAllForLogin error: $e');
       return false;
+    } finally {
+      _strictRecoveryPull = false;
     }
   }
 
@@ -108,13 +127,13 @@ class SyncService {
     await _pushTables();
   }
 
-  Future<void> _pushOperationalData() async {
-    await _processPendingOperationalDeletes();
-    await _pushOrders();
-    await _pushOrderItems();
-    await _processPendingInventoryEvents();
-    await _pushSessions();
-    await _pushExpenses();
+  Future<void> _pushOperationalData(Set<String> outletIds) async {
+    await _processPendingOperationalDeletes(outletIds);
+    await _pushOrders(outletIds);
+    await _pushOrderItems(outletIds);
+    await _processPendingInventoryEvents(outletIds);
+    await _pushSessions(outletIds);
+    await _pushExpenses(outletIds);
   }
 
   Future<void> _processPendingRecoveryDeletes() async {
@@ -122,7 +141,9 @@ class SyncService {
     for (final item in pending) {
       if (item.operation != 'delete') continue;
       if (item.syncTableName != 'products' &&
-          item.syncTableName != 'product_variants') {
+          item.syncTableName != 'product_variants' &&
+          item.syncTableName != 'restaurant_tables' &&
+          item.syncTableName != 'user_outlet_accesses') {
         continue;
       }
 
@@ -151,9 +172,55 @@ class SyncService {
               .delete()
               .eq('product_id', item.recordId);
           await _supabase.from('products').delete().eq('id', item.recordId);
-        } else {
+        } else if (item.syncTableName == 'product_variants') {
           await _supabase
               .from('product_variants')
+              .delete()
+              .eq('id', item.recordId);
+        } else if (item.syncTableName == 'restaurant_tables') {
+          final payload = _decodePayload(item.payload);
+          var outletId = payload['outlet_id'] as String?;
+          if (outletId == null) {
+            final remote = await _supabase
+                .from('restaurant_tables')
+                .select('outlet_id')
+                .eq('id', item.recordId)
+                .maybeSingle();
+            outletId = remote?['outlet_id'] as String?;
+          }
+          if (outletId == null) {
+            throw StateError('Outlet meja tidak ditemukan');
+          }
+          await _recordTombstone(
+            outletId: outletId,
+            entityType: 'restaurant_table',
+            recordId: item.recordId,
+          );
+          await _supabase
+              .from('restaurant_tables')
+              .delete()
+              .eq('id', item.recordId);
+        } else if (item.syncTableName == 'user_outlet_accesses') {
+          final payload = _decodePayload(item.payload);
+          var outletId = payload['outlet_id'] as String?;
+          if (outletId == null) {
+            final remote = await _supabase
+                .from('user_outlet_accesses')
+                .select('outlet_id')
+                .eq('id', item.recordId)
+                .maybeSingle();
+            outletId = remote?['outlet_id'] as String?;
+          }
+          if (outletId == null) {
+            throw StateError('Outlet penugasan tidak ditemukan');
+          }
+          await _recordTombstone(
+            outletId: outletId,
+            entityType: 'user_outlet_access',
+            recordId: item.recordId,
+          );
+          await _supabase
+              .from('user_outlet_accesses')
               .delete()
               .eq('id', item.recordId);
         }
@@ -167,7 +234,7 @@ class SyncService {
     }
   }
 
-  Future<void> _processPendingOperationalDeletes() async {
+  Future<void> _processPendingOperationalDeletes(Set<String> outletIds) async {
     final pending = await _db.syncDao.getPending(limit: 100);
     for (final item in pending) {
       if (item.operation != 'delete' || item.syncTableName != 'expenses') {
@@ -177,13 +244,12 @@ class SyncService {
       try {
         final payload = _decodePayload(item.payload);
         final outletId = payload['outlet_id'] as String?;
-        if (outletId != null) {
-          await _recordTombstone(
-            outletId: outletId,
-            entityType: 'expense',
-            recordId: item.recordId,
-          );
-        }
+        if (outletId == null || !outletIds.contains(outletId)) continue;
+        await _recordTombstone(
+          outletId: outletId,
+          entityType: 'expense',
+          recordId: item.recordId,
+        );
         await _supabase.from('expenses').delete().eq('id', item.recordId);
         await _db.syncDao.markDone(item.id);
       } catch (e) {
@@ -193,6 +259,16 @@ class SyncService {
         );
       }
     }
+  }
+
+  Set<String> _scopeOperationalOutlets(Set<String> cloudOutletIds) {
+    final requestedScope = _operationalOutletScope?.call();
+    if (requestedScope == null) return cloudOutletIds;
+    return cloudOutletIds.intersection(requestedScope);
+  }
+
+  void _markRecoveryPullFailed() {
+    if (_strictRecoveryPull) _recoveryPullFailed = true;
   }
 
   Future<List<String>> _pullRecoveryData({String? seedOutletId}) async {
@@ -206,6 +282,11 @@ class SyncService {
     await _pullCategories();
     await _pullProducts();
     await _pullProductVariants();
+    // A remote delete can leave the source row temporarily visible if the
+    // tombstone write succeeded but deleting the source table is being
+    // retried. Apply tombstones once more after all recovery pulls so such a
+    // row cannot reappear locally in that window.
+    await _pullTombstones(outletIds);
     return outletIds;
   }
 
@@ -237,7 +318,7 @@ class SyncService {
       try {
         final response = await _supabase
             .from('sync_tombstones')
-            .select('entity_type,record_id')
+            .select('entity_type,record_id,deleted_at')
             .eq('outlet_id', outletId);
         for (final row in response as List? ?? const []) {
           final map = _asMap(row);
@@ -248,10 +329,28 @@ class SyncService {
               await _db.productDao.deleteProduct(recordId);
             case 'expense':
               await _db.financeDao.deleteExpense(recordId);
+            case 'restaurant_table':
+              await _db.orderDao.deleteTable(recordId, enqueueSync: false);
+            case 'user_outlet_access':
+              final deletedAt = _date(map['deleted_at']);
+              final local = await (_db.select(_db.userOutletAccesses)
+                    ..where((access) => access.id.equals(recordId)))
+                  .getSingleOrNull();
+              // A newer local row means the owner deliberately restored the
+              // assignment after the deletion. It will supersede and clear
+              // the old tombstone when pushed.
+              if (local == null ||
+                  deletedAt == null ||
+                  !local.createdAt.isAfter(deletedAt)) {
+                await _db.sessionDao.deleteUserOutletAccess(
+                  recordId,
+                  enqueueSync: false,
+                );
+              }
           }
         }
       } catch (e) {
-        // Backward compatible while the hardening migration is being rolled out.
+        _markRecoveryPullFailed();
         debugPrint('[SyncService] pull tombstones for $outletId failed: $e');
       }
     }
@@ -272,8 +371,7 @@ class SyncService {
     }
 
     if (seedOutletId != null && !pulled.contains(seedOutletId)) {
-      await _pullOutlet(seedOutletId);
-      pulled.add(seedOutletId);
+      if (await _pullOutlet(seedOutletId)) pulled.add(seedOutletId);
     }
 
     if (pulled.isEmpty) {
@@ -286,11 +384,14 @@ class SyncService {
           if (id != null) pulled.add(id);
         }
       } catch (e) {
+        _markRecoveryPullFailed();
         debugPrint('[SyncService] pull all outlets failed: $e');
       }
     }
 
     if (pulled.isEmpty) {
+      _markRecoveryPullFailed();
+      if (_strictRecoveryPull) return const [];
       final local = await (_db.select(_db.outlets)
             ..orderBy([(outlet) => OrderingTerm.asc(outlet.createdAt)]))
           .get();
@@ -300,13 +401,16 @@ class SyncService {
     return pulled.toList();
   }
 
-  Future<void> _pullOutlet(String outletId) async {
+  Future<bool> _pullOutlet(String outletId) async {
     try {
       final response =
           await _supabase.from('outlets').select().eq('id', outletId).single();
       await _upsertOutletFromMap(_asMap(response));
+      return true;
     } catch (e) {
+      _markRecoveryPullFailed();
       debugPrint('[SyncService] pull outlet $outletId failed: $e');
+      return false;
     }
   }
 
@@ -352,6 +456,7 @@ class SyncService {
         ));
       }
     } catch (e) {
+      _markRecoveryPullFailed();
       debugPrint('[SyncService] pull users failed: $e');
     }
   }
@@ -373,6 +478,7 @@ class SyncService {
             );
       }
     } catch (e) {
+      _markRecoveryPullFailed();
       debugPrint('[SyncService] pull user outlet access failed: $e');
     }
   }
@@ -399,6 +505,7 @@ class SyncService {
         ));
       }
     } catch (e) {
+      _markRecoveryPullFailed();
       debugPrint('[SyncService] pull tables failed: $e');
     }
   }
@@ -447,6 +554,7 @@ class SyncService {
             ));
       }
     } catch (e) {
+      _markRecoveryPullFailed();
       debugPrint('[SyncService] pull orders failed: $e');
     }
   }
@@ -467,6 +575,9 @@ class SyncService {
           productName: Value(map['product_name'] as String),
           variantSummary: Value(map['variant_summary'] as String?),
           unitPrice: Value(map['unit_price']?.toString() ?? '0'),
+          unitCogs: Value(map['unit_cogs']?.toString()),
+          categoryId: Value(map['category_id'] as String?),
+          categoryName: Value(map['category_name'] as String?),
           quantity: Value(map['quantity']?.toString() ?? '0'),
           discount: Value(map['discount']?.toString() ?? '0'),
           subtotal: Value(map['subtotal']?.toString() ?? '0'),
@@ -477,6 +588,7 @@ class SyncService {
         ));
       }
     } catch (e) {
+      _markRecoveryPullFailed();
       debugPrint('[SyncService] pull order items failed: $e');
     }
   }
@@ -510,6 +622,7 @@ class SyncService {
         ));
       }
     } catch (e) {
+      _markRecoveryPullFailed();
       debugPrint('[SyncService] pull products failed: $e');
     }
   }
@@ -538,6 +651,7 @@ class SyncService {
         ));
       }
     } catch (e) {
+      _markRecoveryPullFailed();
       debugPrint('[SyncService] pull product variants failed: $e');
     }
   }
@@ -561,6 +675,7 @@ class SyncService {
         ));
       }
     } catch (e) {
+      _markRecoveryPullFailed();
       debugPrint('[SyncService] pull categories failed: $e');
     }
   }
@@ -586,6 +701,7 @@ class SyncService {
         }
       }
     } catch (e) {
+      _markRecoveryPullFailed();
       debugPrint('[SyncService] pull expenses failed: $e');
     }
   }
@@ -623,6 +739,7 @@ class SyncService {
             );
       }
     } catch (e) {
+      _markRecoveryPullFailed();
       debugPrint('[SyncService] pull sessions failed: $e');
     }
   }
@@ -680,12 +797,36 @@ class SyncService {
     final unsynced = await _db.sessionDao.getUnsyncedUserOutletAccesses();
     for (final access in unsynced) {
       try {
+        final tombstone = await _supabase
+            .from('sync_tombstones')
+            .select('deleted_at')
+            .eq('entity_type', 'user_outlet_access')
+            .eq('record_id', access.id)
+            .maybeSingle();
+        final deletedAt = _date(tombstone?['deleted_at']);
+        if (deletedAt != null && !access.createdAt.isAfter(deletedAt)) {
+          // The server deletion is newer than this local relationship. Drop
+          // the stale copy instead of letting an old device recreate it.
+          await _db.sessionDao.deleteUserOutletAccess(
+            access.id,
+            enqueueSync: false,
+          );
+          continue;
+        }
+
         await _supabase.from('user_outlet_accesses').upsert({
           'id': access.id,
           'user_id': access.userId,
           'outlet_id': access.outletId,
           'created_at': access.createdAt.toUtc().toIso8601String(),
         });
+        if (tombstone != null) {
+          await _supabase
+              .from('sync_tombstones')
+              .delete()
+              .eq('entity_type', 'user_outlet_access')
+              .eq('record_id', access.id);
+        }
         await _db.sessionDao.markUserOutletAccessSynced(access.id);
       } catch (e) {
         debugPrint(
@@ -738,15 +879,18 @@ class SyncService {
     }
   }
 
-  Future<void> _processPendingInventoryEvents() async {
+  Future<void> _processPendingInventoryEvents(Set<String> outletIds) async {
     final pending = await _db.syncDao.getPending(limit: 500);
     for (final item in pending) {
       if (item.syncTableName != 'stock_sets' &&
-          item.syncTableName != 'stock_sales') {
+          item.syncTableName != 'stock_sales' &&
+          item.syncTableName != 'stock_reversals') {
         continue;
       }
       try {
         final payload = _decodePayload(item.payload);
+        final outletId = payload['outlet_id'] as String?;
+        if (outletId == null || !outletIds.contains(outletId)) continue;
         if (item.syncTableName == 'stock_sets') {
           final stock = payload['stock'];
           if (stock is! num) throw const FormatException('Stok tidak valid');
@@ -755,9 +899,22 @@ class SyncService {
             'p_stock': stock,
           });
         } else {
-          await _supabase.rpc('apply_order_stock_sale', params: {
-            'p_order_id': item.recordId,
-          });
+          // Never mark an inventory event applied before every order item has
+          // reached Postgres. Otherwise a transient item upload failure could
+          // permanently apply only part of a sale.
+          final unsyncedItems = await _db.orderDao.getUnsyncedItems();
+          if (unsyncedItems.any((row) => row.orderId == item.recordId)) {
+            continue;
+          }
+          if (item.syncTableName == 'stock_reversals') {
+            await _supabase.rpc('reverse_order_stock_sale', params: {
+              'p_order_id': item.recordId,
+            });
+          } else {
+            await _supabase.rpc('apply_order_stock_sale', params: {
+              'p_order_id': item.recordId,
+            });
+          }
         }
         await _db.syncDao.markDone(item.id);
       } catch (e) {
@@ -837,9 +994,10 @@ class SyncService {
     }
   }
 
-  Future<void> _pushOrders() async {
+  Future<void> _pushOrders(Set<String> outletIds) async {
     final unsynced = await _db.orderDao.getUnsyncedOrders();
     for (final o in unsynced) {
+      if (!outletIds.contains(o.outletId)) continue;
       try {
         await _supabase.from('orders').upsert({
           'id': o.id,
@@ -877,9 +1035,11 @@ class SyncService {
     }
   }
 
-  Future<void> _pushOrderItems() async {
+  Future<void> _pushOrderItems(Set<String> outletIds) async {
     final unsynced = await _db.orderDao.getUnsyncedItems();
     for (final item in unsynced) {
+      final parent = await _db.orderDao.getOrder(item.orderId);
+      if (parent == null || !outletIds.contains(parent.outletId)) continue;
       try {
         await _supabase.from('order_items').upsert({
           'id': item.id,
@@ -888,6 +1048,9 @@ class SyncService {
           'product_name': item.productName,
           'variant_summary': item.variantSummary,
           'unit_price': item.unitPrice,
+          'unit_cogs': item.unitCogs,
+          'category_id': item.categoryId,
+          'category_name': item.categoryName,
           'quantity': item.quantity,
           'discount': item.discount,
           'subtotal': item.subtotal,
@@ -902,9 +1065,10 @@ class SyncService {
     }
   }
 
-  Future<void> _pushSessions() async {
+  Future<void> _pushSessions(Set<String> outletIds) async {
     final unsynced = await _db.sessionDao.getUnsyncedSessions();
     for (final s in unsynced) {
+      if (!outletIds.contains(s.outletId)) continue;
       try {
         await _supabase.from('sessions').upsert({
           'id': s.id,
@@ -928,9 +1092,10 @@ class SyncService {
     }
   }
 
-  Future<void> _pushExpenses() async {
+  Future<void> _pushExpenses(Set<String> outletIds) async {
     final unsynced = await _db.financeDao.getUnsyncedExpenses();
     for (final expense in unsynced) {
+      if (!outletIds.contains(expense.outletId)) continue;
       try {
         await _supabase.from('expenses').upsert({
           'id': expense.id,
@@ -957,13 +1122,13 @@ class SyncService {
     return results.any((result) => result != ConnectivityResult.none);
   }
 
-  Future<bool> _hasCloudEntitlement() async {
+  Future<Set<String>> _cloudEntitledOutletIds() async {
     final outlets = await _db.select(_db.outlets).get();
     if (outlets.isEmpty || _supabase.auth.currentUser?.email == null) {
-      return false;
+      return const {};
     }
 
-    var hasAnyCloud = false;
+    final entitledOutletIds = <String>{};
     for (final outlet in outlets) {
       try {
         final response = await _supabase.functions.invoke(
@@ -985,7 +1150,7 @@ class SyncService {
           cloudExpiry: Value(isCloud ? expiresAt : null),
         ));
 
-        hasAnyCloud = hasAnyCloud || isCloud;
+        if (isCloud) entitledOutletIds.add(outlet.id);
       } catch (e) {
         debugPrint(
           '[SyncService] cloud entitlement check failed for ${outlet.id}: $e',
@@ -993,7 +1158,7 @@ class SyncService {
       }
     }
 
-    return hasAnyCloud;
+    return entitledOutletIds;
   }
 
   Map<String, dynamic> _asMap(dynamic value) {

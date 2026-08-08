@@ -138,8 +138,10 @@ class FinanceDao extends DatabaseAccessor<AppDatabase> with _$FinanceDaoMixin {
           product.id: double.tryParse(product.cogs) ?? 0,
       };
       for (final item in paidItems) {
-        cogs += (productCogs[item.productId] ?? 0) *
-            (double.tryParse(item.quantity) ?? 0);
+        final snapshottedCogs = item.unitCogs == null
+            ? productCogs[item.productId] ?? 0
+            : double.tryParse(item.unitCogs!) ?? 0;
+        cogs += snapshottedCogs * (double.tryParse(item.quantity) ?? 0);
       }
     }
     final expenseRows = await getExpenses(outletId, from, to);

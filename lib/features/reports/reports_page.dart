@@ -515,7 +515,7 @@ class _DateNavigator extends StatelessWidget {
             onPressed: onPrev,
             icon: const Icon(Icons.chevron_left_rounded),
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           ),
           Expanded(
             child: GestureDetector(
@@ -530,7 +530,7 @@ class _DateNavigator extends StatelessWidget {
             onPressed: onNext,
             icon: const Icon(Icons.chevron_right_rounded),
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           ),
         ],
       ),
@@ -1168,7 +1168,7 @@ class _HourlyChart extends ConsumerWidget {
     return FutureBuilder<List<Order>>(
       future: _getOrders(db, outletIds, from, to),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState != ConnectionState.done) {
           return Container(
             height: 160,
             decoration: BoxDecoration(
@@ -1177,6 +1177,44 @@ class _HourlyChart extends ConsumerWidget {
               border: Border.all(color: AppTheme.borderColor),
             ),
             child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          return Container(
+            height: 160,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.borderColor),
+            ),
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.cloud_off_outlined,
+                    color: AppTheme.textSecondary,
+                    size: 28,
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Grafik jam sibuk belum bisa dimuat',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Buka ulang laporan untuk mencoba lagi.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         }
 

@@ -6,6 +6,7 @@ import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../domain/entities/entities.dart';
+import '../shared/polish_widgets.dart';
 
 String _formatStock(double value) => value == value.roundToDouble()
     ? value.toInt().toString()
@@ -117,21 +118,17 @@ class CartPanel extends ConsumerWidget {
           ),
           const Divider(height: 1, color: AppTheme.subtleBorder),
           Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 240),
-              child: cart.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      key: ValueKey(cart.items.length),
-                      controller: scrollController,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      itemCount: cart.items.length,
-                      itemBuilder: (_, i) => _CartItemTile(
-                        index: i,
-                        item: cart.items[i],
-                      ),
+            child: cart.isEmpty
+                ? _buildEmptyState()
+                : ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    itemCount: cart.items.length,
+                    itemBuilder: (_, i) => _CartItemTile(
+                      index: i,
+                      item: cart.items[i],
                     ),
-            ),
+                  ),
           ),
           if (!cart.isEmpty) _buildSummary(context, ref, cart),
         ],
@@ -398,13 +395,13 @@ class _QtyButtonState extends State<_QtyButton> {
         scale: _pressed ? 0.90 : 1,
         duration: const Duration(milliseconds: 100),
         child: Container(
-          width: 28,
-          height: 28,
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
             color: AppTheme.primaryLight,
             borderRadius: BorderRadius.circular(9),
           ),
-          child: Icon(widget.icon, size: 15, color: AppTheme.primary),
+          child: Icon(widget.icon, size: 20, color: AppTheme.primary),
         ),
       ),
     );
@@ -481,6 +478,8 @@ class _OrderTypeToggle extends ConsumerWidget {
   void _showTablePicker(BuildContext context, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _TablePickerSheet(ref: ref),
     );
@@ -497,121 +496,131 @@ class _TablePickerSheet extends ConsumerWidget {
     final tablesAsync = widgetRef.watch(tablesProvider);
     final cart = widgetRef.watch(cartProvider);
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle bar
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE5E7EB),
-                borderRadius: BorderRadius.circular(2),
+    return SafeArea(
+      top: false,
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+        ),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          const Text('Pilih Meja',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          const Text('Tap meja untuk dine in',
-              style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
-          const SizedBox(height: 16),
-          tablesAsync.when(
-            data: (tables) => GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 1.1,
-              ),
-              itemCount: tables.length,
-              itemBuilder: (_, i) {
-                final table = tables[i];
-                final isSelected = cart.tableId == table.id;
-                // Asumsi model Table punya field: id, name/label, isOccupied
-                final isOccupied = table.status == 'occupied';
+            const SizedBox(height: 16),
+            const Text('Pilih Meja',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('Tap meja untuk dine in',
+                style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+            const SizedBox(height: 16),
+            Flexible(
+              child: tablesAsync.when(
+                data: (tables) => GridView.builder(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    childAspectRatio: 1.1,
+                  ),
+                  itemCount: tables.length,
+                  itemBuilder: (_, i) {
+                    final table = tables[i];
+                    final isSelected = cart.tableId == table.id;
+                    // Asumsi model Table punya field: id, name/label, isOccupied
+                    final isOccupied = table.status == 'occupied';
 
-                return GestureDetector(
-                  onTap: isOccupied
-                      ? null
-                      : () {
-                          widgetRef.read(cartProvider.notifier)
-                            ..setOrderType('dine_in')
-                            ..setTable(table.id, table.tableLabel);
-                          Navigator.pop(context);
-                        },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppTheme.primaryLight
-                          : isOccupied
-                              ? const Color(0xFFFEF2F2)
-                              : const Color(0xFFF9FAFB),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isSelected
-                            ? AppTheme.primary
-                            : isOccupied
-                                ? AppTheme.danger
-                                : AppTheme.borderColor,
-                        width: isSelected ? 1.5 : 1,
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.table_bar_rounded,
-                          size: 22,
+                    return GestureDetector(
+                      onTap: isOccupied
+                          ? null
+                          : () {
+                              widgetRef.read(cartProvider.notifier)
+                                ..setOrderType('dine_in')
+                                ..setTable(table.id, table.tableLabel);
+                              Navigator.pop(context);
+                            },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        decoration: BoxDecoration(
                           color: isSelected
-                              ? AppTheme.primary
+                              ? AppTheme.primaryLight
                               : isOccupied
-                                  ? AppTheme.danger
-                                  : const Color(0xFF6B7280),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          table.tableLabel,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                                  ? const Color(0xFFFEF2F2)
+                                  : const Color(0xFFF9FAFB),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
                             color: isSelected
                                 ? AppTheme.primary
                                 : isOccupied
                                     ? AppTheme.danger
-                                    : const Color(0xFF374151),
+                                    : AppTheme.borderColor,
+                            width: isSelected ? 1.5 : 1,
                           ),
                         ),
-                        if (isOccupied)
-                          const Text('Terpakai',
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.table_bar_rounded,
+                              size: 22,
+                              color: isSelected
+                                  ? AppTheme.primary
+                                  : isOccupied
+                                      ? AppTheme.danger
+                                      : const Color(0xFF6B7280),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              table.tableLabel,
                               style: TextStyle(
-                                  fontSize: 9, color: AppTheme.danger)),
-                      ],
-                    ),
-                  ),
-                );
-              },
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isSelected
+                                    ? AppTheme.primary
+                                    : isOccupied
+                                        ? AppTheme.danger
+                                        : const Color(0xFF374151),
+                              ),
+                            ),
+                            if (isOccupied)
+                              const Text('Terpakai',
+                                  style: TextStyle(
+                                      fontSize: 9, color: AppTheme.danger)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                loading: () => const Center(
+                    child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
+                )),
+                error: (_, __) => ErrorStateView(
+                  title: 'Daftar meja belum bisa dimuat',
+                  onRetry: () => widgetRef.invalidate(tablesProvider),
+                ),
+              ),
             ),
-            loading: () => const Center(
-                child: Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(),
-            )),
-            error: (e, _) => Center(child: Text('Error: $e')),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

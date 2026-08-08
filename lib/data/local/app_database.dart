@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
@@ -46,7 +47,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -63,6 +64,11 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 4) {
             await m.createTable(userOutletAccesses);
+          }
+          if (from < 5) {
+            await m.addColumn(orderItems, orderItems.unitCogs);
+            await m.addColumn(orderItems, orderItems.categoryId);
+            await m.addColumn(orderItems, orderItems.categoryName);
           }
         },
         beforeOpen: (details) async {
@@ -92,7 +98,7 @@ LazyDatabase _openConnection() {
     return NativeDatabase.createInBackground(
       file,
       isolateSetup: () async {
-        await _encryptExistingPlaintextDatabase(databasePath, escapedKey);
+        await migrateLegacyPlaintextDatabase(databasePath, escapedKey);
       },
       setup: (rawDb) {
         if (!_debugCheckHasCipher(rawDb)) {
@@ -108,19 +114,42 @@ bool _debugCheckHasCipher(sqlite.Database database) {
   return database.select('PRAGMA cipher;').isNotEmpty;
 }
 
-Future<void> _encryptExistingPlaintextDatabase(
+@visibleForTesting
+Future<void> migrateLegacyPlaintextDatabase(
   String databasePath,
   String escapedKey,
 ) async {
   final databaseFile = File(databasePath);
-  if (!await databaseFile.exists()) return;
-  if (!await _isPlaintextSqliteDatabase(databaseFile)) return;
-
   final tmp = File('${databaseFile.path}.encrypted.tmp');
   final backup = File('${databaseFile.path}.plaintext-migration-backup');
   final wal = File('${databaseFile.path}-wal');
   final shm = File('${databaseFile.path}-shm');
 
+  // A process interruption between the two renames can leave the original
+  // plaintext database only at [backup]. Restore it and retry the migration.
+  if (!await databaseFile.exists() && await backup.exists()) {
+    if (await tmp.exists()) await tmp.delete();
+    await backup.rename(databaseFile.path);
+  }
+
+  if (!await databaseFile.exists()) {
+    if (await tmp.exists()) await tmp.delete();
+    return;
+  }
+
+  if (!await _isPlaintextSqliteDatabase(databaseFile)) {
+    // A crash after installing the encrypted database but before deleting the
+    // plaintext backup must not leave that reusable copy on disk forever.
+    // Prove that the primary is readable with this device's key first.
+    if (await backup.exists() || await tmp.exists()) {
+      _verifyEncryptedDatabase(databaseFile, escapedKey);
+      if (await tmp.exists()) await tmp.delete();
+      if (await backup.exists()) await backup.delete();
+    }
+    return;
+  }
+
+  var primaryMovedToBackup = false;
   try {
     if (await tmp.exists()) await tmp.delete();
     if (await backup.exists()) await backup.delete();
@@ -147,25 +176,33 @@ Future<void> _encryptExistingPlaintextDatabase(
     }
 
     await databaseFile.rename(backup.path);
+    primaryMovedToBackup = true;
     await tmp.rename(databaseFile.path);
+
+    _verifyEncryptedDatabase(databaseFile, escapedKey);
     if (await wal.exists()) await wal.delete();
     if (await shm.exists()) await shm.delete();
-
-    final encryptedDb = sqlite.sqlite3.open(databaseFile.path);
-    try {
-      encryptedDb.execute("PRAGMA key = '$escapedKey';");
-      encryptedDb.select('SELECT count(*) FROM sqlite_master;');
-    } finally {
-      encryptedDb.close();
-    }
-
     if (await backup.exists()) await backup.delete();
   } catch (_) {
     if (await tmp.exists()) await tmp.delete();
-    if (!await databaseFile.exists() && await backup.exists()) {
+    if (primaryMovedToBackup && await backup.exists()) {
+      if (await databaseFile.exists()) await databaseFile.delete();
       await backup.rename(databaseFile.path);
     }
     rethrow;
+  }
+}
+
+void _verifyEncryptedDatabase(File databaseFile, String escapedKey) {
+  final encryptedDb = sqlite.sqlite3.open(databaseFile.path);
+  try {
+    if (!_debugCheckHasCipher(encryptedDb)) {
+      throw StateError('SQLite encryption backend tidak tersedia');
+    }
+    encryptedDb.execute("PRAGMA key = '$escapedKey';");
+    encryptedDb.select('SELECT count(*) FROM sqlite_master;');
+  } finally {
+    encryptedDb.close();
   }
 }
 

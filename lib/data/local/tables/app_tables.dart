@@ -174,6 +174,9 @@ class OrderItems extends Table {
   TextColumn get productName => text()();
   TextColumn get variantSummary => text().nullable()();
   TextColumn get unitPrice => text()();
+  TextColumn get unitCogs => text().nullable()();
+  TextColumn get categoryId => text().nullable()();
+  TextColumn get categoryName => text().nullable()();
   TextColumn get quantity => text()();
   TextColumn get discount => text().withDefault(const Constant('0'))();
   TextColumn get subtotal => text()();

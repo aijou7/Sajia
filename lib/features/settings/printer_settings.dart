@@ -43,6 +43,7 @@ class _PrinterSettingsCardState extends State<PrinterSettingsCard> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => BluetoothPickerSheet(
         onSelected: (device) async {
@@ -57,6 +58,7 @@ class _PrinterSettingsCardState extends State<PrinterSettingsCard> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => WifiPrinterSheet(onSaved: _load),
     );
@@ -134,9 +136,9 @@ class _PrinterSettingsCardState extends State<PrinterSettingsCard> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppTheme.primary,
                       side: const BorderSide(color: AppTheme.primary),
+                      minimumSize: const Size.fromHeight(48),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                   ),
                 ),
@@ -150,9 +152,9 @@ class _PrinterSettingsCardState extends State<PrinterSettingsCard> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppTheme.primary,
                       side: const BorderSide(color: AppTheme.primary),
+                      minimumSize: const Size.fromHeight(48),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                   ),
                 ),
@@ -218,9 +220,12 @@ class _PaperChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        constraints: const BoxConstraints(minWidth: 60, minHeight: 48),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: selected ? AppTheme.primaryLight : const Color(0xFFF3F4F6),
           borderRadius: BorderRadius.circular(999),
@@ -308,6 +313,9 @@ class _BluetoothPickerSheetState extends State<BluetoothPickerSheet>
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -325,143 +333,147 @@ class _BluetoothPickerSheetState extends State<BluetoothPickerSheet>
         left: 20,
         right: 20,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-              child: Container(
-            width: 36,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE5E7EB),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          )),
-          Row(
-            children: [
-              const Text('Pilih Printer Bluetooth',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: _scan,
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+                child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE5E7EB),
+                borderRadius: BorderRadius.circular(2),
               ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Pastikan printer sudah dinyalakan dan di-pair di Bluetooth perangkat.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-          ),
-          const SizedBox(height: 16),
-          if (_loading)
-            const Center(
-                child: Padding(
-              padding: EdgeInsets.all(32),
-              child: Column(children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 12),
-                Text('Mencari perangkat Bluetooth...'),
-              ]),
-            ))
-          else if (_error != null)
-            Center(
-                child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(children: [
-                const Icon(Icons.bluetooth_disabled,
-                    size: 48, color: AppTheme.danger),
-                const SizedBox(height: 12),
-                Text(_error!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Color(0xFF6B7280))),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: _scan,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Coba Lagi'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        await BluetoothSystem.openBluetoothPanel();
-                      },
-                      icon: const Icon(Icons.settings_bluetooth),
-                      label: const Text('Nyalakan Bluetooth'),
-                    ),
-                  ],
-                ),
-              ]),
-            ))
-          else if (_devices.isEmpty)
-            Center(
-                child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(children: [
-                Icon(Icons.bluetooth_searching,
-                    size: 48, color: Colors.grey[300]),
-                const SizedBox(height: 12),
-                const Text(
-                  'Tidak ada perangkat ditemukan.\nPastikan printer sudah di-pair di Bluetooth settings.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF6B7280)),
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: _scan,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Scan Ulang'),
-                ),
-              ]),
-            ))
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _devices.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (_, i) {
-                final device = _devices[i];
-                return ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.print_outlined,
-                        color: Color(0xFF3B82F6), size: 20),
-                  ),
-                  title: Text(
-                    device.name,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    device.macAdress,
+            )),
+            Row(
+              children: [
+                const Text('Pilih Printer Bluetooth',
                     style:
-                        const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
-                  ),
-                  trailing:
-                      const Icon(Icons.chevron_right, color: Color(0xFFD1D5DB)),
-                  onTap: () {
-                    widget.onSelected(PrinterDevice(
-                      name: device.name,
-                      address: device.macAdress,
-                      type: 'bluetooth',
-                    ));
-                    Navigator.pop(context);
-                  },
-                );
-              },
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _scan,
+                ),
+              ],
             ),
-          const SizedBox(height: 8),
-        ],
+            const SizedBox(height: 4),
+            const Text(
+              'Pastikan printer sudah dinyalakan dan di-pair di Bluetooth perangkat.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+            ),
+            const SizedBox(height: 16),
+            if (_loading)
+              const Center(
+                  child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Column(children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 12),
+                  Text('Mencari perangkat Bluetooth...'),
+                ]),
+              ))
+            else if (_error != null)
+              Center(
+                  child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(children: [
+                  const Icon(Icons.bluetooth_disabled,
+                      size: 48, color: AppTheme.danger),
+                  const SizedBox(height: 12),
+                  Text(_error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Color(0xFF6B7280))),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _scan,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Coba Lagi'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await BluetoothSystem.openBluetoothPanel();
+                        },
+                        icon: const Icon(Icons.settings_bluetooth),
+                        label: const Text('Nyalakan Bluetooth'),
+                      ),
+                    ],
+                  ),
+                ]),
+              ))
+            else if (_devices.isEmpty)
+              Center(
+                  child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(children: [
+                  Icon(Icons.bluetooth_searching,
+                      size: 48, color: Colors.grey[300]),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Tidak ada perangkat ditemukan.\nPastikan printer sudah di-pair di Bluetooth settings.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Color(0xFF6B7280)),
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: _scan,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Scan Ulang'),
+                  ),
+                ]),
+              ))
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _devices.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (_, i) {
+                  final device = _devices[i];
+                  return ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.print_outlined,
+                          color: Color(0xFF3B82F6), size: 20),
+                    ),
+                    title: Text(
+                      device.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      device.macAdress,
+                      style: const TextStyle(
+                          fontSize: 11, color: Color(0xFF9CA3AF)),
+                    ),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: Color(0xFFD1D5DB)),
+                    onTap: () {
+                      widget.onSelected(PrinterDevice(
+                        name: device.name,
+                        address: device.macAdress,
+                        type: 'bluetooth',
+                      ));
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
@@ -507,6 +519,9 @@ class _WifiPrinterSheetState extends State<WifiPrinterSheet> {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -524,67 +539,70 @@ class _WifiPrinterSheetState extends State<WifiPrinterSheet> {
         left: 20,
         right: 20,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-              child: Container(
-            width: 36,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE5E7EB),
-              borderRadius: BorderRadius.circular(2),
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+                child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE5E7EB),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            )),
+            const Text('Printer WiFi/LAN',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text(
+              'Pastikan printer dan tablet terhubung ke WiFi yang sama.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
             ),
-          )),
-          const Text('Printer WiFi/LAN',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          const Text(
-            'Pastikan printer dan tablet terhubung ke WiFi yang sama.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-          ),
-          const SizedBox(height: 20),
-          _field('Nama Printer', _nameCtrl, 'Contoh: Printer Kasir'),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: _field('IP Address', _ipCtrl, '192.168.1.100',
-                    type: TextInputType.number),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _field('Port', _portCtrl, '9100',
-                    type: TextInputType.number),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _saving ? null : _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: _saving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Text('Simpan',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 20),
+            _field('Nama Printer', _nameCtrl, 'Contoh: Printer Kasir'),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _field('IP Address', _ipCtrl, '192.168.1.100',
+                      type: TextInputType.number),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _field('Port', _portCtrl, '9100',
+                      type: TextInputType.number),
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _saving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Text('Simpan',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

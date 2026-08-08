@@ -2,7 +2,7 @@ import {
   canonicalJson,
   sha256Hex,
   verifyPlayIntegrity,
-} from "../_shared/play_integrity.ts";
+} from "../create-plan-checkout/play_integrity.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

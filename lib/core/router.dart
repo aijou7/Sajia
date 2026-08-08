@@ -28,6 +28,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (user == null && path != '/login') return '/login';
       if (user != null && path == '/login') return '/cashier';
       if (user != null &&
+          path == '/history' &&
+          !user.canManageOperations &&
+          !user.canViewFinancialReports) {
+        return '/cashier';
+      }
+      if (user != null &&
           (path == '/dashboard' || path == '/reports') &&
           !user.canViewFinancialReports) {
         return '/cashier';
@@ -65,7 +71,40 @@ final routerProvider = Provider<GoRouter>((ref) {
           builder: (ctx, state) => const MainScaffold(currentIndex: 6)),
     ],
     errorBuilder: (ctx, state) => Scaffold(
-      body: Center(child: Text('404: ${state.error}')),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.explore_off_outlined, size: 48),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Halaman tidak ditemukan',
+                    style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Kembali ke kasir untuk melanjutkan pekerjaan.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: () => ctx.go('/cashier'),
+                    icon: const Icon(Icons.point_of_sale_rounded),
+                    label: const Text('Kembali ke kasir'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     ),
   );
 });

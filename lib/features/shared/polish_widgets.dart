@@ -184,6 +184,36 @@ class EmptyStateView extends StatelessWidget {
   }
 }
 
+class ErrorStateView extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final VoidCallback? onRetry;
+
+  const ErrorStateView({
+    super.key,
+    this.title = 'Data belum bisa dimuat',
+    this.subtitle = 'Periksa koneksi lalu coba lagi.',
+    this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) => EmptyStateView(
+        icon: Icons.cloud_off_rounded,
+        title: title,
+        subtitle: subtitle,
+        action: onRetry == null
+            ? null
+            : OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Coba lagi'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(132, 48),
+                ),
+              ),
+      );
+}
+
 class GradientActionButton extends StatelessWidget {
   final String label;
   final IconData icon;

@@ -44,7 +44,7 @@ class _SalesHistoryPageState extends ConsumerState<SalesHistoryPage> {
                   icon: const Icon(Icons.chevron_left_rounded),
                   padding: EdgeInsets.zero,
                   constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                      const BoxConstraints(minWidth: 48, minHeight: 48),
                 ),
                 Expanded(
                   child: GestureDetector(
@@ -81,7 +81,7 @@ class _SalesHistoryPageState extends ConsumerState<SalesHistoryPage> {
                   icon: const Icon(Icons.chevron_right_rounded),
                   padding: EdgeInsets.zero,
                   constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                      const BoxConstraints(minWidth: 48, minHeight: 48),
                 ),
               ],
             ),
@@ -92,8 +92,18 @@ class _SalesHistoryPageState extends ConsumerState<SalesHistoryPage> {
             child: FutureBuilder<List<Order>>(
               future: _getOrders(db, outletId, from, to),
               builder: (context, snapshot) {
-                if (!snapshot.hasData) {
+                if (snapshot.connectionState != ConnectionState.done) {
                   return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError || !snapshot.hasData) {
+                  return const Center(
+                    child: EmptyStateView(
+                      icon: Icons.cloud_off_outlined,
+                      title: 'Riwayat belum bisa dimuat',
+                      subtitle:
+                          'Periksa data outlet lalu buka kembali halaman ini.',
+                    ),
+                  );
                 }
 
                 final orders = snapshot.data!;
@@ -383,7 +393,13 @@ class _OrderDetail extends ConsumerWidget {
         padding: EdgeInsets.all(8),
         child: CircularProgressIndicator(strokeWidth: 2),
       )),
-      error: (_, __) => const SizedBox(),
+      error: (_, __) => Center(
+        child: TextButton.icon(
+          onPressed: () => ref.invalidate(orderItemsProvider(order.id)),
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('Muat ulang detail item'),
+        ),
+      ),
     );
   }
 

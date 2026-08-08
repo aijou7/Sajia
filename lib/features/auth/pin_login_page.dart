@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:drift/drift.dart' show Value;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/providers.dart';
 import '../../core/brand.dart';
@@ -22,9 +25,14 @@ class PinLoginPage extends ConsumerStatefulWidget {
 class _PinLoginPageState extends ConsumerState<PinLoginPage>
     with SingleTickerProviderStateMixin {
   static const _pinLength = 6;
+  static const _failedAttemptsKey = 'pin_login_failed_attempts';
+  static const _lockoutUntilKey = 'pin_login_lockout_until';
   String _pin = '';
   String? _errorMessage;
   bool _isLoading = false;
+  int _failedAttempts = 0;
+  DateTime? _lockoutUntil;
+  Timer? _lockoutTimer;
   late AnimationController _shakeCtrl;
   late Animation<double> _shakeAnim;
 
@@ -38,15 +46,98 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
     _shakeAnim = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _shakeCtrl, curve: Curves.elasticIn),
     );
+    unawaited(_restoreLoginGuard());
   }
 
   @override
   void dispose() {
+    _lockoutTimer?.cancel();
     _shakeCtrl.dispose();
     super.dispose();
   }
 
+  int get _lockoutSeconds {
+    final until = _lockoutUntil;
+    if (until == null) return 0;
+    final remaining = until.difference(DateTime.now()).inSeconds;
+    return remaining < 1 ? 0 : remaining;
+  }
+
+  bool get _isLockedOut => _lockoutSeconds > 0;
+
+  Future<void> _restoreLoginGuard() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getInt(_lockoutUntilKey);
+    final until =
+        value == null ? null : DateTime.fromMillisecondsSinceEpoch(value);
+    if (!mounted) return;
+    setState(() {
+      _failedAttempts = prefs.getInt(_failedAttemptsKey) ?? 0;
+      _lockoutUntil = until?.isAfter(DateTime.now()) == true ? until : null;
+      if (_lockoutUntil != null) {
+        _errorMessage =
+            'Terlalu banyak PIN salah. Coba lagi dalam $_lockoutSeconds detik.';
+      }
+    });
+    if (_lockoutUntil != null) _startLockoutTicker();
+  }
+
+  void _startLockoutTicker() {
+    _lockoutTimer?.cancel();
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final seconds = _lockoutSeconds;
+      if (seconds == 0) {
+        timer.cancel();
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_lockoutUntilKey);
+        if (!mounted) return;
+        setState(() {
+          _lockoutUntil = null;
+          _pin = '';
+          _errorMessage = 'Silakan masukkan PIN kembali.';
+        });
+      } else {
+        setState(() => _errorMessage =
+            'Terlalu banyak PIN salah. Coba lagi dalam $seconds detik.');
+      }
+    });
+  }
+
+  Future<void> _recordFailedAttempt() async {
+    _failedAttempts++;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_failedAttemptsKey, _failedAttempts);
+    if (_failedAttempts < 5) return;
+
+    final lockoutLevel = ((_failedAttempts - 5) ~/ 5).clamp(0, 4);
+    final seconds = (30 * (1 << lockoutLevel)).clamp(30, 300);
+    _lockoutUntil = DateTime.now().add(Duration(seconds: seconds));
+    await prefs.setInt(
+      _lockoutUntilKey,
+      _lockoutUntil!.millisecondsSinceEpoch,
+    );
+    if (mounted) _startLockoutTicker();
+  }
+
+  Future<void> _clearLoginGuard() async {
+    _failedAttempts = 0;
+    _lockoutUntil = null;
+    _lockoutTimer?.cancel();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_failedAttemptsKey);
+    await prefs.remove(_lockoutUntilKey);
+  }
+
   void _onDigit(String digit) {
+    if (_isLockedOut) {
+      setState(() => _errorMessage =
+          'Terlalu banyak PIN salah. Coba lagi dalam $_lockoutSeconds detik.');
+      return;
+    }
     if (_pin.length >= _pinLength || _isLoading) return;
     HapticFeedback.lightImpact();
     setState(() {
@@ -63,7 +154,7 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
   }
 
   Future<void> _tryLogin() async {
-    if (_pin.length != _pinLength) return;
+    if (_pin.length != _pinLength || _isLockedOut) return;
     setState(() => _isLoading = true);
     await Future.delayed(const Duration(milliseconds: 250));
 
@@ -97,6 +188,7 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
         user != null && PinHasher.isLegacyHash(user.pin);
 
     if (user != null) {
+      await _clearLoginGuard();
       if (shouldUpgradePinHash) {
         await db.sessionDao.upsertUser(UsersCompanion(
           id: Value(user.id),
@@ -146,25 +238,18 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
       );
       context.go('/cashier');
     } else {
+      await _recordFailedAttempt();
+      if (!mounted) return;
       HapticFeedback.heavyImpact();
       _shakeCtrl.forward(from: 0);
       setState(() {
-        _errorMessage = 'PIN salah, coba lagi';
+        _errorMessage = _isLockedOut
+            ? 'Terlalu banyak PIN salah. Coba lagi dalam $_lockoutSeconds detik.'
+            : 'PIN salah. Sisa ${5 - (_failedAttempts % 5)} percobaan sebelum dikunci sementara.';
         _pin = '';
         _isLoading = false;
       });
     }
-  }
-
-  void _devLogin() {
-    ref.read(currentUserProvider.notifier).state = const AppUser(
-      id: 'dev-user',
-      name: 'Owner',
-      role: 'owner',
-      outletId: 'default-outlet',
-      assignedOutletIds: [],
-    );
-    context.go('/cashier');
   }
 
   @override
@@ -235,15 +320,13 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
                             onDelete: _onDelete,
                           ),
                           const SizedBox(height: 18),
-                          TextButton(
-                            onPressed: _devLogin,
-                            child: Text(
-                              'Masuk sebagai demo',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.58),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          Text(
+                            'PIN tersimpan aman di akun bisnis dan berlaku di perangkat yang dipulihkan.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.58),
+                              fontSize: 11,
+                              height: 1.4,
                             ),
                           ),
                         ],

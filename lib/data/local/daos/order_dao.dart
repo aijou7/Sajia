@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import '../app_database.dart';
 import '../tables/app_tables.dart';
@@ -101,10 +103,39 @@ class OrderDao extends DatabaseAccessor<AppDatabase> with _$OrderDaoMixin {
 
   /// Void order
   Future<void> voidOrder(String orderId, String reason, String voidedBy) async {
-    final order = await getOrder(orderId);
-    if (order == null) return;
-
     await transaction(() async {
+      // Read the current status inside the transaction. This makes a repeated
+      // manager tap (or two callers racing) idempotent: only the first paid ->
+      // void transition is allowed to restore stock and enqueue a reversal.
+      final order = await (select(orders)..where((o) => o.id.equals(orderId)))
+          .getSingleOrNull();
+      if (order == null || order.status == 'void') return;
+
+      var hasTrackedStock = false;
+      if (order.status == 'paid') {
+        final items = await getOrderItems(orderId);
+        final quantitiesByProduct = <String, double>{};
+        for (final item in items) {
+          final quantity = double.tryParse(item.quantity) ?? 0;
+          if (!quantity.isFinite || quantity <= 0) continue;
+          quantitiesByProduct.update(
+            item.productId,
+            (current) => current + quantity,
+            ifAbsent: () => quantity,
+          );
+        }
+
+        for (final entry in quantitiesByProduct.entries) {
+          final restoredStock = await attachedDatabase.productDao.restoreStock(
+            entry.key,
+            entry.value,
+          );
+          if (restoredStock != null) {
+            hasTrackedStock = true;
+          }
+        }
+      }
+
       await (update(orders)..where((o) => o.id.equals(orderId))).write(
         OrdersCompanion(
           status: const Value('void'),
@@ -127,6 +158,24 @@ class OrderDao extends DatabaseAccessor<AppDatabase> with _$OrderDaoMixin {
             isSynced: const Value(false),
           ),
         );
+      }
+
+      // Queue one additive, order-scoped reversal. The server RPC is
+      // idempotent, so retries and duplicate taps cannot restore stock twice.
+      // This also avoids an absolute stock snapshot overwriting a sale from a
+      // different device while this device was offline.
+      if (hasTrackedStock) {
+        await attachedDatabase.into(attachedDatabase.syncQueue).insert(
+              SyncQueueCompanion.insert(
+                syncTableName: 'stock_reversals',
+                recordId: orderId,
+                operation: 'reverse',
+                payload: jsonEncode({
+                  'outlet_id': order.outletId,
+                  'order_id': orderId,
+                }),
+              ),
+            );
       }
     });
   }
@@ -193,8 +242,33 @@ class OrderDao extends DatabaseAccessor<AppDatabase> with _$OrderDaoMixin {
 
   Future<void> upsertTable(RestaurantTablesCompanion table) =>
       into(restaurantTables).insertOnConflictUpdate(table);
-  Future<void> deleteTable(String tableId) =>
-      (delete(restaurantTables)..where((t) => t.id.equals(tableId))).go();
+
+  /// Deletes a table locally and queues an idempotent remote tombstone.
+  ///
+  /// Tombstones pulled from another device pass [enqueueSync] as `false` so
+  /// applying a remote deletion never creates another outbound delete.
+  Future<void> deleteTable(
+    String tableId, {
+    bool enqueueSync = true,
+  }) async {
+    await transaction(() async {
+      final table = await (select(restaurantTables)
+            ..where((row) => row.id.equals(tableId)))
+          .getSingleOrNull();
+      if (table == null) return;
+
+      if (enqueueSync) {
+        await attachedDatabase.syncDao.enqueue(
+          tableName: 'restaurant_tables',
+          recordId: table.id,
+          operation: 'delete',
+          payload: {'outlet_id': table.outletId},
+        );
+      }
+      await (delete(restaurantTables)..where((row) => row.id.equals(tableId)))
+          .go();
+    });
+  }
 
   Future<void> occupyTable(String tableId, String orderId) =>
       (update(restaurantTables)..where((t) => t.id.equals(tableId))).write(
@@ -346,20 +420,18 @@ class OrderDao extends DatabaseAccessor<AppDatabase> with _$OrderDaoMixin {
     final grouped = <String, Map<String, dynamic>>{};
     for (final item in items) {
       final product = productsById[item.productId];
-      final categoryId = product?.categoryId;
+      final categoryId = item.categoryId ?? product?.categoryId;
       final category = categoryId == null ? null : categoriesById[categoryId];
-      final key = product == null
-          ? '__deleted__'
-          : (category == null
-              ? '__uncategorized__'
-              : 'category:${category.name.trim().toLowerCase()}');
-      final name = product == null
-          ? 'Produk dihapus'
+      final snapshotName = item.categoryName?.trim();
+      final name = snapshotName?.isNotEmpty == true
+          ? snapshotName!
           : (category?.name ?? 'Tanpa kategori');
+      final key =
+          categoryId == null ? '__uncategorized__' : 'category:$categoryId';
 
       grouped.putIfAbsent(key, () {
         return {
-          'categoryId': category?.id,
+          'categoryId': categoryId,
           'name': name,
           'colorHex': category?.colorHex ?? '#6B7280',
           'qty': 0.0,

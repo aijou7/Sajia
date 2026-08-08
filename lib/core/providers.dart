@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -21,7 +23,19 @@ final supabaseProvider = Provider<SupabaseClient>((ref) {
 final syncServiceProvider = Provider<SyncService>((ref) {
   final db = ref.watch(databaseProvider);
   final supabase = ref.watch(supabaseProvider);
-  final service = SyncService(db, supabase);
+  final service = SyncService(
+    db,
+    supabase,
+    operationalOutletScope: () {
+      final user = ref.read(currentUserProvider);
+      if (user == null) return const <String>{};
+      if (user.isOwner) return null;
+      return user.accessibleOutletIds.toSet();
+    },
+  );
+  ref.listen<AppUser?>(currentUserProvider, (_, next) {
+    if (next != null) unawaited(service.syncAll());
+  });
   ref.onDispose(service.dispose);
   return service;
 });

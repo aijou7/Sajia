@@ -15,10 +15,24 @@ if (keystorePropertiesFile.exists()) {
 val isReleaseBuild = gradle.startParameter.taskNames.any {
     it.contains("Release", ignoreCase = true)
 }
+val releaseStoreFile = keystoreProperties["storeFile"]?.toString().orEmpty()
+val releaseKeyAlias = keystoreProperties["keyAlias"]?.toString().orEmpty()
+val usesAndroidDebugCertificate =
+    releaseStoreFile.replace('\\', '/').endsWith("/.android/debug.keystore") ||
+        releaseKeyAlias == "androiddebugkey"
+val allowDebugReleaseSigning =
+    providers.gradleProperty("allowDebugReleaseSigning").orNull == "true"
 if (isReleaseBuild && !keystorePropertiesFile.exists()) {
     throw GradleException(
         "Release signing belum siap: key.properties tidak ditemukan. " +
             "Jalankan scripts/create_upload_keystore.ps1 lalu isi key.properties."
+    )
+}
+if (isReleaseBuild && usesAndroidDebugCertificate && !allowDebugReleaseSigning) {
+    throw GradleException(
+        "Release production ditolak: key.properties masih memakai Android Debug certificate. " +
+            "Gunakan upload keystore permanen. Untuk APK beta internal saja, " +
+            "set -PallowDebugReleaseSigning=true secara eksplisit."
     )
 }
 

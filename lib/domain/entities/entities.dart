@@ -4,23 +4,29 @@ class CartItem extends Equatable {
   final String productId;
   final String productName;
   final double unitPrice;
+  final double unitCogs;
   final double quantity;
   final double discount;
   final String? notes;
   final String? variantSummary;
   final bool trackStock;
   final double? availableStock;
+  final String? categoryId;
+  final String? categoryName;
 
   const CartItem({
     required this.productId,
     required this.productName,
     required this.unitPrice,
+    this.unitCogs = 0,
     this.quantity = 1,
     this.discount = 0,
     this.notes,
     this.variantSummary,
     this.trackStock = false,
     this.availableStock,
+    this.categoryId,
+    this.categoryName,
   });
 
   double get subtotal => (unitPrice - discount) * quantity;
@@ -30,12 +36,15 @@ class CartItem extends Equatable {
         productId: productId,
         productName: productName,
         unitPrice: unitPrice,
+        unitCogs: unitCogs,
         quantity: quantity ?? this.quantity,
         discount: discount ?? this.discount,
         notes: notes ?? this.notes,
         variantSummary: variantSummary,
         trackStock: trackStock,
         availableStock: availableStock,
+        categoryId: categoryId,
+        categoryName: categoryName,
       );
 
   @override
@@ -43,12 +52,15 @@ class CartItem extends Equatable {
         productId,
         productName,
         unitPrice,
+        unitCogs,
         quantity,
         discount,
         notes,
         variantSummary,
         trackStock,
         availableStock,
+        categoryId,
+        categoryName,
       ];
 }
 

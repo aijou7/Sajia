@@ -64,7 +64,8 @@ APK.
 
 - The app restores the current outlet from local preferences after onboarding.
 - Receipt tax and service charge are read from outlet settings.
-- Hak akses owner, manager, dan kasir dibatasi per outlet melalui RLS dan
-  fungsi server.
+- Klien resmi membatasi menu dan sinkronisasi manager/kasir sesuai outlet yang
+  ditugaskan; data Cloud dan entitlement tetap divalidasi oleh RLS/fungsi
+  server.
 - Status Pro/Cloud berasal dari entitlement server; aplikasi lokal bukan sumber
   kebenaran lisensi.

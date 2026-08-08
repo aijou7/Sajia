@@ -4694,6 +4694,24 @@ class $OrderItemsTable extends OrderItems
   late final GeneratedColumn<String> unitPrice = GeneratedColumn<String>(
       'unit_price', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _unitCogsMeta =
+      const VerificationMeta('unitCogs');
+  @override
+  late final GeneratedColumn<String> unitCogs = GeneratedColumn<String>(
+      'unit_cogs', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _categoryIdMeta =
+      const VerificationMeta('categoryId');
+  @override
+  late final GeneratedColumn<String> categoryId = GeneratedColumn<String>(
+      'category_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _categoryNameMeta =
+      const VerificationMeta('categoryName');
+  @override
+  late final GeneratedColumn<String> categoryName = GeneratedColumn<String>(
+      'category_name', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _quantityMeta =
       const VerificationMeta('quantity');
   @override
@@ -4752,6 +4770,9 @@ class $OrderItemsTable extends OrderItems
         productName,
         variantSummary,
         unitPrice,
+        unitCogs,
+        categoryId,
+        categoryName,
         quantity,
         discount,
         subtotal,
@@ -4807,6 +4828,22 @@ class $OrderItemsTable extends OrderItems
     } else if (isInserting) {
       context.missing(_unitPriceMeta);
     }
+    if (data.containsKey('unit_cogs')) {
+      context.handle(_unitCogsMeta,
+          unitCogs.isAcceptableOrUnknown(data['unit_cogs']!, _unitCogsMeta));
+    }
+    if (data.containsKey('category_id')) {
+      context.handle(
+          _categoryIdMeta,
+          categoryId.isAcceptableOrUnknown(
+              data['category_id']!, _categoryIdMeta));
+    }
+    if (data.containsKey('category_name')) {
+      context.handle(
+          _categoryNameMeta,
+          categoryName.isAcceptableOrUnknown(
+              data['category_name']!, _categoryNameMeta));
+    }
     if (data.containsKey('quantity')) {
       context.handle(_quantityMeta,
           quantity.isAcceptableOrUnknown(data['quantity']!, _quantityMeta));
@@ -4860,6 +4897,12 @@ class $OrderItemsTable extends OrderItems
           .read(DriftSqlType.string, data['${effectivePrefix}variant_summary']),
       unitPrice: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}unit_price'])!,
+      unitCogs: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}unit_cogs']),
+      categoryId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}category_id']),
+      categoryName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}category_name']),
       quantity: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}quantity'])!,
       discount: attachedDatabase.typeMapping
@@ -4890,6 +4933,9 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
   final String productName;
   final String? variantSummary;
   final String unitPrice;
+  final String? unitCogs;
+  final String? categoryId;
+  final String? categoryName;
   final String quantity;
   final String discount;
   final String subtotal;
@@ -4904,6 +4950,9 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
       required this.productName,
       this.variantSummary,
       required this.unitPrice,
+      this.unitCogs,
+      this.categoryId,
+      this.categoryName,
       required this.quantity,
       required this.discount,
       required this.subtotal,
@@ -4922,6 +4971,15 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
       map['variant_summary'] = Variable<String>(variantSummary);
     }
     map['unit_price'] = Variable<String>(unitPrice);
+    if (!nullToAbsent || unitCogs != null) {
+      map['unit_cogs'] = Variable<String>(unitCogs);
+    }
+    if (!nullToAbsent || categoryId != null) {
+      map['category_id'] = Variable<String>(categoryId);
+    }
+    if (!nullToAbsent || categoryName != null) {
+      map['category_name'] = Variable<String>(categoryName);
+    }
     map['quantity'] = Variable<String>(quantity);
     map['discount'] = Variable<String>(discount);
     map['subtotal'] = Variable<String>(subtotal);
@@ -4944,6 +5002,15 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
           ? const Value.absent()
           : Value(variantSummary),
       unitPrice: Value(unitPrice),
+      unitCogs: unitCogs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(unitCogs),
+      categoryId: categoryId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(categoryId),
+      categoryName: categoryName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(categoryName),
       quantity: Value(quantity),
       discount: Value(discount),
       subtotal: Value(subtotal),
@@ -4965,6 +5032,9 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
       productName: serializer.fromJson<String>(json['productName']),
       variantSummary: serializer.fromJson<String?>(json['variantSummary']),
       unitPrice: serializer.fromJson<String>(json['unitPrice']),
+      unitCogs: serializer.fromJson<String?>(json['unitCogs']),
+      categoryId: serializer.fromJson<String?>(json['categoryId']),
+      categoryName: serializer.fromJson<String?>(json['categoryName']),
       quantity: serializer.fromJson<String>(json['quantity']),
       discount: serializer.fromJson<String>(json['discount']),
       subtotal: serializer.fromJson<String>(json['subtotal']),
@@ -4984,6 +5054,9 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
       'productName': serializer.toJson<String>(productName),
       'variantSummary': serializer.toJson<String?>(variantSummary),
       'unitPrice': serializer.toJson<String>(unitPrice),
+      'unitCogs': serializer.toJson<String?>(unitCogs),
+      'categoryId': serializer.toJson<String?>(categoryId),
+      'categoryName': serializer.toJson<String?>(categoryName),
       'quantity': serializer.toJson<String>(quantity),
       'discount': serializer.toJson<String>(discount),
       'subtotal': serializer.toJson<String>(subtotal),
@@ -5001,6 +5074,9 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
           String? productName,
           Value<String?> variantSummary = const Value.absent(),
           String? unitPrice,
+          Value<String?> unitCogs = const Value.absent(),
+          Value<String?> categoryId = const Value.absent(),
+          Value<String?> categoryName = const Value.absent(),
           String? quantity,
           String? discount,
           String? subtotal,
@@ -5016,6 +5092,10 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
         variantSummary:
             variantSummary.present ? variantSummary.value : this.variantSummary,
         unitPrice: unitPrice ?? this.unitPrice,
+        unitCogs: unitCogs.present ? unitCogs.value : this.unitCogs,
+        categoryId: categoryId.present ? categoryId.value : this.categoryId,
+        categoryName:
+            categoryName.present ? categoryName.value : this.categoryName,
         quantity: quantity ?? this.quantity,
         discount: discount ?? this.discount,
         subtotal: subtotal ?? this.subtotal,
@@ -5035,6 +5115,12 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
           ? data.variantSummary.value
           : this.variantSummary,
       unitPrice: data.unitPrice.present ? data.unitPrice.value : this.unitPrice,
+      unitCogs: data.unitCogs.present ? data.unitCogs.value : this.unitCogs,
+      categoryId:
+          data.categoryId.present ? data.categoryId.value : this.categoryId,
+      categoryName: data.categoryName.present
+          ? data.categoryName.value
+          : this.categoryName,
       quantity: data.quantity.present ? data.quantity.value : this.quantity,
       discount: data.discount.present ? data.discount.value : this.discount,
       subtotal: data.subtotal.present ? data.subtotal.value : this.subtotal,
@@ -5054,6 +5140,9 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
           ..write('productName: $productName, ')
           ..write('variantSummary: $variantSummary, ')
           ..write('unitPrice: $unitPrice, ')
+          ..write('unitCogs: $unitCogs, ')
+          ..write('categoryId: $categoryId, ')
+          ..write('categoryName: $categoryName, ')
           ..write('quantity: $quantity, ')
           ..write('discount: $discount, ')
           ..write('subtotal: $subtotal, ')
@@ -5073,6 +5162,9 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
       productName,
       variantSummary,
       unitPrice,
+      unitCogs,
+      categoryId,
+      categoryName,
       quantity,
       discount,
       subtotal,
@@ -5090,6 +5182,9 @@ class OrderItem extends DataClass implements Insertable<OrderItem> {
           other.productName == this.productName &&
           other.variantSummary == this.variantSummary &&
           other.unitPrice == this.unitPrice &&
+          other.unitCogs == this.unitCogs &&
+          other.categoryId == this.categoryId &&
+          other.categoryName == this.categoryName &&
           other.quantity == this.quantity &&
           other.discount == this.discount &&
           other.subtotal == this.subtotal &&
@@ -5106,6 +5201,9 @@ class OrderItemsCompanion extends UpdateCompanion<OrderItem> {
   final Value<String> productName;
   final Value<String?> variantSummary;
   final Value<String> unitPrice;
+  final Value<String?> unitCogs;
+  final Value<String?> categoryId;
+  final Value<String?> categoryName;
   final Value<String> quantity;
   final Value<String> discount;
   final Value<String> subtotal;
@@ -5121,6 +5219,9 @@ class OrderItemsCompanion extends UpdateCompanion<OrderItem> {
     this.productName = const Value.absent(),
     this.variantSummary = const Value.absent(),
     this.unitPrice = const Value.absent(),
+    this.unitCogs = const Value.absent(),
+    this.categoryId = const Value.absent(),
+    this.categoryName = const Value.absent(),
     this.quantity = const Value.absent(),
     this.discount = const Value.absent(),
     this.subtotal = const Value.absent(),
@@ -5137,6 +5238,9 @@ class OrderItemsCompanion extends UpdateCompanion<OrderItem> {
     required String productName,
     this.variantSummary = const Value.absent(),
     required String unitPrice,
+    this.unitCogs = const Value.absent(),
+    this.categoryId = const Value.absent(),
+    this.categoryName = const Value.absent(),
     required String quantity,
     this.discount = const Value.absent(),
     required String subtotal,
@@ -5159,6 +5263,9 @@ class OrderItemsCompanion extends UpdateCompanion<OrderItem> {
     Expression<String>? productName,
     Expression<String>? variantSummary,
     Expression<String>? unitPrice,
+    Expression<String>? unitCogs,
+    Expression<String>? categoryId,
+    Expression<String>? categoryName,
     Expression<String>? quantity,
     Expression<String>? discount,
     Expression<String>? subtotal,
@@ -5175,6 +5282,9 @@ class OrderItemsCompanion extends UpdateCompanion<OrderItem> {
       if (productName != null) 'product_name': productName,
       if (variantSummary != null) 'variant_summary': variantSummary,
       if (unitPrice != null) 'unit_price': unitPrice,
+      if (unitCogs != null) 'unit_cogs': unitCogs,
+      if (categoryId != null) 'category_id': categoryId,
+      if (categoryName != null) 'category_name': categoryName,
       if (quantity != null) 'quantity': quantity,
       if (discount != null) 'discount': discount,
       if (subtotal != null) 'subtotal': subtotal,
@@ -5193,6 +5303,9 @@ class OrderItemsCompanion extends UpdateCompanion<OrderItem> {
       Value<String>? productName,
       Value<String?>? variantSummary,
       Value<String>? unitPrice,
+      Value<String?>? unitCogs,
+      Value<String?>? categoryId,
+      Value<String?>? categoryName,
       Value<String>? quantity,
       Value<String>? discount,
       Value<String>? subtotal,
@@ -5208,6 +5321,9 @@ class OrderItemsCompanion extends UpdateCompanion<OrderItem> {
       productName: productName ?? this.productName,
       variantSummary: variantSummary ?? this.variantSummary,
       unitPrice: unitPrice ?? this.unitPrice,
+      unitCogs: unitCogs ?? this.unitCogs,
+      categoryId: categoryId ?? this.categoryId,
+      categoryName: categoryName ?? this.categoryName,
       quantity: quantity ?? this.quantity,
       discount: discount ?? this.discount,
       subtotal: subtotal ?? this.subtotal,
@@ -5239,6 +5355,15 @@ class OrderItemsCompanion extends UpdateCompanion<OrderItem> {
     }
     if (unitPrice.present) {
       map['unit_price'] = Variable<String>(unitPrice.value);
+    }
+    if (unitCogs.present) {
+      map['unit_cogs'] = Variable<String>(unitCogs.value);
+    }
+    if (categoryId.present) {
+      map['category_id'] = Variable<String>(categoryId.value);
+    }
+    if (categoryName.present) {
+      map['category_name'] = Variable<String>(categoryName.value);
     }
     if (quantity.present) {
       map['quantity'] = Variable<String>(quantity.value);
@@ -5276,6 +5401,9 @@ class OrderItemsCompanion extends UpdateCompanion<OrderItem> {
           ..write('productName: $productName, ')
           ..write('variantSummary: $variantSummary, ')
           ..write('unitPrice: $unitPrice, ')
+          ..write('unitCogs: $unitCogs, ')
+          ..write('categoryId: $categoryId, ')
+          ..write('categoryName: $categoryName, ')
           ..write('quantity: $quantity, ')
           ..write('discount: $discount, ')
           ..write('subtotal: $subtotal, ')
@@ -9094,6 +9222,9 @@ typedef $$OrderItemsTableCreateCompanionBuilder = OrderItemsCompanion Function({
   required String productName,
   Value<String?> variantSummary,
   required String unitPrice,
+  Value<String?> unitCogs,
+  Value<String?> categoryId,
+  Value<String?> categoryName,
   required String quantity,
   Value<String> discount,
   required String subtotal,
@@ -9110,6 +9241,9 @@ typedef $$OrderItemsTableUpdateCompanionBuilder = OrderItemsCompanion Function({
   Value<String> productName,
   Value<String?> variantSummary,
   Value<String> unitPrice,
+  Value<String?> unitCogs,
+  Value<String?> categoryId,
+  Value<String?> categoryName,
   Value<String> quantity,
   Value<String> discount,
   Value<String> subtotal,
@@ -9147,6 +9281,15 @@ class $$OrderItemsTableFilterComposer
 
   ColumnFilters<String> get unitPrice => $composableBuilder(
       column: $table.unitPrice, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get unitCogs => $composableBuilder(
+      column: $table.unitCogs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get categoryId => $composableBuilder(
+      column: $table.categoryId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get categoryName => $composableBuilder(
+      column: $table.categoryName, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get quantity => $composableBuilder(
       column: $table.quantity, builder: (column) => ColumnFilters(column));
@@ -9198,6 +9341,16 @@ class $$OrderItemsTableOrderingComposer
   ColumnOrderings<String> get unitPrice => $composableBuilder(
       column: $table.unitPrice, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get unitCogs => $composableBuilder(
+      column: $table.unitCogs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get categoryId => $composableBuilder(
+      column: $table.categoryId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get categoryName => $composableBuilder(
+      column: $table.categoryName,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get quantity => $composableBuilder(
       column: $table.quantity, builder: (column) => ColumnOrderings(column));
 
@@ -9246,6 +9399,15 @@ class $$OrderItemsTableAnnotationComposer
 
   GeneratedColumn<String> get unitPrice =>
       $composableBuilder(column: $table.unitPrice, builder: (column) => column);
+
+  GeneratedColumn<String> get unitCogs =>
+      $composableBuilder(column: $table.unitCogs, builder: (column) => column);
+
+  GeneratedColumn<String> get categoryId => $composableBuilder(
+      column: $table.categoryId, builder: (column) => column);
+
+  GeneratedColumn<String> get categoryName => $composableBuilder(
+      column: $table.categoryName, builder: (column) => column);
 
   GeneratedColumn<String> get quantity =>
       $composableBuilder(column: $table.quantity, builder: (column) => column);
@@ -9298,6 +9460,9 @@ class $$OrderItemsTableTableManager extends RootTableManager<
             Value<String> productName = const Value.absent(),
             Value<String?> variantSummary = const Value.absent(),
             Value<String> unitPrice = const Value.absent(),
+            Value<String?> unitCogs = const Value.absent(),
+            Value<String?> categoryId = const Value.absent(),
+            Value<String?> categoryName = const Value.absent(),
             Value<String> quantity = const Value.absent(),
             Value<String> discount = const Value.absent(),
             Value<String> subtotal = const Value.absent(),
@@ -9314,6 +9479,9 @@ class $$OrderItemsTableTableManager extends RootTableManager<
             productName: productName,
             variantSummary: variantSummary,
             unitPrice: unitPrice,
+            unitCogs: unitCogs,
+            categoryId: categoryId,
+            categoryName: categoryName,
             quantity: quantity,
             discount: discount,
             subtotal: subtotal,
@@ -9330,6 +9498,9 @@ class $$OrderItemsTableTableManager extends RootTableManager<
             required String productName,
             Value<String?> variantSummary = const Value.absent(),
             required String unitPrice,
+            Value<String?> unitCogs = const Value.absent(),
+            Value<String?> categoryId = const Value.absent(),
+            Value<String?> categoryName = const Value.absent(),
             required String quantity,
             Value<String> discount = const Value.absent(),
             required String subtotal,
@@ -9346,6 +9517,9 @@ class $$OrderItemsTableTableManager extends RootTableManager<
             productName: productName,
             variantSummary: variantSummary,
             unitPrice: unitPrice,
+            unitCogs: unitCogs,
+            categoryId: categoryId,
+            categoryName: categoryName,
             quantity: quantity,
             discount: discount,
             subtotal: subtotal,

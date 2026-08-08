@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart' show OrderingTerm, Value;
 import '../../core/backup_service.dart';
@@ -34,6 +35,12 @@ Future<User?> _findActiveUserUsingPin(
   return null;
 }
 
+String _nameInitial(String? name) {
+  final trimmed = name?.trim() ?? '';
+  if (trimmed.isEmpty) return '?';
+  return String.fromCharCode(trimmed.runes.first).toUpperCase();
+}
+
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
@@ -42,9 +49,12 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
+  late final Future<PackageInfo> _packageInfo;
+
   @override
   void initState() {
     super.initState();
+    _packageInfo = PackageInfo.fromPlatform();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _cleanupPlaceholderOutlet();
     });
@@ -147,7 +157,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   ),
                   child: Center(
                     child: Text(
-                      user?.name.substring(0, 1).toUpperCase() ?? '?',
+                      _nameInitial(user?.name),
                       style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
@@ -345,13 +355,29 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   )),
             ),
             _SettingsDivider(),
-            const _SettingsTile(
-              icon: Icons.info_outline,
-              title: 'Versi Aplikasi',
-              subtitle: '1.0.3',
-              onTap: null,
-              trailing: Text('1.0.3',
-                  style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13)),
+            FutureBuilder<PackageInfo>(
+              future: _packageInfo,
+              builder: (context, snapshot) {
+                final version = snapshot.data?.version.trim();
+                final displayVersion = version != null && version.isNotEmpty
+                    ? version
+                    : snapshot.hasError
+                        ? 'Tidak tersedia'
+                        : 'Memuat...';
+                return _SettingsTile(
+                  icon: Icons.info_outline,
+                  title: 'Versi Aplikasi',
+                  subtitle: displayVersion,
+                  onTap: null,
+                  trailing: Text(
+                    displayVersion,
+                    style: const TextStyle(
+                      color: Color(0xFF9CA3AF),
+                      fontSize: 13,
+                    ),
+                  ),
+                );
+              },
             ),
             if (canManageOperations) ...[
               _SettingsDivider(),
@@ -472,6 +498,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _OutletFormSheet(),
     );
@@ -481,6 +508,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _OutletSwitcherSheet(),
     );
@@ -490,6 +518,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _OutletListSheet(),
     );
@@ -501,6 +530,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _OutletFormSheet(createNew: true),
     );
@@ -510,6 +540,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _ReceiptSettingsSheet(),
     );
@@ -519,6 +550,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _UserListSheet(),
     );
@@ -528,6 +560,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _UserFormSheet(),
     );
@@ -537,6 +570,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _ChangePINSheet(),
     );
@@ -546,6 +580,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _PlanActivationSheet(),
     );
@@ -601,6 +636,7 @@ Future<bool> _ensureCanCreateOutlet(BuildContext context, WidgetRef ref) async {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _PlanActivationSheet(),
     );
@@ -1096,8 +1132,14 @@ class _OutletSwitcherSheet extends ConsumerWidget {
       child: FutureBuilder<List<Outlet>>(
         future: _loadAccessibleOutlets(ref),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
+          if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError || !snapshot.hasData) {
+            return const ErrorStateView(
+              title: 'Cabang belum bisa dimuat',
+              subtitle: 'Tutup panel ini lalu coba buka kembali.',
+            );
           }
           final outlets = snapshot.data!;
           if (outlets.isEmpty) {
@@ -1157,13 +1199,19 @@ class _OutletListSheet extends ConsumerWidget {
         onPressed: () async {
           if (!await _ensureCanCreateOutlet(context, ref)) return;
           if (!context.mounted) return;
+          final navigatorContext =
+              Navigator.of(context, rootNavigator: true).context;
           Navigator.pop(context);
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (_) => const _OutletFormSheet(createNew: true),
-          );
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!navigatorContext.mounted) return;
+            showModalBottomSheet(
+              context: navigatorContext,
+              isScrollControlled: true,
+              useSafeArea: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => const _OutletFormSheet(createNew: true),
+            );
+          });
         },
         icon: const Icon(Icons.add_rounded, size: 18),
         label: const Text('Tambah'),
@@ -1171,8 +1219,14 @@ class _OutletListSheet extends ConsumerWidget {
       child: FutureBuilder<List<Outlet>>(
         future: _loadAccessibleOutlets(ref),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
+          if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError || !snapshot.hasData) {
+            return const ErrorStateView(
+              title: 'Daftar cabang belum bisa dimuat',
+              subtitle: 'Tutup panel ini lalu coba buka kembali.',
+            );
           }
           final outlets = snapshot.data!;
           if (outlets.isEmpty) {
@@ -1191,7 +1245,7 @@ class _OutletListSheet extends ConsumerWidget {
                   leading: CircleAvatar(
                     backgroundColor: AppTheme.primaryLight,
                     child: Text(
-                      outlet.name.substring(0, 1).toUpperCase(),
+                      _nameInitial(outlet.name),
                       style: const TextStyle(
                         color: AppTheme.primary,
                         fontWeight: FontWeight.w800,
@@ -1214,13 +1268,20 @@ class _OutletListSheet extends ConsumerWidget {
                         tooltip: 'Edit cabang',
                         icon: const Icon(Icons.edit_outlined, size: 19),
                         onPressed: () {
+                          final navigatorContext =
+                              Navigator.of(context, rootNavigator: true)
+                                  .context;
                           Navigator.pop(context);
-                          showModalBottomSheet(
-                            context: context,
-                            isScrollControlled: true,
-                            backgroundColor: Colors.transparent,
-                            builder: (_) => _OutletFormSheet(outlet: outlet),
-                          );
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!navigatorContext.mounted) return;
+                            showModalBottomSheet(
+                              context: navigatorContext,
+                              isScrollControlled: true,
+                              useSafeArea: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => _OutletFormSheet(outlet: outlet),
+                            );
+                          });
                         },
                       ),
                     ],
@@ -1681,22 +1742,22 @@ class _UserListSheet extends ConsumerWidget {
       child: FutureBuilder<List<User>>(
         future: db.sessionDao.getActiveUsers(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
+          if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError || !snapshot.hasData) {
+            return const ErrorStateView(
+              title: 'Daftar staff belum bisa dimuat',
+              subtitle: 'Tutup panel ini lalu coba buka kembali.',
+            );
           }
 
           final users = snapshot.data!;
           if (users.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.people_outline, size: 48, color: Colors.grey[300]),
-                  const SizedBox(height: 12),
-                  Text('Belum ada staff',
-                      style: TextStyle(color: Colors.grey[400])),
-                ],
-              ),
+            return const EmptyStateView(
+              icon: Icons.people_outline_rounded,
+              title: 'Belum ada staff',
+              subtitle: 'Tambahkan kasir atau manager untuk outlet ini.',
             );
           }
 
@@ -1711,7 +1772,7 @@ class _UserListSheet extends ConsumerWidget {
                 leading: CircleAvatar(
                   backgroundColor: _roleColor(u.role).withValues(alpha: 0.1),
                   child: Text(
-                    u.name.substring(0, 1).toUpperCase(),
+                    _nameInitial(u.name),
                     style: TextStyle(
                       color: _roleColor(u.role),
                       fontWeight: FontWeight.w700,
@@ -1728,13 +1789,19 @@ class _UserListSheet extends ConsumerWidget {
                   icon: const Icon(Icons.edit_outlined, size: 18),
                   color: const Color(0xFF6B7280),
                   onPressed: () {
+                    final navigatorContext =
+                        Navigator.of(context, rootNavigator: true).context;
                     Navigator.pop(context);
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => _UserFormSheet(user: u),
-                    );
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!navigatorContext.mounted) return;
+                      showModalBottomSheet(
+                        context: navigatorContext,
+                        isScrollControlled: true,
+                        useSafeArea: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => _UserFormSheet(user: u),
+                      );
+                    });
                   },
                 ),
               );
@@ -1779,10 +1846,16 @@ class _OutletAccessSelector extends ConsumerWidget {
     return FutureBuilder<List<Outlet>>(
       future: _loadAccessibleOutlets(ref),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState != ConnectionState.done) {
           return const SizedBox(
             height: 52,
             child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          return const ErrorStateView(
+            title: 'Akses cabang belum bisa dimuat',
+            subtitle: 'Tutup panel staff lalu coba lagi.',
           );
         }
         final outlets = snapshot.data!;
@@ -2217,8 +2290,9 @@ class _ChangePINSheetState extends ConsumerState<_ChangePINSheet> {
     ));
 
     if (mounted) {
+      final messenger = ScaffoldMessenger.of(context);
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      messenger.showSnackBar(const SnackBar(
         content: Text('PIN berhasil diubah'),
         backgroundColor: AppTheme.success,
       ));
@@ -2363,6 +2437,7 @@ class _BottomSheet extends StatelessWidget {
         right: 20,
       ),
       child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -2645,6 +2720,7 @@ class _KitchenNotifTileState extends State<_KitchenNotifTile> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => BluetoothPickerSheet(
         onSelected: (device) async {

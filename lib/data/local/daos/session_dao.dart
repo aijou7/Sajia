@@ -116,21 +116,76 @@ class SessionDao extends DatabaseAccessor<AppDatabase> with _$SessionDaoMixin {
     String userId,
     Iterable<String> outletIds,
   ) async {
-    final uniqueOutletIds = outletIds.toSet().toList();
+    final uniqueOutletIds = outletIds.toSet();
     await transaction(() async {
-      await (delete(userOutletAccesses)
+      final existing = await (select(userOutletAccesses)
             ..where((access) => access.userId.equals(userId)))
-          .go();
-      for (final outletId in uniqueOutletIds) {
+          .get();
+      final existingOutletIds = existing.map((row) => row.outletId).toSet();
+
+      for (final access in existing) {
+        if (uniqueOutletIds.contains(access.outletId)) continue;
+        await attachedDatabase.syncDao.enqueue(
+          tableName: 'user_outlet_accesses',
+          recordId: access.id,
+          operation: 'delete',
+          payload: {
+            'outlet_id': access.outletId,
+            'user_id': access.userId,
+          },
+        );
+        await (delete(userOutletAccesses)
+              ..where((row) => row.id.equals(access.id)))
+            .go();
+      }
+
+      for (final outletId in uniqueOutletIds.difference(existingOutletIds)) {
+        final accessId = '${userId}_$outletId';
+        // If this assignment was removed and immediately restored while still
+        // offline, the newer explicit assignment supersedes the unsent delete.
+        await attachedDatabase.syncDao.cancelPendingDelete(
+          tableName: 'user_outlet_accesses',
+          recordId: accessId,
+        );
         await into(userOutletAccesses).insert(
           UserOutletAccessesCompanion.insert(
-            id: '${userId}_$outletId',
+            id: accessId,
             userId: userId,
             outletId: outletId,
           ),
           mode: InsertMode.insertOrReplace,
         );
       }
+    });
+  }
+
+  /// Applies a user/outlet access deletion.
+  ///
+  /// Set [enqueueSync] to `false` when consuming a remote tombstone to avoid a
+  /// delete echo between devices.
+  Future<void> deleteUserOutletAccess(
+    String accessId, {
+    bool enqueueSync = true,
+  }) async {
+    await transaction(() async {
+      final access = await (select(userOutletAccesses)
+            ..where((row) => row.id.equals(accessId)))
+          .getSingleOrNull();
+      if (access == null) return;
+      if (enqueueSync) {
+        await attachedDatabase.syncDao.enqueue(
+          tableName: 'user_outlet_accesses',
+          recordId: access.id,
+          operation: 'delete',
+          payload: {
+            'outlet_id': access.outletId,
+            'user_id': access.userId,
+          },
+        );
+      }
+      await (delete(userOutletAccesses)
+            ..where((row) => row.id.equals(accessId)))
+          .go();
     });
   }
 
@@ -154,6 +209,11 @@ class SessionDao extends DatabaseAccessor<AppDatabase> with _$SessionDaoMixin {
       into(users).insertOnConflictUpdate(user);
 
   Future<void> deactivateUser(String id) =>
-      (update(users)..where((u) => u.id.equals(id)))
-          .write(const UsersCompanion(isActive: Value(false)));
+      (update(users)..where((u) => u.id.equals(id))).write(
+        UsersCompanion(
+          isActive: const Value(false),
+          updatedAt: Value(DateTime.now()),
+          isSynced: const Value(false),
+        ),
+      );
 }

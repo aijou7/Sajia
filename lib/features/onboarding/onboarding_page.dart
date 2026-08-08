@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,6 +36,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
   final _otpCtrl = TextEditingController();
   String? _emailError;
   bool _isDeviceRecovery = false;
+  Timer? _otpCooldownTimer;
+  int _otpCooldownSeconds = 0;
 
   static const _pinLength = 6;
   String _pin = '';
@@ -60,6 +64,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
 
   @override
   void dispose() {
+    _otpCooldownTimer?.cancel();
     _slideCtrl.dispose();
     _nameCtrl.dispose();
     _addressCtrl.dispose();
@@ -67,6 +72,24 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
     _emailCtrl.dispose();
     _otpCtrl.dispose();
     super.dispose();
+  }
+
+  void _startOtpCooldown(Duration duration) {
+    _otpCooldownTimer?.cancel();
+    final seconds = duration.inSeconds.clamp(1, 3600);
+    setState(() => _otpCooldownSeconds = seconds);
+    _otpCooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_otpCooldownSeconds <= 1) {
+        timer.cancel();
+        setState(() => _otpCooldownSeconds = 0);
+      } else {
+        setState(() => _otpCooldownSeconds--);
+      }
+    });
   }
 
   void _goTo(_Step next) {
@@ -95,13 +118,34 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
     setState(() => _isLoading = false);
     switch (result) {
       case OtpResult.sent:
-        _goTo(_Step.otp);
+        _startOtpCooldown(OnboardingService.otpCooldown);
+        if (_step != _Step.otp) {
+          _goTo(_Step.otp);
+        } else {
+          _snack('Kode OTP baru sudah dikirim.', success: true);
+        }
+      case OtpResult.cooldown:
+        final retry = service.lastOtpRetryAfter ??
+            await service.otpCooldownRemaining(email);
+        if (!mounted) return;
+        _startOtpCooldown(retry);
+        setState(() => _emailError =
+            'Tunggu ${retry.inSeconds.clamp(1, 3600)} detik sebelum kirim ulang.');
       case OtpResult.rateLimited:
-        setState(
-            () => _emailError = 'Terlalu banyak percobaan. Coba lagi nanti.');
+        final retry =
+            service.lastOtpRetryAfter ?? OnboardingService.otpCooldown;
+        _startOtpCooldown(retry);
+        setState(() => _emailError =
+            'Batas pengiriman tercapai. Coba lagi dalam ${retry.inSeconds.clamp(1, 3600)} detik.');
+      case OtpResult.accountNotFound:
+        setState(() => _emailError =
+            'Email ini belum memiliki akun Sajia. Pilih Daftar bisnis baru.');
+      case OtpResult.networkUnavailable:
+        setState(() => _emailError =
+            'Tidak dapat terhubung. Periksa internet lalu coba lagi.');
       case OtpResult.failed:
         setState(() => _emailError =
-            'OTP gagal: ${service.lastOtpError ?? 'periksa koneksi lalu coba lagi.'}');
+            'Kode OTP belum dapat dikirim. Coba lagi atau hubungi support jika berulang.');
     }
   }
 
@@ -122,12 +166,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
     );
     if (!mounted) return;
     if (result == OtpVerifyResult.success) {
-      if (_isDeviceRecovery) {
-        await _restoreExistingAccount();
-      } else {
-        setState(() => _isLoading = false);
-        _goTo(_Step.outlet);
-      }
+      await _continueAfterVerifiedEmail();
     } else {
       setState(() {
         _isLoading = false;
@@ -136,17 +175,52 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
             'Kode OTP sudah kedaluwarsa atau sudah diganti. Kirim ulang kode.',
           OtpVerifyResult.failed =>
             'Verifikasi OTP gagal. Periksa koneksi lalu coba lagi.',
+          OtpVerifyResult.networkUnavailable =>
+            'Tidak dapat terhubung. Periksa internet lalu coba lagi.',
+          OtpVerifyResult.rateLimited =>
+            'Terlalu banyak percobaan verifikasi. Tunggu sebentar lalu coba lagi.',
           _ => 'Kode OTP tidak valid. Pastikan memakai kode terbaru.',
         };
       });
     }
   }
 
-  Future<void> _restoreExistingAccount() async {
+  Future<void> _continueAfterVerifiedEmail() async {
+    try {
+      final outlets = await OnboardingService().getAuthenticatedOwnerOutlets();
+      if (!mounted) return;
+      if (outlets.isNotEmpty) {
+        await _restoreExistingAccount(outlets: outlets);
+        return;
+      }
+      if (_isDeviceRecovery) {
+        setState(() {
+          _isLoading = false;
+          _emailError =
+              'Email terverifikasi, tetapi belum terhubung ke outlet Sajia. Kembali lalu pilih Daftar bisnis baru.';
+        });
+        return;
+      }
+      setState(() => _isLoading = false);
+      _goTo(_Step.outlet);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _emailError =
+            'Akun sudah terverifikasi, tetapi data outlet belum dapat diperiksa. Periksa internet lalu coba lagi.';
+      });
+    }
+  }
+
+  Future<void> _restoreExistingAccount({
+    List<Map<String, dynamic>>? outlets,
+  }) async {
     try {
       final service = OnboardingService();
-      final outlets = await service.getAuthenticatedOwnerOutlets();
-      if (outlets.isEmpty) {
+      final ownerOutlets =
+          outlets ?? await service.getAuthenticatedOwnerOutlets();
+      if (ownerOutlets.isEmpty) {
         if (!mounted) return;
         setState(() {
           _isLoading = false;
@@ -156,7 +230,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
         return;
       }
 
-      final outletId = outlets.first['id'] as String?;
+      final outletId = ownerOutlets.first['id'] as String?;
       if (outletId == null || outletId.isEmpty) {
         throw StateError('ID outlet akun tidak valid');
       }
@@ -169,7 +243,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
 
       final db = ref.read(databaseProvider);
       final users = await db.sessionDao.getActiveUsers();
-      final restoredOutletIds = outlets
+      final restoredOutletIds = ownerOutlets
           .map((outlet) => outlet['id'] as String?)
           .whereType<String>()
           .toSet();
@@ -200,7 +274,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
       setState(() {
         _isLoading = false;
         _emailError =
-            'Data akun belum dapat dipulihkan. Periksa internet lalu coba lagi. ($e)';
+            'Data akun belum dapat dipulihkan. Periksa internet lalu coba lagi.';
       });
     }
   }
@@ -212,8 +286,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
       if (!_settingConfirm) {
         if (_pin.length < _pinLength) _pin += digit;
         if (_pin.length == _pinLength) {
-          Future.delayed(const Duration(milliseconds: 200),
-              () => setState(() => _settingConfirm = true));
+          Future.delayed(const Duration(milliseconds: 200), () {
+            if (mounted) setState(() => _settingConfirm = true);
+          });
         }
       } else {
         if (_confirmPin.length < _pinLength) _confirmPin += digit;
@@ -389,7 +464,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
               label: 'Email owner *',
               hint: 'nama@email.com',
               icon: Icons.alternate_email_rounded,
-              type: TextInputType.emailAddress),
+              type: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _sendOtp()),
           if (_emailError != null) ...[
             const SizedBox(height: 10),
             Text(_emailError!,
@@ -414,13 +492,21 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
         child: Column(children: [
           TextField(
             controller: _otpCtrl,
+            autofocus: true,
             keyboardType: TextInputType.number,
+            autofillHints: const [AutofillHints.oneTimeCode],
+            textInputAction: TextInputAction.done,
             maxLength: 6,
             textAlign: TextAlign.center,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration:
                 const InputDecoration(hintText: '••••••', counterText: ''),
             onSubmitted: (_) => _verifyOtp(),
+            onChanged: (value) {
+              if (value.length == 6 && !_isLoading) {
+                unawaited(_verifyOtp());
+              }
+            },
           ),
           if (_emailError != null) ...[
             const SizedBox(height: 10),
@@ -434,8 +520,13 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
               loading: _isLoading,
               onTap: _verifyOtp),
           TextButton(
-              onPressed: _isLoading ? null : _sendOtp,
-              child: const Text('Kirim ulang kode')),
+              onPressed:
+                  _isLoading || _otpCooldownSeconds > 0 ? null : _sendOtp,
+              child: Text(
+                _otpCooldownSeconds > 0
+                    ? 'Kirim ulang dalam $_otpCooldownSeconds detik'
+                    : 'Kirim ulang kode',
+              )),
         ]),
       );
 
@@ -551,10 +642,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
     );
   }
 
-  void _snack(String msg) {
+  void _snack(String msg, {bool success = false}) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
-      backgroundColor: AppTheme.danger,
+      backgroundColor: success ? AppTheme.success : AppTheme.danger,
       behavior: SnackBarBehavior.floating,
     ));
   }
@@ -567,6 +658,7 @@ class _ProgressBar extends StatelessWidget {
 
   static const _steps = [
     _Step.email,
+    _Step.otp,
     _Step.outlet,
     _Step.pin,
   ];
@@ -681,12 +773,18 @@ class _Field extends StatelessWidget {
   final String label, hint;
   final IconData icon;
   final TextInputType type;
+  final Iterable<String>? autofillHints;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onSubmitted;
   const _Field(
       {required this.ctrl,
       required this.label,
       required this.hint,
       required this.icon,
-      this.type = TextInputType.text});
+      this.type = TextInputType.text,
+      this.autofillHints,
+      this.textInputAction,
+      this.onSubmitted});
 
   @override
   Widget build(BuildContext context) => Column(
@@ -701,6 +799,9 @@ class _Field extends StatelessWidget {
           TextField(
             controller: ctrl,
             keyboardType: type,
+            autofillHints: autofillHints,
+            textInputAction: textInputAction,
+            onSubmitted: onSubmitted,
             decoration: InputDecoration(
               hintText: hint,
               hintStyle: const TextStyle(color: Color(0xFFD1D5DB)),
@@ -814,52 +915,66 @@ class _Numpad extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 18,
-        childAspectRatio: 1,
-      ),
-      itemCount: keys.length,
-      itemBuilder: (context, index) {
-        final key = keys[index];
-        if (key.isEmpty) return const SizedBox.shrink();
-
-        return Center(
-          child: GestureDetector(
-            onTap: () => key == 'del' ? onDelete() : onDigit(key),
-            child: Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(36),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Center(
-                child: key == 'del'
-                    ? const Icon(Icons.backspace_outlined,
-                        size: 22, color: Color(0xFF6B7280))
-                    : Text(key,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF111827),
-                        )),
-              ),
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final buttonSize = (constraints.maxWidth / 3 - 18).clamp(54.0, 72.0);
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1,
           ),
+          itemCount: keys.length,
+          itemBuilder: (context, index) {
+            final key = keys[index];
+            if (key.isEmpty) return const SizedBox.shrink();
+            final isDelete = key == 'del';
+            return Center(
+              child: Semantics(
+                button: true,
+                label: isDelete ? 'Hapus digit PIN' : 'Digit $key',
+                child: Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(buttonSize / 2),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(buttonSize / 2),
+                    onTap: () => isDelete ? onDelete() : onDigit(key),
+                    child: Container(
+                      width: buttonSize,
+                      height: buttonSize,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(36),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: isDelete
+                            ? const Icon(Icons.backspace_outlined,
+                                size: 22, color: Color(0xFF6B7280))
+                            : Text(key,
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF111827),
+                                )),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );

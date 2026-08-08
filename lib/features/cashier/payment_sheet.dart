@@ -10,6 +10,7 @@ import '../../core/utils.dart';
 import '../../core/notification_service.dart';
 import '../../core/print_service.dart';
 import '../../data/local/app_database.dart';
+import '../../data/local/daos/product_dao.dart';
 import 'package:drift/drift.dart' show Value;
 
 class PaymentSheet extends ConsumerStatefulWidget {
@@ -60,11 +61,60 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
     ].where((a) => a >= t).take(4).map((e) => e.toDouble()).toList();
   }
 
+  bool _isValidPercentage(double? value) =>
+      value != null && value.isFinite && value >= 0 && value <= 100;
+
   Future<void> _processPayment() async {
-    if (_method == 'cash' && _paidAmount < _total) {
+    final outlet = ref.read(currentOutletProvider).value;
+    if (outlet == null) {
       setState(() {
         _validationMessage =
-            'Uang bayar kurang ${(_total - _paidAmount).toRupiah}.';
+            'Pengaturan pajak dan service outlet belum selesai dimuat. '
+            'Tunggu sebentar lalu coba lagi.';
+      });
+      return;
+    }
+
+    final taxPercent = double.tryParse(outlet.taxPercent);
+    final servicePercent = double.tryParse(outlet.serviceChargePercent);
+    if (!_isValidPercentage(taxPercent) ||
+        !_isValidPercentage(servicePercent)) {
+      setState(() {
+        _validationMessage =
+            'Pengaturan pajak atau service outlet tidak valid. '
+            'Periksa Pengaturan Struk sebelum menerima pembayaran.';
+      });
+      return;
+    }
+    final appliedTaxPercent = taxPercent!;
+    final appliedServicePercent = servicePercent!;
+
+    final currentUser = ref.read(currentUserProvider);
+    if (currentUser == null) {
+      setState(() {
+        _validationMessage =
+            'Sesi kasir sudah berakhir. Masuk kembali sebelum pembayaran.';
+      });
+      return;
+    }
+
+    final initialCart = ref.read(cartProvider);
+    if (initialCart.items.isEmpty ||
+        initialCart.items.any(
+          (item) => !item.quantity.isFinite || item.quantity <= 0,
+        )) {
+      setState(() {
+        _validationMessage = 'Keranjang belum memiliki item yang valid.';
+      });
+      return;
+    }
+
+    final checkoutTotal =
+        initialCart.total(appliedTaxPercent, appliedServicePercent);
+    if (_method == 'cash' && _paidAmount < checkoutTotal) {
+      setState(() {
+        _validationMessage =
+            'Uang bayar kurang ${(checkoutTotal - _paidAmount).toRupiah}.';
       });
       return;
     }
@@ -76,45 +126,25 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
 
     var paymentCommitted = false;
     try {
-      final cart = ref.read(cartProvider);
+      final cart = initialCart;
       final db = ref.read(databaseProvider);
-      final user = ref.read(currentUserProvider)!;
+      final user = currentUser;
       final outletId = ref.read(currentOutletIdProvider);
       const uuid = Uuid();
-
-      // Validasi ulang stok saat pembayaran untuk mencegah penjualan melebihi
-      // stok ketika data berubah setelah produk dimasukkan ke keranjang.
-      for (final item in cart.items.where((item) => item.trackStock)) {
-        final product = await db.productDao.getProduct(item.productId);
-        final currentStock = double.tryParse(product?.stock ?? '0') ?? 0;
-
-        if (product == null || currentStock < item.quantity) {
-          if (!mounted) return;
-          setState(() {
-            _validationMessage = product == null
-                ? '${item.productName} sudah tidak tersedia.'
-                : 'Stok ${item.productName} tersisa '
-                    '${_formatQuantity(currentStock)}, sedangkan pesanan '
-                    '${_formatQuantity(item.quantity)}.';
-            _isProcessing = false;
-          });
-          return;
-        }
-      }
 
       final today = DateTime.now();
       final orderId = uuid.v4();
       final orderNum = IdGen.orderNumber(today.millisecond % 9999 + 1);
 
-      final taxPercent = _taxPercent;
-      final servicePercent = _servicePercent;
       final subtotal = cart.subtotal;
       final discountAmt = cart.discountValue;
-      final taxAmt = cart.taxAmount(taxPercent);
-      final serviceAmt = cart.serviceChargeAmount(servicePercent);
-      final total = cart.total(taxPercent, servicePercent);
+      final taxAmt = cart.taxAmount(appliedTaxPercent);
+      final serviceAmt = cart.serviceChargeAmount(appliedServicePercent);
+      final total = cart.total(appliedTaxPercent, appliedServicePercent);
       final paidAmt = _method == 'cash' ? _paidAmount : total;
-      final changeAmt = _method == 'cash' ? _change : 0.0;
+      final changeAmt = _method == 'cash'
+          ? (_paidAmount - total).clamp(0.0, double.infinity).toDouble()
+          : 0.0;
       final paidAt = DateTime.now();
 
       final itemLabels = cart.items
@@ -150,6 +180,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
           isSynced: const Value(false),
         ));
 
+        final quantitiesByProduct = <String, double>{};
         for (final item in cart.items) {
           await db.orderDao.addOrderItem(OrderItemsCompanion.insert(
             id: uuid.v4(),
@@ -158,21 +189,34 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
             productName: item.productName,
             variantSummary: Value(item.variantSummary),
             unitPrice: item.unitPrice.toString(),
+            unitCogs: Value(item.unitCogs.toString()),
+            categoryId: Value(item.categoryId),
+            categoryName: Value(item.categoryName),
             quantity: item.quantity.toString(),
             discount: Value(item.discount.toString()),
             subtotal: item.subtotal.toString(),
             notes: Value(item.notes),
           ));
-          await db.productDao.decrementStock(item.productId, item.quantity);
+          quantitiesByProduct.update(
+            item.productId,
+            (current) => current + item.quantity,
+            ifAbsent: () => item.quantity,
+          );
         }
 
-        final stockItems = cart.items
-            .where((item) => item.trackStock)
-            .map((item) => {
-                  'product_id': item.productId,
-                  'quantity': item.quantity,
-                })
-            .toList(growable: false);
+        final stockItems = <Map<String, dynamic>>[];
+        for (final entry in quantitiesByProduct.entries) {
+          final wasTracked = await db.productDao.decrementStock(
+            entry.key,
+            entry.value,
+          );
+          if (wasTracked) {
+            stockItems.add({
+              'product_id': entry.key,
+              'quantity': entry.value,
+            });
+          }
+        }
         if (stockItems.isNotEmpty) {
           await db.syncDao.enqueue(
             tableName: 'stock_sales',
@@ -255,6 +299,22 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
 
       if (!mounted) return;
       _showSuccessDialog(total, changeAmt, orderNum, itemLabels, receiptData);
+    } on StockValidationException catch (error) {
+      if (!mounted) return;
+      var productName = error.productId;
+      for (final item in ref.read(cartProvider).items) {
+        if (item.productId == error.productId) {
+          productName = item.productName;
+          break;
+        }
+      }
+      setState(() {
+        _validationMessage = error.productMissing
+            ? '$productName sudah tidak tersedia.'
+            : 'Stok $productName tersisa '
+                '${_formatQuantity(error.available ?? 0)}, sedangkan pesanan '
+                '${_formatQuantity(error.requested)}.';
+      });
     } catch (e) {
       if (!mounted) return;
       if (paymentCommitted) {
@@ -473,10 +533,17 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
   Widget build(BuildContext context) {
     final cart = ref.watch(cartProvider);
     final outlet = ref.watch(currentOutletProvider).value;
-    final taxPercent = double.tryParse(outlet?.taxPercent ?? '0') ?? 0;
-    final servicePercent =
-        double.tryParse(outlet?.serviceChargePercent ?? '0') ?? 0;
+    final parsedTax =
+        outlet == null ? null : double.tryParse(outlet.taxPercent);
+    final parsedService =
+        outlet == null ? null : double.tryParse(outlet.serviceChargePercent);
+    final pricingReady = outlet != null &&
+        _isValidPercentage(parsedTax) &&
+        _isValidPercentage(parsedService);
+    final taxPercent = parsedTax ?? 0;
+    final servicePercent = parsedService ?? 0;
     final total = cart.total(taxPercent, servicePercent);
+    final submitDisabled = _isProcessing || !pricingReady;
 
     return Container(
       decoration: BoxDecoration(
@@ -549,6 +616,40 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                 ),
               ),
               const SizedBox(height: 20),
+              if (!pricingReady) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFFDE68A)),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.hourglass_top_rounded,
+                        color: Color(0xFFD97706),
+                        size: 20,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Menunggu pengaturan pajak dan service outlet. '
+                          'Pembayaran belum dapat dikonfirmasi.',
+                          style: TextStyle(
+                            color: Color(0xFF92400E),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               const Text('Metode Pembayaran',
                   style: TextStyle(
                       fontSize: 13,
@@ -569,7 +670,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                   const SizedBox(width: 10),
                   _MethodCard(
                     icon: Icons.qr_code_rounded,
-                    label: 'QRIS',
+                    label: 'QRIS Manual',
                     selected: _method == 'qris',
                     onTap: () => setState(() {
                       _method = 'qris';
@@ -691,7 +792,9 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                       SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Tunjukkan QR code ke pelanggan untuk scan.\nKonfirmasi setelah pembayaran diterima.',
+                          'Gunakan QRIS statis milik outlet. Pembayaran ini '
+                          'tidak diverifikasi otomatis. Konfirmasi hanya '
+                          'setelah saldo benar-benar diterima.',
                           style: TextStyle(fontSize: 12, color: AppTheme.info),
                         ),
                       ),
@@ -737,12 +840,13 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                 const SizedBox(height: 12),
               ],
               Container(
+                key: const ValueKey('payment-submit'),
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  gradient: _isProcessing ? null : AppTheme.payGradient,
-                  color: _isProcessing ? Colors.grey[300] : null,
+                  gradient: submitDisabled ? null : AppTheme.payGradient,
+                  color: submitDisabled ? Colors.grey[300] : null,
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: _isProcessing
+                  boxShadow: submitDisabled
                       ? null
                       : [
                           BoxShadow(
@@ -755,7 +859,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
-                    onTap: _isProcessing ? null : _processPayment,
+                    onTap: submitDisabled ? null : _processPayment,
                     borderRadius: BorderRadius.circular(16),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -769,7 +873,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                               )
                             : Text(
                                 _method == 'qris'
-                                    ? 'Konfirmasi Pembayaran'
+                                    ? 'Saya Sudah Menerima Pembayaran'
                                     : 'Bayar ${total.toRupiah}',
                                 style: const TextStyle(
                                     color: Colors.white,

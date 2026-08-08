@@ -8,10 +8,30 @@ const json = (body: Record<string, unknown>, status = 200) =>
     headers: { "Content-Type": "application/json" },
   });
 
-const addOneMonth = (date: Date) => {
-  const result = new Date(date);
-  result.setMonth(result.getMonth() + 1);
-  return result;
+type MidtransConfig = {
+  environment: "sandbox" | "production";
+  serverKey: string;
+};
+
+const getMidtransConfig = (): MidtransConfig | null => {
+  if (String(Deno.env.get("PAYMENT_PROVIDER") || "").trim().toUpperCase() !== "MIDTRANS") {
+    return null;
+  }
+  const productionFlag = String(Deno.env.get("MIDTRANS_IS_PRODUCTION") || "")
+    .trim()
+    .toLowerCase();
+  if (productionFlag !== "true" && productionFlag !== "false") return null;
+
+  const serverKey = String(Deno.env.get("MIDTRANS_SERVER_KEY") || "").trim();
+  const isProduction = productionFlag === "true";
+  const keyMatchesMode = isProduction
+    ? serverKey.startsWith("Mid-server-") && !serverKey.startsWith("SB-")
+    : serverKey.startsWith("SB-Mid-server-");
+  if (!keyMatchesMode) return null;
+  return {
+    environment: isProduction ? "production" : "sandbox",
+    serverKey,
+  };
 };
 
 const sha512 = async (text: string) => {
@@ -22,126 +42,94 @@ const sha512 = async (text: string) => {
     .join("");
 };
 
+const constantTimeEqual = (left: string, right: string) => {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
+};
+
+const validTimestamp = (value: unknown) => {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+};
+
 const handler = async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const serverKey = Deno.env.get("MIDTRANS_SERVER_KEY");
-  if (!supabaseUrl || !serviceRoleKey || !serverKey) {
+  const midtrans = getMidtransConfig();
+  if (!supabaseUrl || !serviceRoleKey || !midtrans) {
     return json({ error: "Service unavailable" }, 503);
   }
 
   const event = await req.json().catch(() => null);
-  if (!event?.order_id || !event?.status_code || !event?.gross_amount) {
+  const orderId = typeof event?.order_id === "string" ? event.order_id.trim() : "";
+  const statusCode = typeof event?.status_code === "string"
+    ? event.status_code.trim()
+    : String(event?.status_code || "").trim();
+  const grossAmountText = typeof event?.gross_amount === "string"
+    ? event.gross_amount.trim()
+    : String(event?.gross_amount || "").trim();
+  const transactionStatus = typeof event?.transaction_status === "string"
+    ? event.transaction_status.trim().toLowerCase()
+    : "";
+  const signature = typeof event?.signature_key === "string"
+    ? event.signature_key.trim().toLowerCase()
+    : "";
+  if (
+    !orderId || orderId.length > 160 || !statusCode || !grossAmountText ||
+    !transactionStatus || !/^[a-f0-9]{128}$/.test(signature)
+  ) {
     return json({ error: "Invalid Midtrans event" }, 400);
   }
 
   const expectedSignature = await sha512(
-    `${event.order_id}${event.status_code}${event.gross_amount}${serverKey}`,
+    `${orderId}${statusCode}${grossAmountText}${midtrans.serverKey}`,
   );
-  if (event.signature_key !== expectedSignature) {
+  if (!constantTimeEqual(signature, expectedSignature)) {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
-  let { data: order, error } = await supabase
-    .from("plan_orders")
-    .select("id, outlet_id, plan_code, amount, status")
-    .eq("payment_provider", "MIDTRANS")
-    .eq("provider_order_id", event.order_id)
-    .maybeSingle();
-  if (error) return json({ error: "Gagal memuat transaksi" }, 500);
-  if (!order) {
-    const fallback = await supabase
-      .from("plan_orders")
-      .select("id, outlet_id, plan_code, amount, status")
-      .eq("xendit_external_id", event.order_id)
-      .maybeSingle();
-    if (fallback.error) return json({ error: "Gagal memuat transaksi" }, 500);
-    order = fallback.data;
+  const grossAmount = Number(grossAmountText);
+  if (!Number.isFinite(grossAmount) || grossAmount <= 0) {
+    return json({ error: "Invalid payment amount" }, 400);
   }
-  if (!order) return json({ received: true });
 
-  const status = String(event.transaction_status || "").toLowerCase();
-  const fraudStatus = String(event.fraud_status || "").toLowerCase();
-  const paid = status === "settlement" || (status === "capture" && fraudStatus !== "deny");
-  const failed = ["expire", "cancel", "deny", "failure"].includes(status);
-
-  if (paid) {
-    if (Number(event.gross_amount) !== Number(order.amount)) {
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const { data, error } = await supabase.rpc("process_midtrans_notification", {
+    p_order_id: orderId,
+    p_transaction_status: transactionStatus,
+    p_fraud_status: typeof event.fraud_status === "string"
+      ? event.fraud_status.trim().toLowerCase()
+      : "",
+    p_gross_amount: grossAmount,
+    p_paid_at: validTimestamp(event.settlement_time) ||
+      validTimestamp(event.transaction_time) || new Date().toISOString(),
+    p_reference_id: typeof event.transaction_id === "string"
+      ? event.transaction_id.trim().slice(0, 200)
+      : null,
+    p_environment: midtrans.environment,
+  });
+  if (error) {
+    const message = String(error.message || "");
+    if (message.includes("PAYMENT_AMOUNT_MISMATCH")) {
       return json({ error: "Jumlah pembayaran tidak cocok" }, 400);
     }
-
-    const paidAt = event.settlement_time
-      ? new Date(event.settlement_time)
-      : event.transaction_time
-        ? new Date(event.transaction_time)
-        : new Date();
-
-    const activateOrder = await supabase.from("plan_orders").update({
-      status: "ACTIVE",
-      paid_at: paidAt.toISOString(),
-      starts_at: paidAt.toISOString(),
-      payment_provider: "MIDTRANS",
-      provider_order_id: event.order_id,
-      provider_reference_id: event.transaction_id || null,
-    }).eq("id", order.id);
-    if (activateOrder.error) return json({ error: "Gagal mengaktifkan pembayaran" }, 500);
-
-    if (order.plan_code === "PRO_LIFETIME") {
-      const { data: paidOutlet, error: paidOutletError } = await supabase
-        .from("outlets")
-        .select("owner_email")
-        .eq("id", order.outlet_id)
-        .maybeSingle();
-      if (paidOutletError || !paidOutlet) {
-        return json({ error: "Outlet pembayaran tidak ditemukan" }, 500);
-      }
-      const ownerEmail = String(paidOutlet.owner_email || "").trim().toLowerCase();
-      if (!ownerEmail) {
-        return json({ error: "Email owner pada outlet pembayaran tidak valid" }, 500);
-      }
-      const activatePro = await supabase.from("outlets").update({
-        license_key: "PRO",
-        license_expiry: null,
-      }).ilike("owner_email", ownerEmail);
-      if (activatePro.error) return json({ error: "Gagal mengaktifkan Sajia Pro" }, 500);
+    if (message.includes("PAYMENT_ENVIRONMENT_MISMATCH")) {
+      return json({ error: "Lingkungan pembayaran tidak cocok" }, 400);
     }
-
-    if (order.plan_code === "CLOUD_MONTHLY") {
-      const { data: outlet } = await supabase.from("outlets")
-        .select("cloud_expiry")
-        .eq("id", order.outlet_id)
-        .maybeSingle();
-      const currentExpiry = outlet?.cloud_expiry
-        ? new Date(outlet.cloud_expiry)
-        : null;
-      const expiryBase = currentExpiry && currentExpiry > paidAt
-        ? currentExpiry
-        : paidAt;
-      const cloudExpiry = addOneMonth(expiryBase);
-
-      const updateExpiry = await supabase.from("plan_orders").update({
-        expires_at: cloudExpiry.toISOString(),
-      }).eq("id", order.id);
-      if (updateExpiry.error) return json({ error: "Gagal menyimpan masa Cloud" }, 500);
-      const activateCloud = await supabase.from("outlets").update({
-        cloud_expiry: cloudExpiry.toISOString(),
-      }).eq("id", order.outlet_id);
-      if (activateCloud.error) return json({ error: "Gagal mengaktifkan Sajia Cloud" }, 500);
-    }
-  } else if (failed) {
-    const markFailed = await supabase.from("plan_orders").update({
-      status: status === "expire" ? "EXPIRED" : "FAILED",
-      payment_provider: "MIDTRANS",
-      provider_order_id: event.order_id,
-      provider_reference_id: event.transaction_id || null,
-    }).eq("id", order.id);
-    if (markFailed.error) return json({ error: "Gagal memperbarui transaksi" }, 500);
+    console.error("Atomic Midtrans provisioning failed", error);
+    // A non-2xx response asks Midtrans to retry. No entitlement can be partially
+    // provisioned because the RPC runs in one PostgreSQL transaction.
+    return json({ error: "Gagal memproses notifikasi pembayaran" }, 500);
   }
 
-  return json({ received: true });
+  return json({ received: true, result: data });
 };
 
 export default {

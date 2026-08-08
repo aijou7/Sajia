@@ -40,8 +40,9 @@ const handler = async (req: Request) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) return json({ error: "Service unavailable" }, 503);
 
-  const { outlet_id: outletId } = await req.json().catch(() => ({}));
-  if (typeof outletId !== "string" || outletId.length === 0) {
+  const payload = await req.json().catch(() => ({}));
+  const outletId = typeof payload.outlet_id === "string" ? payload.outlet_id.trim() : "";
+  if (!outletId || outletId.length > 120) {
     return json({ error: "Outlet tidak valid" }, 400);
   }
 
@@ -52,34 +53,30 @@ const handler = async (req: Request) => {
 
   const { data: outlet, error } = await supabase
     .from("outlets")
-    .select("license_key, cloud_expiry, owner_email")
+    .select("license_key, license_expiry, cloud_expiry, owner_email")
     .eq("id", outletId)
     .maybeSingle();
   if (error) return json({ error: "Gagal memuat status" }, 500);
   if (!outlet) return json({ error: "Outlet tidak ditemukan" }, 404);
 
   const outletOwnerEmail = String(outlet.owner_email || "").trim().toLowerCase();
-  if (outletOwnerEmail && outletOwnerEmail !== ownerEmail) {
+  if (!outletOwnerEmail || outletOwnerEmail !== ownerEmail) {
     return json({ error: "Outlet bukan milik akun owner ini" }, 403);
-  }
-  if (!outletOwnerEmail) {
-    const claim = await supabase.from("outlets")
-      .update({ owner_email: ownerEmail })
-      .eq("id", outletId);
-    if (claim.error) return json({ error: "Gagal menghubungkan outlet ke owner" }, 500);
   }
 
   const { data: ownerOutlets, error: ownerOutletsError } = await supabase
     .from("outlets")
-    .select("license_key")
-    .ilike("owner_email", ownerEmail);
+    .select("license_key, license_expiry")
+    .eq("owner_email", ownerEmail);
   if (ownerOutletsError) return json({ error: "Gagal memuat lisensi owner" }, 500);
 
-  const cloudExpiry = outlet?.cloud_expiry ? new Date(outlet.cloud_expiry) : null;
+  const now = new Date();
+  const cloudExpiry = outlet.cloud_expiry ? new Date(outlet.cloud_expiry) : null;
   const isPro = (ownerOutlets || []).some((ownedOutlet) =>
     String(ownedOutlet.license_key || "").trim().toUpperCase().startsWith("PRO")
+    && (!ownedOutlet.license_expiry || new Date(ownedOutlet.license_expiry) > now)
   );
-  const isCloud = Boolean(isPro && cloudExpiry && cloudExpiry > new Date());
+  const isCloud = Boolean(isPro && cloudExpiry && cloudExpiry > now);
   return json({
     is_pro: isPro,
     is_cloud: isCloud,

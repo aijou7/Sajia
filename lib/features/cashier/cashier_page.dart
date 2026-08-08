@@ -9,6 +9,8 @@ import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
 import '../../domain/entities/entities.dart';
+import '../../domain/product_variant_options.dart';
+import '../shared/polish_widgets.dart';
 import '../shared/product_image.dart';
 import 'cart_panel.dart';
 import 'payment_sheet.dart';
@@ -96,28 +98,35 @@ class _CashierPageState extends ConsumerState<CashierPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => DraggableScrollableSheet(
         initialChildSize: 0.75,
         maxChildSize: 0.95,
         minChildSize: 0.4,
-        builder: (_, sc) =>
-            CartPanel(onCheckout: _openPayment, scrollController: sc),
+        builder: (_, sc) => CartPanel(
+          onCheckout: () => _openPayment(closeCartSheet: true),
+          scrollController: sc,
+        ),
       ),
     );
   }
 
-  void _openPayment() {
-    if (Navigator.canPop(context)) Navigator.pop(context);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const PaymentSheet(),
-    );
+  void _openPayment({bool closeCartSheet = false}) {
+    if (closeCartSheet) Navigator.of(context).pop();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => const PaymentSheet(),
+      );
+    });
   }
 
-  void _addToCart(Product product) {
+  Future<void> _addToCart(Product product) async {
     HapticFeedback.lightImpact();
     final price = double.tryParse(product.price) ?? 0;
     final availableStock = double.tryParse(product.stock) ?? 0;
@@ -143,26 +152,73 @@ class _CashierPageState extends ConsumerState<CashierPage> {
       return;
     }
 
+    List<ProductVariant> storedVariants;
+    try {
+      storedVariants =
+          await ref.read(databaseProvider).productDao.getVariants(product.id);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Pilihan produk gagal dibaca. Coba lagi.'),
+        backgroundColor: AppTheme.danger,
+      ));
+      return;
+    }
+    if (!mounted) return;
+    final variants = storedVariants
+        .map((variant) => ProductVariantChoiceGroup(
+              id: variant.id,
+              name: variant.name.trim(),
+              options: parseProductVariantOptionDetails(variant.options),
+              isRequired: variant.isRequired,
+            ))
+        .where(
+            (variant) => variant.name.isNotEmpty && variant.options.isNotEmpty)
+        .toList();
+    variants.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+
+    String? variantSummary;
+    var variantPriceDelta = 0.0;
+    if (variants.isNotEmpty) {
+      final selection =
+          await showModalBottomSheet<ProductVariantSelectionResult>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => ProductVariantSelectionSheet(
+          productName: product.name,
+          groups: variants,
+        ),
+      );
+      if (!mounted || selection == null) return;
+      variantSummary = selection.summary.isEmpty ? null : selection.summary;
+      variantPriceDelta = selection.priceDelta;
+    }
+
+    Category? category;
+    final categories = ref.read(categoriesProvider).value ?? const <Category>[];
+    for (final candidate in categories) {
+      if (candidate.id == product.categoryId) {
+        category = candidate;
+        break;
+      }
+    }
+
     ref.read(cartProvider.notifier).addItem(CartItem(
           productId: product.id,
           productName: product.name,
-          unitPrice: price,
+          unitPrice: price + variantPriceDelta,
+          unitCogs: double.tryParse(product.cogs) ?? 0,
+          variantSummary: variantSummary,
           trackStock: product.trackStock,
           availableStock: product.trackStock ? availableStock : null,
+          categoryId: category?.id,
+          categoryName: category?.name,
         ));
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.check_circle_outline, color: Colors.white, size: 16),
-        const SizedBox(width: 8),
-        Text('+ ${product.name}'),
-      ]),
-      duration: const Duration(milliseconds: 900),
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: AppTheme.success,
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    ));
+    HapticFeedback.selectionClick();
   }
 
   String _formatStock(double value) => value == value.roundToDouble()
@@ -171,10 +227,275 @@ class _CashierPageState extends ConsumerState<CashierPage> {
 }
 
 // ── TOP BAR ───────────────────────────────────────────────────
+class ProductVariantChoiceGroup {
+  const ProductVariantChoiceGroup({
+    required this.id,
+    required this.name,
+    required this.options,
+    required this.isRequired,
+  });
+
+  final String id;
+  final String name;
+  final List<ProductVariantOption> options;
+  final bool isRequired;
+}
+
+class ProductVariantSelectionResult {
+  const ProductVariantSelectionResult({
+    required this.summary,
+    required this.priceDelta,
+  });
+
+  final String summary;
+  final double priceDelta;
+}
+
+class ProductVariantSelectionSheet extends StatefulWidget {
+  const ProductVariantSelectionSheet({
+    super.key,
+    required this.productName,
+    required this.groups,
+  });
+
+  final String productName;
+  final List<ProductVariantChoiceGroup> groups;
+
+  @override
+  State<ProductVariantSelectionSheet> createState() =>
+      _ProductVariantSelectionSheetState();
+}
+
+class _ProductVariantSelectionSheetState
+    extends State<ProductVariantSelectionSheet> {
+  final Map<String, ProductVariantOption> _selected = {};
+  String? _validationMessage;
+
+  double get _selectedPriceDelta => totalVariantPriceDelta(_selected.values);
+
+  void _submit() {
+    final missing = widget.groups
+        .where((group) => group.isRequired && !_selected.containsKey(group.id))
+        .map((group) => group.name)
+        .toList(growable: false);
+    if (missing.isNotEmpty) {
+      setState(() {
+        _validationMessage =
+            'Pilih ${missing.join(', ')} sebelum menambah ke pesanan.';
+      });
+      return;
+    }
+
+    final summary = buildVariantSummary(widget.groups
+        .where((group) => _selected[group.id]?.name.isNotEmpty == true)
+        .map((group) => MapEntry(
+              group.name,
+              _cashierVariantOptionLabel(_selected[group.id]!),
+            )));
+    final priceDelta = totalVariantPriceDelta(_selected.values);
+    Navigator.pop(
+      context,
+      ProductVariantSelectionResult(
+        summary: summary,
+        priceDelta: priceDelta,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return SafeArea(
+      top: false,
+      child: Container(
+        constraints: BoxConstraints(maxHeight: media.size.height * 0.88),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          10,
+          20,
+          16 + media.viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 18),
+                decoration: BoxDecoration(
+                  color: AppTheme.borderColor,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            Text(
+              'Pilih untuk ${widget.productName}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 20,
+                height: 1.2,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Tambahan harga opsi dihitung otomatis ke item.',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(bottom: 8),
+                itemCount: widget.groups.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 14),
+                itemBuilder: (context, index) {
+                  final group = widget.groups[index];
+                  return Semantics(
+                    container: true,
+                    label:
+                        '${group.name}, ${group.isRequired ? 'wajib' : 'opsional'}',
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppTheme.subtleBorder),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  group.name,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.textPrimary,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: (group.isRequired
+                                          ? AppTheme.primary
+                                          : AppTheme.textSecondary)
+                                      .withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                                child: Text(
+                                  group.isRequired ? 'Wajib' : 'Opsional',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: group.isRequired
+                                        ? AppTheme.primary
+                                        : AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: group.options.map((option) {
+                              final selected = _selected[group.id] == option;
+                              return ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(minHeight: 48),
+                                child: ChoiceChip(
+                                  label: Text(
+                                    _cashierVariantOptionLabel(option),
+                                  ),
+                                  selected: selected,
+                                  showCheckmark: true,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.padded,
+                                  onSelected: (_) {
+                                    setState(() {
+                                      if (selected && !group.isRequired) {
+                                        _selected.remove(group.id);
+                                      } else {
+                                        _selected[group.id] = option;
+                                      }
+                                      _validationMessage = null;
+                                    });
+                                  },
+                                ),
+                              );
+                            }).toList(growable: false),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (_validationMessage != null) ...[
+              const SizedBox(height: 8),
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  _validationMessage!,
+                  style: const TextStyle(
+                    color: AppTheme.danger,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _submit,
+                icon: const Icon(Icons.add_shopping_cart_rounded),
+                label: Text(
+                  _selectedPriceDelta > 0
+                      ? 'Tambah (+${_selectedPriceDelta.toRupiah})'
+                      : 'Tambah ke Pesanan',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  minimumSize: const Size.fromHeight(52),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _cashierVariantOptionLabel(ProductVariantOption option) =>
+    option.priceDelta > 0
+        ? '${option.name} (+${option.priceDelta.toRupiah})'
+        : option.name;
+
 class _TopBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(currentUserProvider);
+    final outlet = ref.watch(currentOutletProvider).value;
     final now = DateTime.now();
     return Container(
       decoration: BoxDecoration(
@@ -225,7 +546,10 @@ class _TopBar extends ConsumerWidget {
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.2,
                     color: AppTheme.textPrimary)),
-            Text(DateHelper.formatDate(now),
+            Text(
+                '${outlet?.name.trim().isNotEmpty == true ? outlet!.name.trim() : 'Outlet aktif'} · ${DateHelper.formatDate(now)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                     fontSize: 11,
                     color: AppTheme.textSecondary,
@@ -407,7 +731,7 @@ class _CategoryBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final catsAsync = ref.watch(categoriesProvider);
     return SizedBox(
-      height: 46,
+      height: 56,
       child: catsAsync.when(
         data: (cats) => ListView(
           scrollDirection: Axis.horizontal,
@@ -434,7 +758,16 @@ class _CategoryBar extends ConsumerWidget {
           ],
         ),
         loading: () => const SizedBox(),
-        error: (_, __) => const SizedBox(),
+        error: (_, __) => Center(
+          child: TextButton.icon(
+            onPressed: () => ref.invalidate(categoriesProvider),
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Muat kategori'),
+            style: TextButton.styleFrom(
+              minimumSize: const Size(150, 48),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -606,7 +939,10 @@ class _MenuGrid extends ConsumerWidget {
         itemCount: 6,
         itemBuilder: (_, __) => _SkeletonCard(),
       ),
-      error: (e, _) => Center(child: Text('Error: $e')),
+      error: (_, __) => ErrorStateView(
+        title: 'Menu belum bisa dimuat',
+        onRetry: () => ref.invalidate(availableProductsProvider),
+      ),
     );
   }
 }

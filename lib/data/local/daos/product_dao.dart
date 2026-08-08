@@ -4,6 +4,31 @@ import '../tables/app_tables.dart';
 
 part 'product_dao.g.dart';
 
+/// Raised when a stock-tracked product can no longer satisfy a sale.
+///
+/// The conditional SQLite update in [ProductDao.decrementStock] is the source
+/// of truth. Callers must not rely on an earlier UI stock check because two
+/// checkouts may race between that check and the actual write.
+class StockValidationException implements Exception {
+  const StockValidationException({
+    required this.productId,
+    required this.requested,
+    this.available,
+  });
+
+  final String productId;
+  final double requested;
+  final double? available;
+
+  bool get productMissing => available == null;
+
+  @override
+  String toString() => productMissing
+      ? 'Product $productId is no longer available'
+      : 'Insufficient stock for $productId: requested $requested, '
+          'available $available';
+}
+
 @DriftAccessor(tables: [Products, Categories, ProductVariants])
 class ProductDao extends DatabaseAccessor<AppDatabase> with _$ProductDaoMixin {
   ProductDao(super.db);
@@ -85,12 +110,87 @@ class ProductDao extends DatabaseAccessor<AppDatabase> with _$ProductDaoMixin {
         ),
       );
 
-  Future<void> decrementStock(String productId, double qty) async {
+  /// Atomically validates and decrements stock for one product.
+  ///
+  /// Returns `true` when the product is stock-tracked and was decremented, or
+  /// `false` when stock tracking is disabled. A missing product or insufficient
+  /// stock throws [StockValidationException]. The `WHERE stock >= quantity`
+  /// condition prevents two concurrent checkouts from both consuming the same
+  /// remaining stock.
+  Future<bool> decrementStock(String productId, double qty) async {
+    if (!qty.isFinite || qty <= 0) {
+      throw ArgumentError.value(
+          qty, 'qty', 'must be finite and greater than 0');
+    }
+
     final product = await getProduct(productId);
-    if (product == null || !product.trackStock) return;
-    final currentStock = double.tryParse(product.stock) ?? 0;
-    final newStock = (currentStock - qty).clamp(0.0, double.infinity);
-    await updateStock(productId, newStock);
+    if (product == null) {
+      throw StockValidationException(
+        productId: productId,
+        requested: qty,
+      );
+    }
+    if (!product.trackStock) return false;
+
+    final affected = await customUpdate(
+      '''
+      UPDATE products
+      SET stock = CAST(CAST(stock AS REAL) - ? AS TEXT),
+          updated_at = ?,
+          is_synced = 0
+      WHERE id = ?
+        AND track_stock = 1
+        AND CAST(stock AS REAL) >= ?
+      ''',
+      variables: [
+        Variable<double>(qty),
+        Variable<DateTime>(DateTime.now()),
+        Variable<String>(productId),
+        Variable<double>(qty),
+      ],
+      updates: {products},
+    );
+
+    if (affected == 1) return true;
+
+    final latest = await getProduct(productId);
+    if (latest != null && !latest.trackStock) return false;
+    throw StockValidationException(
+      productId: productId,
+      requested: qty,
+      available: latest == null ? null : (double.tryParse(latest.stock) ?? 0.0),
+    );
+  }
+
+  /// Restores stock as part of an already-open database transaction.
+  ///
+  /// The caller is responsible for idempotency (for example by transitioning
+  /// an order from `paid` to `void` only once).
+  Future<double?> restoreStock(String productId, double qty) async {
+    if (!qty.isFinite || qty <= 0) {
+      throw ArgumentError.value(
+          qty, 'qty', 'must be finite and greater than 0');
+    }
+
+    final affected = await customUpdate(
+      '''
+      UPDATE products
+      SET stock = CAST(CAST(stock AS REAL) + ? AS TEXT),
+          updated_at = ?,
+          is_synced = 0
+      WHERE id = ? AND track_stock = 1
+      ''',
+      variables: [
+        Variable<double>(qty),
+        Variable<DateTime>(DateTime.now()),
+        Variable<String>(productId),
+      ],
+      updates: {products},
+    );
+    if (affected != 1) return null;
+
+    final restored = await getProduct(productId);
+    return restored == null ? null : double.tryParse(restored.stock);
   }
 
   Future<List<Product>> getLowStockProducts(String outletId) async {

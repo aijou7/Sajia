@@ -10,6 +10,7 @@ import '../cashier/sales_history_page.dart';
 import '../dashboard/business_dashboard_page.dart';
 import '../reports/reports_page.dart';
 import '../settings/settings_page.dart';
+import 'more_page.dart';
 
 class MainScaffold extends ConsumerStatefulWidget {
   final int currentIndex;
@@ -31,6 +32,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         4 => const BusinessDashboardPage(),
         5 => const ReportsPage(),
         6 => const SettingsPage(),
+        7 => MorePage(onOpenDestination: _goTo),
         _ => const CashierPage(),
       };
 
@@ -38,7 +40,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   void initState() {
     super.initState();
     _currentIndex = widget.currentIndex;
-    _pages = List<Widget?>.filled(7, null);
+    _pages = List<Widget?>.filled(8, null);
     _pages[_currentIndex] = _pageForIndex(_currentIndex);
   }
 
@@ -62,12 +64,29 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
-    final canViewFinancialReports = user?.canViewFinancialReports == true;
-    final canManageOperations = user?.canManageOperations == true;
+    final canViewHistory = user?.canManageOperations == true ||
+        user?.canViewFinancialReports == true;
+    final canViewReports = user?.canViewFinancialReports == true;
+    final canManageSettings = user?.canManageOperations == true;
+    final isRestrictedDestination = switch (_currentIndex) {
+      3 => !canViewHistory,
+      4 || 5 => !canViewReports,
+      6 => !canManageSettings,
+      _ => false,
+    };
+    final visibleIndex = isRestrictedDestination ? 0 : _currentIndex;
+
+    if (isRestrictedDestination) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _currentIndex != 0) _goTo(0);
+      });
+    }
+    _pages[visibleIndex] ??= _pageForIndex(visibleIndex);
+    final moreSelected = visibleIndex >= 4;
 
     return Scaffold(
       body: IndexedStack(
-        index: _currentIndex,
+        index: visibleIndex,
         children: List<Widget>.generate(
           _pages.length,
           (index) => _pages[index] ?? const SizedBox.shrink(),
@@ -94,54 +113,38 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
                 icon: Icons.point_of_sale_outlined,
                 activeIcon: Icons.point_of_sale_rounded,
                 label: 'Kasir',
-                selected: _currentIndex == 0,
+                selected: visibleIndex == 0,
                 onTap: () => _goTo(0),
               ),
               _NavItem(
                 icon: Icons.table_bar_outlined,
                 activeIcon: Icons.table_bar_rounded,
                 label: 'Meja',
-                selected: _currentIndex == 1,
+                selected: visibleIndex == 1,
                 onTap: () => _goTo(1),
               ),
               _NavItem(
                 icon: Icons.menu_book_outlined,
                 activeIcon: Icons.menu_book_rounded,
                 label: 'Menu',
-                selected: _currentIndex == 2,
+                selected: visibleIndex == 2,
                 onTap: () => _goTo(2),
               ),
+              if (canViewHistory)
+                _NavItem(
+                  icon: Icons.history_outlined,
+                  activeIcon: Icons.history_rounded,
+                  label: 'Riwayat',
+                  selected: visibleIndex == 3,
+                  onTap: () => _goTo(3),
+                ),
               _NavItem(
-                icon: Icons.history_outlined,
-                activeIcon: Icons.history_rounded,
-                label: 'Riwayat',
-                selected: _currentIndex == 3,
-                onTap: () => _goTo(3),
+                icon: Icons.grid_view_outlined,
+                activeIcon: Icons.grid_view_rounded,
+                label: 'Lainnya',
+                selected: moreSelected,
+                onTap: () => _goTo(7),
               ),
-              if (canViewFinancialReports) ...[
-                _NavItem(
-                  icon: Icons.dashboard_outlined,
-                  activeIcon: Icons.dashboard_rounded,
-                  label: 'Dashboard',
-                  selected: _currentIndex == 4,
-                  onTap: () => _goTo(4),
-                ),
-                _NavItem(
-                  icon: Icons.bar_chart_outlined,
-                  activeIcon: Icons.bar_chart_rounded,
-                  label: 'Laporan',
-                  selected: _currentIndex == 5,
-                  onTap: () => _goTo(5),
-                ),
-              ],
-              if (canManageOperations)
-                _NavItem(
-                  icon: Icons.settings_outlined,
-                  activeIcon: Icons.settings_rounded,
-                  label: 'Setting',
-                  selected: _currentIndex == 6,
-                  onTap: () => _goTo(6),
-                ),
             ]),
           ),
         ),
@@ -202,7 +205,7 @@ class _NavItem extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 9.5,
+                    fontSize: 11,
                     fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
                     color:
                         selected ? AppTheme.primary : const Color(0xFFB0B7C3),
