@@ -305,6 +305,87 @@ class OrderDao extends DatabaseAccessor<AppDatabase> with _$OrderDaoMixin {
     return sorted.take(limit).toList();
   }
 
+  /// Rekap penjualan yang dipisahkan berdasarkan kategori produk.
+  Future<List<Map<String, dynamic>>> getSalesByCategoryForScope(
+    List<String>? outletIds,
+    DateTime from,
+    DateTime to,
+  ) async {
+    final paidOrders = await _getPaidOrdersForReport(outletIds, from, to);
+    final orderIds = paidOrders.map((order) => order.id).toList();
+    if (orderIds.isEmpty) return [];
+
+    final items = await (select(orderItems)
+          ..where((item) => item.orderId.isIn(orderIds)))
+        .get();
+    if (items.isEmpty) return [];
+
+    final productIds = items.map((item) => item.productId).toSet().toList();
+    final productRows =
+        await (attachedDatabase.select(attachedDatabase.products)
+              ..where((product) => product.id.isIn(productIds)))
+            .get();
+    final productsById = {
+      for (final product in productRows) product.id: product
+    };
+
+    final categoryIds = productRows
+        .map((product) => product.categoryId)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    final categoryRows = categoryIds.isEmpty
+        ? <Category>[]
+        : await (attachedDatabase.select(attachedDatabase.categories)
+              ..where((category) => category.id.isIn(categoryIds)))
+            .get();
+    final categoriesById = {
+      for (final category in categoryRows) category.id: category,
+    };
+
+    final grouped = <String, Map<String, dynamic>>{};
+    for (final item in items) {
+      final product = productsById[item.productId];
+      final categoryId = product?.categoryId;
+      final category = categoryId == null ? null : categoriesById[categoryId];
+      final key = product == null
+          ? '__deleted__'
+          : (category == null
+              ? '__uncategorized__'
+              : 'category:${category.name.trim().toLowerCase()}');
+      final name = product == null
+          ? 'Produk dihapus'
+          : (category?.name ?? 'Tanpa kategori');
+
+      grouped.putIfAbsent(key, () {
+        return {
+          'categoryId': category?.id,
+          'name': name,
+          'colorHex': category?.colorHex ?? '#6B7280',
+          'qty': 0.0,
+          'revenue': 0.0,
+          '_productIds': <String>{},
+        };
+      });
+
+      grouped[key]!['qty'] = (grouped[key]!['qty'] as double) +
+          (double.tryParse(item.quantity) ?? 0);
+      grouped[key]!['revenue'] = (grouped[key]!['revenue'] as double) +
+          (double.tryParse(item.subtotal) ?? 0);
+      (grouped[key]!['_productIds'] as Set<String>).add(item.productId);
+    }
+
+    final result = grouped.values.map((row) {
+      final productIds = row.remove('_productIds') as Set<String>;
+      row['productCount'] = productIds.length;
+      return row;
+    }).toList()
+      ..sort(
+          (a, b) => (b['revenue'] as double).compareTo(a['revenue'] as double));
+
+    return result;
+  }
+
   Future<List<Order>> _getPaidOrdersForReport(
     List<String>? outletIds,
     DateTime from,

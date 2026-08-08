@@ -1,4 +1,6 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { withSupabase } from "jsr:@supabase/server@^1";
+import { createClient } from "npm:@supabase/supabase-js@^2";
 import {
   checkoutIntegrityHash,
   verifyPlayIntegrity,
@@ -77,7 +79,7 @@ const requireAuthenticatedEmail = async (
   return { email };
 };
 
-Deno.serve(async (req) => {
+const handler = async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
@@ -138,6 +140,16 @@ Deno.serve(async (req) => {
   if (outletError) return json({ error: "Gagal memuat outlet" }, 500);
 
   if (!outlet) {
+    const { count: ownedOutletCount, error: countError } = await supabase
+      .from("outlets")
+      .select("id", { count: "exact", head: true })
+      .ilike("owner_email", ownerEmail);
+    if (countError) return json({ error: "Gagal memeriksa outlet owner" }, 500);
+    if ((ownedOutletCount || 0) > 0) {
+      return json({
+        error: "Outlet aktif tidak cocok dengan akun. Sinkronkan data lalu pilih cabang yang terdaftar.",
+      }, 409);
+    }
     const insert = await supabase.from("outlets").insert({
       id: outletId,
       name: outletName,
@@ -159,21 +171,25 @@ Deno.serve(async (req) => {
     }
   }
 
-  if (planCode === "CLOUD_MONTHLY" && outlet.license_key !== "PRO") {
-    return json({ error: "Sajia Cloud membutuhkan lisensi Pro" }, 403);
+  if (planCode === "CLOUD_MONTHLY") {
+    const { data: ownerOutlets, error: ownerOutletsError } = await supabase
+      .from("outlets")
+      .select("license_key")
+      .ilike("owner_email", ownerEmail);
+    if (ownerOutletsError) return json({ error: "Gagal memeriksa lisensi Pro" }, 500);
+    const ownerHasPro = (ownerOutlets || []).some((ownedOutlet) =>
+      String(ownedOutlet.license_key || "").trim().toUpperCase().startsWith("PRO")
+    );
+    if (!ownerHasPro) {
+      return json({ error: "Sajia Cloud membutuhkan lisensi Pro" }, 403);
+    }
   }
 
   const successUrl =
     Deno.env.get("SAJIA_PAYMENT_SUCCESS_URL") || "https://sajia-owner.pages.dev/payment/success";
   const failureUrl =
     Deno.env.get("SAJIA_PAYMENT_FAILURE_URL") || "https://sajia-owner.pages.dev/payment/failed";
-  const preferredProvider = String(Deno.env.get("PAYMENT_PROVIDER") || "").toUpperCase();
-  const provider = preferredProvider || "MIDTRANS";
   const externalId = createProviderOrderId(planCode);
-
-  if (provider !== "MIDTRANS") {
-    return json({ error: "Provider pembayaran tidak didukung" }, 503);
-  }
 
   const serverKey = Deno.env.get("MIDTRANS_SERVER_KEY");
   if (!serverKey) return json({ error: "Midtrans belum dikonfigurasi" }, 503);
@@ -187,6 +203,9 @@ Deno.serve(async (req) => {
       Authorization: `Basic ${btoa(`${serverKey}:`)}`,
       "Content-Type": "application/json",
       Accept: "application/json",
+      // Keep each transaction self-contained. This also prevents sandbox and
+      // production dashboard notification settings from drifting apart.
+      "X-Override-Notification": `${supabaseUrl}/functions/v1/midtrans-webhook`,
     },
     body: JSON.stringify({
       transaction_details: {
@@ -240,4 +259,8 @@ Deno.serve(async (req) => {
     currency: "IDR",
     provider: "MIDTRANS",
   });
-});
+};
+
+export default {
+  fetch: withSupabase({ auth: "none" }, handler),
+};

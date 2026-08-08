@@ -76,7 +76,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
   }
 
   Future<void> _sendOtp() async {
-    final email = _emailCtrl.text.trim().toLowerCase();
+    if (_isLoading) return;
+    final service = OnboardingService();
+    final email = service.normalizeEmail(_emailCtrl.text);
     if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
       setState(() => _emailError = 'Masukkan alamat email yang valid.');
       return;
@@ -84,8 +86,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
     setState(() {
       _isLoading = true;
       _emailError = null;
+      _emailCtrl.text = email;
+      _otpCtrl.clear();
     });
-    final service = OnboardingService();
     final result =
         await service.sendOtp(email, shouldCreateUser: !_isDeviceRecovery);
     if (!mounted) return;
@@ -103,6 +106,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
   }
 
   Future<void> _verifyOtp() async {
+    if (_isLoading) return;
     if (_otpCtrl.text.trim().length != 6) {
       setState(() => _emailError = 'Masukkan 6 digit kode OTP.');
       return;
@@ -111,8 +115,11 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
       _isLoading = true;
       _emailError = null;
     });
-    final result = await OnboardingService()
-        .verifyOtp(_emailCtrl.text.trim(), _otpCtrl.text.trim());
+    final service = OnboardingService();
+    final result = await service.verifyOtp(
+      service.normalizeEmail(_emailCtrl.text),
+      _otpCtrl.text,
+    );
     if (!mounted) return;
     if (result == OtpVerifyResult.success) {
       if (_isDeviceRecovery) {
@@ -124,9 +131,13 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
     } else {
       setState(() {
         _isLoading = false;
-        _emailError = result == OtpVerifyResult.expired
-            ? 'Kode OTP sudah kedaluwarsa. Kirim ulang kode.'
-            : 'Kode OTP tidak valid. Coba lagi.';
+        _emailError = switch (result) {
+          OtpVerifyResult.expired =>
+            'Kode OTP sudah kedaluwarsa atau sudah diganti. Kirim ulang kode.',
+          OtpVerifyResult.failed =>
+            'Verifikasi OTP gagal. Periksa koneksi lalu coba lagi.',
+          _ => 'Kode OTP tidak valid. Pastikan memakai kode terbaru.',
+        };
       });
     }
   }

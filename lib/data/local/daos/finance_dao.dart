@@ -45,6 +45,9 @@ class FinanceDao extends DatabaseAccessor<AppDatabase> with _$FinanceDaoMixin {
       (update(expenses)..where((expense) => expense.id.equals(id)))
           .write(const ExpensesCompanion(isSynced: Value(true)));
 
+  Future<int> deleteExpense(String id) =>
+      (delete(expenses)..where((expense) => expense.id.equals(id))).go();
+
   Future<List<Expense>> getExpenses(
     String outletId,
     DateTime from,

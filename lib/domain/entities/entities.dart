@@ -8,6 +8,8 @@ class CartItem extends Equatable {
   final double discount;
   final String? notes;
   final String? variantSummary;
+  final bool trackStock;
+  final double? availableStock;
 
   const CartItem({
     required this.productId,
@@ -17,6 +19,8 @@ class CartItem extends Equatable {
     this.discount = 0,
     this.notes,
     this.variantSummary,
+    this.trackStock = false,
+    this.availableStock,
   });
 
   double get subtotal => (unitPrice - discount) * quantity;
@@ -30,10 +34,22 @@ class CartItem extends Equatable {
         discount: discount ?? this.discount,
         notes: notes ?? this.notes,
         variantSummary: variantSummary,
+        trackStock: trackStock,
+        availableStock: availableStock,
       );
 
   @override
-  List<Object?> get props => [productId, variantSummary, notes];
+  List<Object?> get props => [
+        productId,
+        productName,
+        unitPrice,
+        quantity,
+        discount,
+        notes,
+        variantSummary,
+        trackStock,
+        availableStock,
+      ];
 }
 
 class Cart extends Equatable {
@@ -94,7 +110,16 @@ class Cart extends Equatable {
       );
 
   @override
-  List<Object?> get props => [items, tableId, orderType];
+  List<Object?> get props => [
+        items,
+        tableId,
+        tableLabel,
+        orderType,
+        discountPercent,
+        discountAmount,
+        customerName,
+        notes,
+      ];
 }
 
 class AppUser extends Equatable {

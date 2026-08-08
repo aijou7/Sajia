@@ -1,4 +1,6 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { withSupabase } from "jsr:@supabase/server@^1";
+import { createClient } from "npm:@supabase/supabase-js@^2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,7 +32,7 @@ const requireAuthenticatedEmail = async (
   return { email };
 };
 
-Deno.serve(async (req) => {
+const handler = async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
@@ -61,13 +63,22 @@ Deno.serve(async (req) => {
     return json({ error: "Outlet bukan milik akun owner ini" }, 403);
   }
   if (!outletOwnerEmail) {
-    await supabase.from("outlets")
+    const claim = await supabase.from("outlets")
       .update({ owner_email: ownerEmail })
       .eq("id", outletId);
+    if (claim.error) return json({ error: "Gagal menghubungkan outlet ke owner" }, 500);
   }
 
+  const { data: ownerOutlets, error: ownerOutletsError } = await supabase
+    .from("outlets")
+    .select("license_key")
+    .ilike("owner_email", ownerEmail);
+  if (ownerOutletsError) return json({ error: "Gagal memuat lisensi owner" }, 500);
+
   const cloudExpiry = outlet?.cloud_expiry ? new Date(outlet.cloud_expiry) : null;
-  const isPro = outlet?.license_key === "PRO";
+  const isPro = (ownerOutlets || []).some((ownedOutlet) =>
+    String(ownedOutlet.license_key || "").trim().toUpperCase().startsWith("PRO")
+  );
   const isCloud = Boolean(isPro && cloudExpiry && cloudExpiry > new Date());
   return json({
     is_pro: isPro,
@@ -75,4 +86,8 @@ Deno.serve(async (req) => {
     status: isCloud ? "CLOUD" : isPro ? "PRO" : "FREE",
     expires_at: outlet?.cloud_expiry || null,
   });
-});
+};
+
+export default {
+  fetch: withSupabase({ auth: "none" }, handler),
+};

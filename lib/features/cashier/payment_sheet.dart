@@ -74,12 +74,33 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
       _isProcessing = true;
     });
 
+    var paymentCommitted = false;
     try {
       final cart = ref.read(cartProvider);
       final db = ref.read(databaseProvider);
       final user = ref.read(currentUserProvider)!;
       final outletId = ref.read(currentOutletIdProvider);
       const uuid = Uuid();
+
+      // Validasi ulang stok saat pembayaran untuk mencegah penjualan melebihi
+      // stok ketika data berubah setelah produk dimasukkan ke keranjang.
+      for (final item in cart.items.where((item) => item.trackStock)) {
+        final product = await db.productDao.getProduct(item.productId);
+        final currentStock = double.tryParse(product?.stock ?? '0') ?? 0;
+
+        if (product == null || currentStock < item.quantity) {
+          if (!mounted) return;
+          setState(() {
+            _validationMessage = product == null
+                ? '${item.productName} sudah tidak tersedia.'
+                : 'Stok ${item.productName} tersisa '
+                    '${_formatQuantity(currentStock)}, sedangkan pesanan '
+                    '${_formatQuantity(item.quantity)}.';
+            _isProcessing = false;
+          });
+          return;
+        }
+      }
 
       final today = DateTime.now();
       final orderId = uuid.v4();
@@ -100,65 +121,95 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
           .map((i) => '${i.quantity.toInt()}x ${i.productName}')
           .toList();
 
-      // Insert order
-      await db.orderDao.createOrder(OrdersCompanion.insert(
-        id: orderId,
-        outletId: outletId,
-        orderNumber: orderNum,
-        type: cart.orderType,
-        status: 'paid',
-        tableId: Value(cart.tableId),
-        tableLabel: Value(cart.tableLabel),
-        cashierId: user.id,
-        cashierName: user.name,
-        customerName: Value(cart.customerName),
-        notes: Value(cart.notes),
-        subtotal: Value(subtotal.toString()),
-        discountAmount: Value(discountAmt.toString()),
-        discountPercent: Value(cart.discountPercent.toString()),
-        taxAmount: Value(taxAmt.toString()),
-        serviceCharge: Value(serviceAmt.toString()),
-        total: Value(total.toString()),
-        paymentMethod: Value(_method),
-        paidAmount: Value(paidAmt.toString()),
-        changeAmount: Value(changeAmt.toString()),
-        paidAt: Value(paidAt),
-        isSynced: const Value(false),
-      ));
-
-      // Insert order items
-      for (final item in cart.items) {
-        await db.orderDao.addOrderItem(OrderItemsCompanion.insert(
-          id: uuid.v4(),
-          orderId: orderId,
-          productId: item.productId,
-          productName: item.productName,
-          variantSummary: Value(item.variantSummary),
-          unitPrice: item.unitPrice.toString(),
-          quantity: item.quantity.toString(),
-          discount: Value(item.discount.toString()),
-          subtotal: item.subtotal.toString(),
-          notes: Value(item.notes),
+      // Order, item, stock, table, and the pending server stock movement must
+      // commit together. A failure at any point rolls everything back so the
+      // cashier can safely retry without creating a duplicate paid order.
+      await db.transaction(() async {
+        await db.orderDao.createOrder(OrdersCompanion.insert(
+          id: orderId,
+          outletId: outletId,
+          orderNumber: orderNum,
+          type: cart.orderType,
+          status: 'paid',
+          tableId: Value(cart.tableId),
+          tableLabel: Value(cart.tableLabel),
+          cashierId: user.id,
+          cashierName: user.name,
+          customerName: Value(cart.customerName),
+          notes: Value(cart.notes),
+          subtotal: Value(subtotal.toString()),
+          discountAmount: Value(discountAmt.toString()),
+          discountPercent: Value(cart.discountPercent.toString()),
+          taxAmount: Value(taxAmt.toString()),
+          serviceCharge: Value(serviceAmt.toString()),
+          total: Value(total.toString()),
+          paymentMethod: Value(_method),
+          paidAmount: Value(paidAmt.toString()),
+          changeAmount: Value(changeAmt.toString()),
+          paidAt: Value(paidAt),
+          isSynced: const Value(false),
         ));
-        await db.productDao.decrementStock(item.productId, item.quantity);
-      }
 
-      // Notif dapur
-      await NotificationService.sendKitchenOrder(
-        orderNumber: orderNum,
-        items: itemLabels,
-      );
+        for (final item in cart.items) {
+          await db.orderDao.addOrderItem(OrderItemsCompanion.insert(
+            id: uuid.v4(),
+            orderId: orderId,
+            productId: item.productId,
+            productName: item.productName,
+            variantSummary: Value(item.variantSummary),
+            unitPrice: item.unitPrice.toString(),
+            quantity: item.quantity.toString(),
+            discount: Value(item.discount.toString()),
+            subtotal: item.subtotal.toString(),
+            notes: Value(item.notes),
+          ));
+          await db.productDao.decrementStock(item.productId, item.quantity);
+        }
 
-      // Bebaskan meja
-      if (cart.tableId != null) {
-        await db.orderDao.occupyTable(cart.tableId!, orderId);
-        await db.orderDao.completePayment(
-          orderId: orderId,
-          paymentMethod: _method,
-          paidAmount: paidAmt,
-          changeAmount: changeAmt,
-          tableId: cart.tableId,
+        final stockItems = cart.items
+            .where((item) => item.trackStock)
+            .map((item) => {
+                  'product_id': item.productId,
+                  'quantity': item.quantity,
+                })
+            .toList(growable: false);
+        if (stockItems.isNotEmpty) {
+          await db.syncDao.enqueue(
+            tableName: 'stock_sales',
+            recordId: orderId,
+            operation: 'apply',
+            payload: {
+              'outlet_id': outletId,
+              'order_id': orderId,
+              'items': stockItems,
+            },
+          );
+        }
+
+        if (cart.tableId != null) {
+          await (db.update(db.restaurantTables)
+                ..where((table) => table.id.equals(cart.tableId!)))
+              .write(
+            RestaurantTablesCompanion(
+              status: const Value('available'),
+              currentOrderId: const Value(null),
+              updatedAt: Value(DateTime.now()),
+              isSynced: const Value(false),
+            ),
+          );
+        }
+      });
+      paymentCommitted = true;
+
+      // A local Android notification is auxiliary. It must never turn a
+      // successfully committed sale into a visible payment failure.
+      try {
+        await NotificationService.sendKitchenOrder(
+          orderNumber: orderNum,
+          items: itemLabels,
         );
+      } catch (_) {
+        // The order remains valid and can still be printed/viewed in history.
       }
 
       // Ambil data outlet untuk receipt
@@ -206,12 +257,31 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
       _showSuccessDialog(total, changeAmt, orderNum, itemLabels, receiptData);
     } catch (e) {
       if (!mounted) return;
+      if (paymentCommitted) {
+        ref.read(cartProvider.notifier).clear();
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Pembayaran sudah tersimpan. Struk dapat dibuka dari Riwayat.',
+            ),
+            backgroundColor: AppTheme.success,
+          ),
+        );
+        return;
+      }
       setState(() {
         _validationMessage = 'Pembayaran gagal disimpan. Coba lagi.';
       });
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  String _formatQuantity(double value) {
+    return value == value.truncateToDouble()
+        ? value.toInt().toString()
+        : value.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
   Future<void> _doPrint(ReceiptData data, BuildContext dialogCtx) async {

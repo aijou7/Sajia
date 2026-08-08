@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/providers.dart';
 import '../../core/brand.dart';
@@ -119,10 +120,35 @@ class _CashierPageState extends ConsumerState<CashierPage> {
   void _addToCart(Product product) {
     HapticFeedback.lightImpact();
     final price = double.tryParse(product.price) ?? 0;
+    final availableStock = double.tryParse(product.stock) ?? 0;
+    final cart = ref.read(cartProvider);
+    final quantityInCart = cart.items
+        .where((item) => item.productId == product.id)
+        .fold<double>(0, (sum, item) => sum + item.quantity);
+
+    if (product.trackStock && quantityInCart >= availableStock) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          availableStock <= 0
+              ? '${product.name} sedang habis.'
+              : 'Stok ${product.name} hanya ${_formatStock(availableStock)}.',
+        ),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppTheme.danger,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      return;
+    }
+
     ref.read(cartProvider.notifier).addItem(CartItem(
           productId: product.id,
           productName: product.name,
           unitPrice: price,
+          trackStock: product.trackStock,
+          availableStock: product.trackStock ? availableStock : null,
         ));
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -138,6 +164,10 @@ class _CashierPageState extends ConsumerState<CashierPage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ));
   }
+
+  String _formatStock(double value) => value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toStringAsFixed(2);
 }
 
 // ── TOP BAR ───────────────────────────────────────────────────
@@ -203,38 +233,166 @@ class _TopBar extends ConsumerWidget {
           ]),
         ),
         if (user != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryLight,
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _openProfile(context, ref, user),
               borderRadius: BorderRadius.circular(999),
-              border:
-                  Border.all(color: AppTheme.primary.withValues(alpha: 0.10)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 18,
-                  height: 18,
-                  decoration: const BoxDecoration(
-                    color: AppTheme.primary,
-                    shape: BoxShape.circle,
+              child: Ink(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryLight,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: AppTheme.primary.withValues(alpha: 0.10),
                   ),
-                  child: const Icon(Icons.person_rounded,
-                      color: Colors.white, size: 12),
                 ),
-                const SizedBox(width: 6),
-                Text(user.name,
-                    style: const TextStyle(
-                        fontSize: 12,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 18,
+                      height: 18,
+                      decoration: const BoxDecoration(
                         color: AppTheme.primary,
-                        fontWeight: FontWeight.w700)),
-              ],
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.person_rounded,
+                        color: Colors.white,
+                        size: 12,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 96),
+                      child: Text(
+                        user.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: AppTheme.primary,
+                      size: 17,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
       ]),
     );
+  }
+
+  void _openProfile(BuildContext context, WidgetRef ref, AppUser user) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.borderColor,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(height: 20),
+              CircleAvatar(
+                radius: 30,
+                backgroundColor: AppTheme.primaryLight,
+                child: Text(
+                  user.name.isEmpty ? '?' : user.name[0].toUpperCase(),
+                  style: const TextStyle(
+                    color: AppTheme.primary,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                user.name,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                user.roleLabel,
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    _confirmLogout(context, ref);
+                  },
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text('Keluar dari akun'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.danger,
+                    side: const BorderSide(color: AppTheme.danger),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmLogout(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Keluar dari Sajia?'),
+        content: const Text('Sesi pengguna di perangkat ini akan diakhiri.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
+            child: const Text('Keluar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    ref.read(cartProvider.notifier).clear();
+    ref.read(currentUserProvider.notifier).state = null;
+    context.go('/login');
   }
 }
 
@@ -470,126 +628,167 @@ class _MenuCardState extends State<_MenuCard> {
   @override
   Widget build(BuildContext context) {
     final price = double.tryParse(widget.product.price) ?? 0;
+    final stock = double.tryParse(widget.product.stock) ?? 0;
+    final isOutOfStock = widget.product.trackStock && stock <= 0;
 
     return GestureDetector(
-      onTap: widget.onTap,
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTapUp: (_) => setState(() => _pressed = false),
+      onTap: isOutOfStock ? null : widget.onTap,
+      onTapDown: isOutOfStock ? null : (_) => setState(() => _pressed = true),
+      onTapCancel: isOutOfStock ? null : () => setState(() => _pressed = false),
+      onTapUp: isOutOfStock ? null : (_) => setState(() => _pressed = false),
       child: AnimatedScale(
         scale: _pressed ? 0.97 : 1,
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOutCubic,
-        child: AnimatedContainer(
+        child: AnimatedOpacity(
+          opacity: isOutOfStock ? 0.68 : 1,
           duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppTheme.subtleBorder, width: 0.7),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primaryDeep
-                    .withValues(alpha: _pressed ? 0.04 : 0.08),
-                blurRadius: _pressed ? 10 : 20,
-                offset: Offset(0, _pressed ? 4 : 10),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 5,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ProductImage(
-                        source: widget.product.imageUrl,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        fallback: _imgPlaceholder(),
-                      ),
-                      Positioned(
-                        right: 8,
-                        top: 8,
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.90),
-                            borderRadius: BorderRadius.circular(10),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.08),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.add_rounded,
-                            color: AppTheme.primary,
-                            size: 18,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppTheme.subtleBorder, width: 0.7),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryDeep
+                      .withValues(alpha: _pressed ? 0.04 : 0.08),
+                  blurRadius: _pressed ? 10 : 20,
+                  offset: Offset(0, _pressed ? 4 : 10),
                 ),
-                Expanded(
-                  flex: 4,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(11, 9, 11, 11),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 5,
+                    child: Stack(
+                      fit: StackFit.expand,
                       children: [
-                        Text(
-                          widget.product.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w800,
-                            height: 1.25,
-                            color: AppTheme.textPrimary,
-                          ),
+                        ProductImage(
+                          source: widget.product.imageUrl,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          fallback: _imgPlaceholder(),
                         ),
-                        const Spacer(),
-                        Row(
-                          children: [
-                            Expanded(
+                        if (widget.product.trackStock)
+                          Positioned(
+                            left: 8,
+                            top: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isOutOfStock
+                                    ? AppTheme.danger
+                                    : Colors.black.withValues(alpha: 0.62),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                               child: Text(
-                                price.toRupiah,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                isOutOfStock
+                                    ? 'Habis'
+                                    : 'Stok ${_formatMenuStock(stock)}',
                                 style: const TextStyle(
-                                  fontSize: 12.5,
+                                  color: Colors.white,
+                                  fontSize: 9.5,
                                   fontWeight: FontWeight.w800,
-                                  color: AppTheme.primary,
                                 ),
                               ),
                             ),
-                            const Icon(
-                              Icons.touch_app_rounded,
-                              color: Color(0xFFB9C4D2),
-                              size: 15,
+                          ),
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.90),
+                              borderRadius: BorderRadius.circular(10),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.08),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
                             ),
-                          ],
+                            child: Icon(
+                              isOutOfStock
+                                  ? Icons.block_rounded
+                                  : Icons.add_rounded,
+                              color: isOutOfStock
+                                  ? AppTheme.danger
+                                  : AppTheme.primary,
+                              size: 18,
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
+                  Expanded(
+                    flex: 4,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(11, 9, 11, 11),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.product.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                              height: 1.25,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                          const Spacer(),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  price.toRupiah,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.primary,
+                                  ),
+                                ),
+                              ),
+                              const Icon(
+                                Icons.touch_app_rounded,
+                                color: Color(0xFFB9C4D2),
+                                size: 15,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+
+  String _formatMenuStock(double value) => value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toStringAsFixed(1);
 
   Widget _imgPlaceholder() => Container(
         decoration: const BoxDecoration(

@@ -41,8 +41,9 @@ class _MenuPageState extends ConsumerState<MenuPage>
   @override
   Widget build(BuildContext context) {
     final isProductTab = _tabController.index == 0;
-    final canManageMenu =
-        ref.watch(currentUserProvider)?.canManageOperations == true;
+    final currentUser = ref.watch(currentUserProvider);
+    final canManageMenu = currentUser?.canManageOperations == true;
+    final canDeleteMenu = currentUser?.isOwner == true;
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
@@ -64,8 +65,12 @@ class _MenuPageState extends ConsumerState<MenuPage>
           _ProductTab(
               search: _search,
               canManage: canManageMenu,
+              canDelete: canDeleteMenu,
               onSearchChanged: (v) => setState(() => _search = v)),
-          _CategoryTab(canManage: canManageMenu),
+          _CategoryTab(
+            canManage: canManageMenu,
+            canDelete: canDeleteMenu,
+          ),
         ],
       ),
       floatingActionButton: canManageMenu
@@ -109,11 +114,13 @@ class _MenuPageState extends ConsumerState<MenuPage>
 class _ProductTab extends ConsumerWidget {
   final String search;
   final bool canManage;
+  final bool canDelete;
   final ValueChanged<String> onSearchChanged;
 
   const _ProductTab({
     required this.search,
     required this.canManage,
+    required this.canDelete,
     required this.onSearchChanged,
   });
 
@@ -191,6 +198,7 @@ class _ProductTab extends ConsumerWidget {
                       product: filtered[i],
                       categoryName: catMap[filtered[i].categoryId],
                       canManage: canManage,
+                      canDelete: canDelete,
                     ),
                   );
                 },
@@ -211,16 +219,21 @@ class _ProductTile extends ConsumerWidget {
   final Product product;
   final String? categoryName;
   final bool canManage;
+  final bool canDelete;
 
   const _ProductTile({
     required this.product,
     this.categoryName,
     required this.canManage,
+    required this.canDelete,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final price = double.tryParse(product.price) ?? 0;
+    final stock = double.tryParse(product.stock) ?? 0;
+    final lowStockAlert = double.tryParse(product.lowStockAlert) ?? 5;
+    final isLowStock = product.trackStock && stock <= lowStockAlert;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -259,13 +272,37 @@ class _ProductTile extends ConsumerWidget {
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: AppTheme.primary)),
+            if (product.trackStock)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isLowStock
+                          ? Icons.warning_amber_rounded
+                          : Icons.inventory_2_outlined,
+                      size: 13,
+                      color: isLowStock ? AppTheme.danger : AppTheme.success,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Sisa stok: ${_formatStock(stock)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: isLowStock ? AppTheme.danger : AppTheme.success,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
         trailing: canManage
             ? Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Toggle available
                   Switch(
                     value: product.isAvailable,
                     activeThumbColor: AppTheme.success,
@@ -276,16 +313,60 @@ class _ProductTile extends ConsumerWidget {
                           .toggleAvailability(product.id, v);
                     },
                   ),
-                  // Edit
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    color: const Color(0xFF6B7280),
-                    onPressed: () => showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => ProductFormSheet(product: product),
-                    ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Aksi produk',
+                    icon: const Icon(Icons.more_vert_rounded,
+                        color: Color(0xFF6B7280)),
+                    onSelected: (action) {
+                      if (action == 'edit') {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => ProductFormSheet(product: product),
+                        );
+                      } else if (action == 'stock') {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) =>
+                              StockAdjustmentSheet(product: product),
+                        );
+                      } else if (action == 'delete') {
+                        _confirmDelete(context, ref);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.edit_outlined),
+                          title: Text('Edit produk'),
+                        ),
+                      ),
+                      if (product.trackStock)
+                        const PopupMenuItem(
+                          value: 'stock',
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.inventory_2_outlined),
+                            title: Text('Atur stok'),
+                          ),
+                        ),
+                      if (canDelete)
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.delete_outline,
+                                color: AppTheme.danger),
+                            title: Text('Hapus produk',
+                                style: TextStyle(color: AppTheme.danger)),
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               )
@@ -293,6 +374,73 @@ class _ProductTile extends ConsumerWidget {
       ),
     );
   }
+
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    if (ref.read(currentUserProvider)?.isOwner != true) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Hanya owner yang dapat menghapus produk.'),
+        backgroundColor: AppTheme.danger,
+      ));
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Hapus produk?'),
+        content: Text(
+          '${product.name} akan dihapus dari menu. Riwayat transaksi yang sudah tersimpan tetap ada.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final db = ref.read(databaseProvider);
+    await db.syncDao.enqueue(
+      tableName: 'products',
+      recordId: product.id,
+      operation: 'delete',
+      payload: {
+        'product_id': product.id,
+        'outlet_id': product.outletId,
+      },
+    );
+    await db.productDao.deleteProduct(product.id);
+
+    final imagePath = product.imageUrl;
+    if (imagePath != null && !imagePath.startsWith('http')) {
+      try {
+        final imageFile = File(imagePath);
+        if (await imageFile.exists()) await imageFile.delete();
+      } catch (_) {
+        // Penghapusan foto lokal tidak boleh menggagalkan penghapusan produk.
+      }
+    }
+
+    await ref.read(syncServiceProvider).syncAll();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${product.name} berhasil dihapus.'),
+        backgroundColor: AppTheme.success,
+      ),
+    );
+  }
+
+  String _formatStock(double value) => value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toStringAsFixed(2);
 
   Widget _imgPlaceholder() => Container(
         width: 52,
@@ -308,6 +456,151 @@ class _ProductTile extends ConsumerWidget {
         child: const Icon(Icons.fastfood_rounded,
             color: AppTheme.primary, size: 24),
       );
+}
+
+class StockAdjustmentSheet extends ConsumerStatefulWidget {
+  final Product product;
+
+  const StockAdjustmentSheet({super.key, required this.product});
+
+  @override
+  ConsumerState<StockAdjustmentSheet> createState() =>
+      _StockAdjustmentSheetState();
+}
+
+class _StockAdjustmentSheetState extends ConsumerState<StockAdjustmentSheet> {
+  late final TextEditingController _stockCtrl;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final currentStock = double.tryParse(widget.product.stock) ?? 0;
+    _stockCtrl = TextEditingController(
+      text: currentStock == currentStock.roundToDouble()
+          ? currentStock.toInt().toString()
+          : currentStock.toStringAsFixed(2),
+    );
+  }
+
+  @override
+  void dispose() {
+    _stockCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (ref.read(currentUserProvider)?.canManageOperations != true) return;
+    final value = double.tryParse(_stockCtrl.text.trim().replaceAll(',', '.'));
+    if (value == null || value < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Stok harus berupa angka 0 atau lebih.'),
+        backgroundColor: AppTheme.danger,
+      ));
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    final db = ref.read(databaseProvider);
+    await db.productDao.updateStock(widget.product.id, value);
+    await db.syncDao.enqueue(
+      tableName: 'stock_sets',
+      recordId: widget.product.id,
+      operation: 'set',
+      payload: {
+        'outlet_id': widget.product.outletId,
+        'stock': value,
+      },
+    );
+    await ref.read(syncServiceProvider).syncAll();
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(
+        bottom: bottomSheetSafePadding(context),
+        top: 8,
+        left: 20,
+        right: 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE5E7EB),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const Text('Atur Stok',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(widget.product.name,
+              style: const TextStyle(color: AppTheme.textSecondary)),
+          const SizedBox(height: 18),
+          const _FormLabel('Jumlah stok saat ini *'),
+          TextField(
+            controller: _stockCtrl,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              hintText: '0',
+              prefixIcon: const Icon(Icons.inventory_2_outlined),
+              filled: true,
+              fillColor: const Color(0xFFF9FAFB),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppTheme.borderColor),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppTheme.borderColor),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    const BorderSide(color: AppTheme.primary, width: 1.5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _isSaving ? null : _save,
+              icon: _isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.save_outlined),
+              label: const Text('Simpan Stok'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ── CATEGORY TAB ──────────────────────────────────────────────
@@ -336,7 +629,12 @@ class _AvailabilityPill extends StatelessWidget {
 
 class _CategoryTab extends ConsumerWidget {
   final bool canManage;
-  const _CategoryTab({required this.canManage});
+  final bool canDelete;
+
+  const _CategoryTab({
+    required this.canManage,
+    required this.canDelete,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -429,6 +727,13 @@ class _CategoryTab extends ConsumerWidget {
                               builder: (_) => CategoryFormSheet(category: cat),
                             ),
                           ),
+                          if (canDelete)
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18),
+                              color: AppTheme.danger,
+                              onPressed: () =>
+                                  _confirmDeleteCategory(context, ref, cat),
+                            ),
                           const Icon(Icons.drag_handle,
                               color: Color(0xFFD1D5DB)),
                         ],
@@ -441,6 +746,45 @@ class _CategoryTab extends ConsumerWidget {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
+    );
+  }
+
+  Future<void> _confirmDeleteCategory(
+    BuildContext context,
+    WidgetRef ref,
+    Category category,
+  ) async {
+    if (ref.read(currentUserProvider)?.isOwner != true) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Hapus kategori?'),
+        content: Text(
+          'Kategori ${category.name} akan dihapus. Produk di dalamnya tetap ada dan dipindahkan ke tanpa kategori.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    await ref.read(databaseProvider).productDao.deleteCategory(category.id);
+    await ref.read(syncServiceProvider).syncAll();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Kategori ${category.name} berhasil dihapus.'),
+        backgroundColor: AppTheme.success,
+      ),
     );
   }
 }
@@ -460,6 +804,8 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
   late TextEditingController _priceCtrl;
   late TextEditingController _cogsCtrl;
   late TextEditingController _descCtrl;
+  late TextEditingController _stockCtrl;
+  late TextEditingController _lowStockCtrl;
   String? _selectedCategoryId;
   String? _imagePath;
   bool _isAvailable = true;
@@ -476,6 +822,8 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     _priceCtrl = TextEditingController(text: p?.price ?? '');
     _cogsCtrl = TextEditingController(text: p?.cogs ?? '0');
     _descCtrl = TextEditingController(text: p?.description ?? '');
+    _stockCtrl = TextEditingController(text: p?.stock ?? '0');
+    _lowStockCtrl = TextEditingController(text: p?.lowStockAlert ?? '5');
     _imagePath = p?.imageUrl;
     _selectedCategoryId = p?.categoryId;
     _isAvailable = p?.isAvailable ?? true;
@@ -488,6 +836,8 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     _priceCtrl.dispose();
     _cogsCtrl.dispose();
     _descCtrl.dispose();
+    _stockCtrl.dispose();
+    _lowStockCtrl.dispose();
     super.dispose();
   }
 
@@ -546,9 +896,33 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
       imageUrl: Value(_imagePath),
       isAvailable: Value(_isAvailable),
       trackStock: Value(_trackStock),
+      stock: Value(_trackStock
+          ? _stockCtrl.text.trim().replaceAll(',', '.')
+          : (widget.product?.stock ?? '0')),
+      lowStockAlert: Value(_trackStock
+          ? _lowStockCtrl.text.trim().replaceAll(',', '.')
+          : (widget.product?.lowStockAlert ?? '5')),
       updatedAt: Value(DateTime.now()),
       isSynced: const Value(false),
     ));
+
+    if (_trackStock) {
+      final stock = double.tryParse(
+            _stockCtrl.text.trim().replaceAll(',', '.'),
+          ) ??
+          0;
+      await db.syncDao.enqueue(
+        tableName: 'stock_sets',
+        recordId: id,
+        operation: 'set',
+        payload: {
+          'outlet_id': outletId,
+          'stock': stock,
+        },
+      );
+    }
+
+    await ref.read(syncServiceProvider).syncAll();
 
     if (mounted) Navigator.pop(context);
   }
@@ -769,6 +1143,74 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                   ),
                 ],
               ),
+              if (_trackStock) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF9FAFB),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.borderColor),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const _FormLabel('Stok Awal / Sisa Stok *'),
+                            TextFormField(
+                              controller: _stockCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              decoration: _inputDeco('0'),
+                              validator: (value) {
+                                if (!_trackStock) return null;
+                                final parsed = double.tryParse(
+                                  (value ?? '').trim().replaceAll(',', '.'),
+                                );
+                                if (parsed == null || parsed < 0) {
+                                  return 'Minimal 0';
+                                }
+                                return null;
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const _FormLabel('Peringatan Stok Menipis'),
+                            TextFormField(
+                              controller: _lowStockCtrl,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              decoration: _inputDeco('5'),
+                              validator: (value) {
+                                if (!_trackStock) return null;
+                                final parsed = double.tryParse(
+                                  (value ?? '').trim().replaceAll(',', '.'),
+                                );
+                                if (parsed == null || parsed < 0) {
+                                  return 'Minimal 0';
+                                }
+                                return null;
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
 
               // Save button

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -128,7 +130,12 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
                   controller: _tabs,
                   children: [
                     _OverviewTab(data: data),
-                    _ProfitLossTab(data: data, from: _from, to: _to),
+                    _ProfitLossTab(
+                      data: data,
+                      from: _from,
+                      to: _to,
+                      onDeleteExpense: _deleteExpense,
+                    ),
                     _BranchesTab(data: data),
                   ],
                 ),
@@ -145,6 +152,63 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
         label: const Text('Pengeluaran'),
       ),
     );
+  }
+
+  Future<void> _deleteExpense(Expense expense) async {
+    final user = ref.read(currentUserProvider);
+    if (user?.isOwner != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Hanya owner yang dapat menghapus pengeluaran.'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Hapus pengeluaran?'),
+        content: Text(
+          '${expense.category} sebesar '
+          '${(double.tryParse(expense.amount) ?? 0).toRupiah} akan dihapus dari laporan keuangan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final db = ref.read(databaseProvider);
+    await db.transaction(() async {
+      await db.syncDao.enqueue(
+        tableName: 'expenses',
+        recordId: expense.id,
+        operation: 'delete',
+        payload: {'outlet_id': expense.outletId},
+      );
+      await db.financeDao.deleteExpense(expense.id);
+    });
+
+    if (!mounted) return;
+    _refresh();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Pengeluaran berhasil dihapus.'),
+        backgroundColor: AppTheme.success,
+      ),
+    );
+    unawaited(ref.read(syncServiceProvider).syncAll());
   }
 
   Future<void> _showExpenseSheet() async {
@@ -316,15 +380,18 @@ class _ProfitLossTab extends ConsumerWidget {
   final _DashboardData data;
   final DateTime from;
   final DateTime to;
+  final ValueChanged<Expense> onDeleteExpense;
   const _ProfitLossTab({
     required this.data,
     required this.from,
     required this.to,
+    required this.onDeleteExpense,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentOutletId = ref.watch(currentOutletIdProvider);
+    final isOwner = ref.watch(currentUserProvider)?.isOwner == true;
     final current =
         data.branches.where((item) => item.outletId == currentOutletId);
     final local = current.isEmpty ? null : current.first;
@@ -345,7 +412,7 @@ class _ProfitLossTab extends ConsumerWidget {
         _HealthCard(data: data),
         if (local != null) ...[
           const SizedBox(height: 22),
-          _SectionHeading('Beban terbaru • ${local.outletName}'),
+          _SectionHeading('Daftar pengeluaran • ${local.outletName}'),
           const SizedBox(height: 10),
           FutureBuilder<List<Expense>>(
             future: ref.read(databaseProvider).financeDao.getExpenses(
@@ -365,8 +432,13 @@ class _ProfitLossTab extends ConsumerWidget {
                 padding: EdgeInsets.zero,
                 child: Column(
                   children: expenses
-                      .take(5)
-                      .map((expense) => _ExpenseRow(expense))
+                      .map(
+                        (expense) => _ExpenseRow(
+                          expense,
+                          onDelete:
+                              isOwner ? () => onDeleteExpense(expense) : null,
+                        ),
+                      )
                       .toList(),
                 ),
               );
@@ -777,7 +849,8 @@ class _BranchAmount extends StatelessWidget {
 
 class _ExpenseRow extends StatelessWidget {
   final Expense expense;
-  const _ExpenseRow(this.expense);
+  final VoidCallback? onDelete;
+  const _ExpenseRow(this.expense, {this.onDelete});
 
   @override
   Widget build(BuildContext context) => ListTile(
@@ -796,11 +869,31 @@ class _ExpenseRow extends StatelessWidget {
             expense.description ?? DateHelper.formatDate(expense.occurredAt),
             maxLines: 1,
             overflow: TextOverflow.ellipsis),
-        trailing: Text((double.tryParse(expense.amount) ?? 0).toRupiah,
-            style: const TextStyle(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              (double.tryParse(expense.amount) ?? 0).toRupiah,
+              style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: AppTheme.danger,
-                fontSize: 12)),
+                fontSize: 12,
+              ),
+            ),
+            if (onDelete != null) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: 'Hapus pengeluaran',
+                onPressed: onDelete,
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: AppTheme.danger,
+                  size: 20,
+                ),
+              ),
+            ],
+          ],
+        ),
       );
 }
 

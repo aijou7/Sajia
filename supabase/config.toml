@@ -4,5 +4,8 @@ verify_jwt = false
 [functions.get-plan-status]
 verify_jwt = false
 
+[functions.create-owner-outlet]
+verify_jwt = false
+
 [functions.midtrans-webhook]
 verify_jwt = false

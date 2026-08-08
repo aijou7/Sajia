@@ -144,15 +144,44 @@ class CartNotifier extends WritableNotifier<Cart> {
     if (existingIndex >= 0) {
       final updated = List<CartItem>.from(state.items);
       final existing = updated[existingIndex];
-      updated[existingIndex] =
-          existing.copyWith(quantity: existing.quantity + item.quantity);
+      final nextQty = existing.quantity + item.quantity;
+      if (existing.trackStock &&
+          existing.availableStock != null &&
+          nextQty > existing.availableStock!) {
+        return;
+      }
+      updated[existingIndex] = existing.copyWith(quantity: nextQty);
       state = state.copyWith(items: updated);
     } else {
+      if (item.trackStock &&
+          item.availableStock != null &&
+          item.quantity > item.availableStock!) {
+        return;
+      }
       state = state.copyWith(items: [...state.items, item]);
     }
   }
 
+  void incrementQty(int index) {
+    if (index < 0 || index >= state.items.length) return;
+    final current = state.items[index];
+    final nextQty = current.quantity + 1;
+    if (current.trackStock &&
+        current.availableStock != null &&
+        nextQty > current.availableStock!) {
+      return;
+    }
+    updateQty(index, nextQty);
+  }
+
+  void decrementQty(int index) {
+    if (index < 0 || index >= state.items.length) return;
+    final current = state.items[index];
+    updateQty(index, current.quantity - 1);
+  }
+
   void updateQty(int index, double qty) {
+    if (index < 0 || index >= state.items.length) return;
     if (qty <= 0) {
       removeItem(index);
       return;
@@ -163,6 +192,7 @@ class CartNotifier extends WritableNotifier<Cart> {
   }
 
   void removeItem(int index) {
+    if (index < 0 || index >= state.items.length) return;
     final updated = List<CartItem>.from(state.items)..removeAt(index);
     state = state.copyWith(items: updated);
   }

@@ -456,6 +456,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
+              ref.read(cartProvider.notifier).clear();
               ref.read(currentUserProvider.notifier).state = null;
               context.go('/login');
             },
@@ -905,7 +906,7 @@ class _PlanActivationSheetState extends ConsumerState<_PlanActivationSheet> {
     final outlet = ref.watch(currentOutletProvider).value;
     final license = (outlet?.licenseKey ?? 'FREE').toUpperCase();
     const isPlayStore = AppDistribution.isPlayStore;
-    final isPro = license == 'PRO';
+    final isPro = license.startsWith('PRO');
     final isCloud = isPro &&
         outlet?.cloudExpiry != null &&
         outlet!.cloudExpiry!.isAfter(DateTime.now());
@@ -1293,22 +1294,49 @@ class _OutletFormSheetState extends ConsumerState<_OutletFormSheet> {
         if (mounted) setState(() => _isSaving = false);
         return;
       }
-      final currentOutlet = ref.read(currentOutletProvider).value;
       final newOutletId = const Uuid().v4();
-      await db.into(db.outlets).insert(OutletsCompanion.insert(
-            id: newOutletId,
-            name: _nameCtrl.text.trim(),
-            address: Value(_addressCtrl.text.trim().isEmpty
-                ? null
-                : _addressCtrl.text.trim()),
-            phone: Value(
-                _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim()),
-            licenseKey: currentOutlet?.licenseKey ?? 'FREE',
-            licenseExpiry: Value(currentOutlet?.licenseExpiry),
-            cloudExpiry: Value(currentOutlet?.cloudExpiry),
-          ));
-      await _setActiveOutlet(ref, newOutletId);
-      if (mounted) Navigator.pop(context);
+      final address =
+          _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim();
+      final phone =
+          _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim();
+      try {
+        final created = await SajiaPlanService(ref.read(supabaseProvider))
+            .createOwnerOutlet(
+          id: newOutletId,
+          name: _nameCtrl.text.trim(),
+          address: address,
+          phone: phone,
+        );
+        await db.into(db.outlets).insertOnConflictUpdate(
+              OutletsCompanion.insert(
+                id: created.id,
+                name: created.name,
+                address: Value(created.address),
+                phone: Value(created.phone),
+                licenseKey: created.isPro ? 'PRO' : 'FREE',
+                licenseExpiry: const Value(null),
+                cloudExpiry: Value(
+                  created.isCloud ? created.cloudExpiresAt : null,
+                ),
+              ),
+            );
+        await _setActiveOutlet(ref, created.id);
+        if (mounted) Navigator.pop(context);
+      } on SajiaPlanException catch (error) {
+        if (!mounted) return;
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(error.message),
+          backgroundColor: AppTheme.warning,
+        ));
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Gagal membuat cabang. Cek internet lalu coba lagi.'),
+          backgroundColor: AppTheme.warning,
+        ));
+      }
       return;
     }
 

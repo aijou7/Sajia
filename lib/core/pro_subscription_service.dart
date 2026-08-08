@@ -32,6 +32,26 @@ class SajiaPlanStatus {
   });
 }
 
+class CreatedOwnerOutlet {
+  final String id;
+  final String name;
+  final String? address;
+  final String? phone;
+  final bool isPro;
+  final bool isCloud;
+  final DateTime? cloudExpiresAt;
+
+  const CreatedOwnerOutlet({
+    required this.id,
+    required this.name,
+    required this.address,
+    required this.phone,
+    required this.isPro,
+    required this.isCloud,
+    required this.cloudExpiresAt,
+  });
+}
+
 class SajiaPlanService {
   final SupabaseClient _supabase;
 
@@ -154,10 +174,17 @@ class SajiaPlanService {
   }
 
   Future<SajiaPlanStatus> getStatus(String outletId) async {
-    final response = await _supabase.functions.invoke(
-      'get-plan-status',
-      body: {'outlet_id': outletId},
-    );
+    late final FunctionResponse response;
+    try {
+      response = await _supabase.functions.invoke(
+        'get-plan-status',
+        body: {'outlet_id': outletId},
+      );
+    } on FunctionException catch (error) {
+      throw SajiaPlanException(_functionErrorMessage(error));
+    } catch (error) {
+      throw SajiaPlanException(_networkErrorMessage(error));
+    }
     final data = _asMap(response.data);
     final errorMessage = data['error'];
     if (errorMessage is String && errorMessage.isNotEmpty) {
@@ -170,6 +197,48 @@ class SajiaPlanService {
       isCloud: data['is_cloud'] == true,
       status: data['status'] as String? ?? 'FREE',
       expiresAt: expiry == null ? null : DateTime.tryParse(expiry),
+    );
+  }
+
+  Future<CreatedOwnerOutlet> createOwnerOutlet({
+    required String id,
+    required String name,
+    String? address,
+    String? phone,
+  }) async {
+    late final FunctionResponse response;
+    try {
+      response = await _supabase.functions.invoke(
+        'create-owner-outlet',
+        body: {
+          'id': id,
+          'name': name,
+          'address': address,
+          'phone': phone,
+        },
+      );
+    } on FunctionException catch (error) {
+      throw SajiaPlanException(_functionErrorMessage(error));
+    } catch (error) {
+      throw SajiaPlanException(_networkErrorMessage(error));
+    }
+
+    final data = _asMap(response.data);
+    final errorMessage = data['error'];
+    if (errorMessage is String && errorMessage.isNotEmpty) {
+      throw SajiaPlanException(errorMessage);
+    }
+    final outlet = _asMap(data['outlet']);
+    final cloudExpiry = outlet['cloud_expiry'] as String?;
+    return CreatedOwnerOutlet(
+      id: outlet['id'] as String? ?? id,
+      name: outlet['name'] as String? ?? name,
+      address: outlet['address'] as String?,
+      phone: outlet['phone'] as String?,
+      isPro: data['is_pro'] == true,
+      isCloud: data['is_cloud'] == true,
+      cloudExpiresAt:
+          cloudExpiry == null ? null : DateTime.tryParse(cloudExpiry),
     );
   }
 

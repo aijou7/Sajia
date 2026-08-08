@@ -7,6 +7,10 @@ import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../domain/entities/entities.dart';
 
+String _formatStock(double value) => value == value.roundToDouble()
+    ? value.toInt().toString()
+    : value.toStringAsFixed(2);
+
 class CartPanel extends ConsumerWidget {
   final VoidCallback onCheckout;
   final ScrollController? scrollController;
@@ -287,9 +291,7 @@ class _CartItemTile extends ConsumerWidget {
                   icon: Icons.remove,
                   onTap: () {
                     HapticFeedback.lightImpact();
-                    ref
-                        .read(cartProvider.notifier)
-                        .updateQty(index, item.quantity - 1);
+                    ref.read(cartProvider.notifier).decrementQty(index);
                   },
                 ),
                 SizedBox(
@@ -311,9 +313,20 @@ class _CartItemTile extends ConsumerWidget {
                   icon: Icons.add,
                   onTap: () {
                     HapticFeedback.lightImpact();
-                    ref
-                        .read(cartProvider.notifier)
-                        .updateQty(index, item.quantity + 1);
+                    if (item.trackStock &&
+                        item.availableStock != null &&
+                        item.quantity >= item.availableStock!) {
+                      ScaffoldMessenger.of(context).clearSnackBars();
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(
+                          'Stok ${item.productName} hanya ${_formatStock(item.availableStock!)}.',
+                        ),
+                        backgroundColor: AppTheme.danger,
+                        behavior: SnackBarBehavior.floating,
+                      ));
+                      return;
+                    }
+                    ref.read(cartProvider.notifier).incrementQty(index);
                   },
                 ),
               ],
@@ -338,6 +351,14 @@ class _CartItemTile extends ConsumerWidget {
                     Text('Catatan: ${item.notes}',
                         style: const TextStyle(
                             fontSize: 11, color: AppTheme.textSecondary)),
+                  if (item.trackStock && item.availableStock != null)
+                    Text(
+                      'Stok tersedia: ${_formatStock(item.availableStock!)}',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
                 ],
               ),
             ),

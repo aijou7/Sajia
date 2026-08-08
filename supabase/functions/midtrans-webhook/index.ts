@@ -1,4 +1,6 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { withSupabase } from "jsr:@supabase/server@^1";
+import { createClient } from "npm:@supabase/supabase-js@^2";
 
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -20,7 +22,7 @@ const sha512 = async (text: string) => {
     .join("");
 };
 
-Deno.serve(async (req) => {
+const handler = async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -77,7 +79,7 @@ Deno.serve(async (req) => {
         ? new Date(event.transaction_time)
         : new Date();
 
-    await supabase.from("plan_orders").update({
+    const activateOrder = await supabase.from("plan_orders").update({
       status: "ACTIVE",
       paid_at: paidAt.toISOString(),
       starts_at: paidAt.toISOString(),
@@ -85,12 +87,26 @@ Deno.serve(async (req) => {
       provider_order_id: event.order_id,
       provider_reference_id: event.transaction_id || null,
     }).eq("id", order.id);
+    if (activateOrder.error) return json({ error: "Gagal mengaktifkan pembayaran" }, 500);
 
     if (order.plan_code === "PRO_LIFETIME") {
-      await supabase.from("outlets").update({
+      const { data: paidOutlet, error: paidOutletError } = await supabase
+        .from("outlets")
+        .select("owner_email")
+        .eq("id", order.outlet_id)
+        .maybeSingle();
+      if (paidOutletError || !paidOutlet) {
+        return json({ error: "Outlet pembayaran tidak ditemukan" }, 500);
+      }
+      const ownerEmail = String(paidOutlet.owner_email || "").trim().toLowerCase();
+      if (!ownerEmail) {
+        return json({ error: "Email owner pada outlet pembayaran tidak valid" }, 500);
+      }
+      const activatePro = await supabase.from("outlets").update({
         license_key: "PRO",
         license_expiry: null,
-      }).eq("id", order.outlet_id);
+      }).ilike("owner_email", ownerEmail);
+      if (activatePro.error) return json({ error: "Gagal mengaktifkan Sajia Pro" }, 500);
     }
 
     if (order.plan_code === "CLOUD_MONTHLY") {
@@ -106,21 +122,28 @@ Deno.serve(async (req) => {
         : paidAt;
       const cloudExpiry = addOneMonth(expiryBase);
 
-      await supabase.from("plan_orders").update({
+      const updateExpiry = await supabase.from("plan_orders").update({
         expires_at: cloudExpiry.toISOString(),
       }).eq("id", order.id);
-      await supabase.from("outlets").update({
+      if (updateExpiry.error) return json({ error: "Gagal menyimpan masa Cloud" }, 500);
+      const activateCloud = await supabase.from("outlets").update({
         cloud_expiry: cloudExpiry.toISOString(),
       }).eq("id", order.outlet_id);
+      if (activateCloud.error) return json({ error: "Gagal mengaktifkan Sajia Cloud" }, 500);
     }
   } else if (failed) {
-    await supabase.from("plan_orders").update({
+    const markFailed = await supabase.from("plan_orders").update({
       status: status === "expire" ? "EXPIRED" : "FAILED",
       payment_provider: "MIDTRANS",
       provider_order_id: event.order_id,
       provider_reference_id: event.transaction_id || null,
     }).eq("id", order.id);
+    if (markFailed.error) return json({ error: "Gagal memperbarui transaksi" }, 500);
   }
 
   return json({ received: true });
-});
+};
+
+export default {
+  fetch: withSupabase({ auth: "none" }, handler),
+};

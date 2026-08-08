@@ -22,9 +22,23 @@ class ProductDao extends DatabaseAccessor<AppDatabase> with _$ProductDaoMixin {
   Future<void> upsertCategory(CategoriesCompanion cat) =>
       into(categories).insertOnConflictUpdate(cat);
 
-  Future<void> deleteCategory(String id) =>
-      (update(categories)..where((c) => c.id.equals(id)))
-          .write(const CategoriesCompanion(isActive: Value(false)));
+  Future<void> deleteCategory(String id) async {
+    await transaction(() async {
+      await (update(products)
+            ..where((product) => product.categoryId.equals(id)))
+          .write(ProductsCompanion(
+        categoryId: const Value(null),
+        updatedAt: Value(DateTime.now()),
+        isSynced: const Value(false),
+      ));
+      await (update(categories)..where((category) => category.id.equals(id)))
+          .write(CategoriesCompanion(
+        isActive: const Value(false),
+        updatedAt: Value(DateTime.now()),
+        isSynced: const Value(false),
+      ));
+    });
+  }
 
   // PRODUCTS
   Stream<List<Product>> watchProducts(String outletId) => (select(products)
@@ -53,6 +67,14 @@ class ProductDao extends DatabaseAccessor<AppDatabase> with _$ProductDaoMixin {
           isSynced: const Value(false),
         ),
       );
+
+  Future<void> deleteProduct(String id) async {
+    await transaction(() async {
+      await (delete(productVariants)..where((v) => v.productId.equals(id)))
+          .go();
+      await (delete(products)..where((p) => p.id.equals(id))).go();
+    });
+  }
 
   Future<void> updateStock(String id, double newStock) =>
       (update(products)..where((p) => p.id.equals(id))).write(

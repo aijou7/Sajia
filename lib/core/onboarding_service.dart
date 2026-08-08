@@ -13,11 +13,12 @@ class OnboardingService {
 
   SupabaseClient get _supabase => Supabase.instance.client;
   Future<bool> accountExists(String email) async {
+    final normalizedEmail = normalizeEmail(email);
     try {
       final response = await _supabase
           .from('outlets')
           .select('id')
-          .eq('owner_email', email)
+          .eq('owner_email', normalizedEmail)
           .maybeSingle();
       return response != null;
     } catch (_) {
@@ -26,11 +27,12 @@ class OnboardingService {
   }
 
   Future<String?> getOutletIdByEmail(String email) async {
+    final normalizedEmail = normalizeEmail(email);
     try {
       final response = await _supabase
           .from('outlets')
           .select('id')
-          .eq('owner_email', email)
+          .eq('owner_email', normalizedEmail)
           .maybeSingle();
       return response?['id'] as String?;
     } catch (_) {
@@ -70,19 +72,27 @@ class OnboardingService {
 
   // ── OTP via Supabase Auth ─────────────────────
 
-  Future<OtpResult> sendOtp(String email,
-      {required bool shouldCreateUser}) async {
+  String normalizeEmail(String email) => email.trim().toLowerCase();
+
+  Future<OtpResult> sendOtp(
+    String email, {
+    required bool shouldCreateUser,
+  }) async {
+    final normalizedEmail = normalizeEmail(email);
     try {
       lastOtpError = null;
       await _supabase.auth.signInWithOtp(
-        email: email,
+        email: normalizedEmail,
         shouldCreateUser: shouldCreateUser,
       );
-      await saveOwnerEmail(email);
+      await saveOwnerEmail(normalizedEmail);
       return OtpResult.sent;
     } on AuthException catch (e) {
       lastOtpError = e.message;
-      if (e.message.contains('rate limit')) return OtpResult.rateLimited;
+      final message = e.message.toLowerCase();
+      if (message.contains('rate limit') || message.contains('too many')) {
+        return OtpResult.rateLimited;
+      }
       return OtpResult.failed;
     } catch (e) {
       lastOtpError = e.toString();
@@ -97,19 +107,35 @@ class OnboardingService {
         .toList();
   }
 
-  Future<OtpVerifyResult> verifyOtp(String email, String otp) async {
+  Future<OtpVerifyResult> verifyOtp(
+    String email,
+    String otp,
+  ) async {
+    final normalizedEmail = normalizeEmail(email);
+    final normalizedOtp = otp.replaceAll(RegExp(r'\D'), '');
+    // Supabase email OTP uses OtpType.email for both first-time signup and
+    // returning-user login. OtpType.signup is deprecated for email OTP and can
+    // produce misleading expired/invalid errors after a successful send.
     try {
-      final res = await _supabase.auth.verifyOTP(
-        email: email,
-        token: otp,
+      lastOtpError = null;
+      final response = await _supabase.auth.verifyOTP(
+        email: normalizedEmail,
+        token: normalizedOtp,
         type: OtpType.email,
       );
-      if (res.user != null) return OtpVerifyResult.success;
+      if (response.user != null || response.session != null) {
+        return OtpVerifyResult.success;
+      }
       return OtpVerifyResult.invalid;
     } on AuthException catch (e) {
-      if (e.message.contains('expired')) return OtpVerifyResult.expired;
+      lastOtpError = e.message;
+      final message = e.message.toLowerCase();
+      if (message.contains('expired')) {
+        return OtpVerifyResult.expired;
+      }
       return OtpVerifyResult.invalid;
-    } catch (_) {
+    } catch (e) {
+      lastOtpError = e.toString();
       return OtpVerifyResult.failed;
     }
   }
