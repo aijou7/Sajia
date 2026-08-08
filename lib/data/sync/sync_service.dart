@@ -59,6 +59,14 @@ class SyncService {
       if (!connected) return;
       if (_supabase.auth.currentUser?.email == null) return;
 
+      // Resolve tenant ownership before pushing anything. A device can be
+      // reused for another verified owner; stale local PINs/outlets must never
+      // be uploaded under the new Supabase session.
+      final verifiedOutletIds = await _authenticatedOwnerOutletIds();
+      if (verifiedOutletIds.isNotEmpty) {
+        await _db.retainOnlyOutlets(verifiedOutletIds);
+      }
+
       // Account recovery data is backed up for every verified owner. This is
       // what allows a replacement device to restore the original owner PIN,
       // staff PINs, outlets, menu, variants, and tables without creating a
@@ -366,6 +374,9 @@ class SyncService {
         final id = map['id'] as String?;
         if (id != null) pulled.add(id);
       }
+      if (pulled.isNotEmpty) {
+        await _db.retainOnlyOutlets(pulled);
+      }
     } catch (e) {
       debugPrint('[SyncService] owner outlet rpc unavailable: $e');
     }
@@ -399,6 +410,21 @@ class SyncService {
     }
 
     return pulled.toList();
+  }
+
+  Future<Set<String>> _authenticatedOwnerOutletIds() async {
+    try {
+      final response = await _supabase.rpc('get_authenticated_owner_outlets');
+      return (response as List? ?? const [])
+          .map(_asMap)
+          .map((row) => row['id'] as String?)
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet();
+    } catch (e) {
+      debugPrint('[SyncService] owner scope unavailable: $e');
+      return const <String>{};
+    }
   }
 
   Future<bool> _pullOutlet(String outletId) async {

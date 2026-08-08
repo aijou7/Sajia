@@ -36,6 +36,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
   final _otpCtrl = TextEditingController();
   String? _emailError;
   bool _isDeviceRecovery = false;
+  String? _authUserIdBeforeOtp;
   Timer? _otpCooldownTimer;
   int _otpCooldownSeconds = 0;
 
@@ -112,6 +113,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
       _emailCtrl.text = email;
       _otpCtrl.clear();
     });
+    _authUserIdBeforeOtp = service.authenticatedUserId;
     final result =
         await service.sendOtp(email, shouldCreateUser: !_isDeviceRecovery);
     if (!mounted) return;
@@ -166,6 +168,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
     );
     if (!mounted) return;
     if (result == OtpVerifyResult.success) {
+      final accountReady = await _prepareVerifiedAccount();
+      if (!accountReady || !mounted) return;
       await _continueAfterVerifiedEmail();
     } else {
       setState(() {
@@ -182,6 +186,60 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
           _ => 'Kode OTP tidak valid. Pastikan memakai kode terbaru.',
         };
       });
+    }
+  }
+
+  Future<bool> _prepareVerifiedAccount() async {
+    final service = OnboardingService();
+    final verifiedUserId = service.authenticatedUserId;
+    final verifiedEmail = service.normalizeEmail(
+      service.authenticatedEmail ?? _emailCtrl.text,
+    );
+    if (verifiedUserId == null || verifiedEmail.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _emailError =
+            'Sesi email belum terbentuk. Verifikasi ulang memakai kode terbaru.';
+      });
+      return false;
+    }
+
+    try {
+      final db = ref.read(databaseProvider);
+      final boundUserId = await service.getVerifiedAuthUserId();
+      final hasLocalData = await db.hasBusinessData();
+      final setupDone = await service.isSetupDone();
+      final accountChanged =
+          boundUserId != null && boundUserId != verifiedUserId;
+      final otpChangedSession = _authUserIdBeforeOtp != null &&
+          _authUserIdBeforeOtp != verifiedUserId;
+      final legacyUnboundData =
+          boundUserId == null && hasLocalData && !setupDone;
+
+      if (accountChanged || otpChangedSession || legacyUnboundData) {
+        await db.clearBusinessData();
+        ref.read(cartProvider.notifier).clear();
+        ref.read(currentUserProvider.notifier).state = null;
+        ref.read(activeShiftProvider.notifier).state = null;
+        ref.read(currentOutletIdProvider.notifier).state = 'default-outlet';
+      }
+
+      await service.bindVerifiedAccount(
+        authUserId: verifiedUserId,
+        email: verifiedEmail,
+        outletIds: accountChanged || otpChangedSession || legacyUnboundData
+            ? const <String>[]
+            : null,
+      );
+      return true;
+    } catch (_) {
+      if (!mounted) return false;
+      setState(() {
+        _isLoading = false;
+        _emailError =
+            'Akun terverifikasi, tetapi data perangkat belum dapat dipisahkan dengan aman. Coba lagi.';
+      });
+      return false;
     }
   }
 
@@ -235,18 +293,22 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
         throw StateError('ID outlet akun tidak valid');
       }
 
+      final restoredOutletIds = ownerOutlets
+          .map((outlet) => outlet['id'] as String?)
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      final db = ref.read(databaseProvider);
+      await db.retainOnlyOutlets(restoredOutletIds);
+      await service.saveVerifiedOwnerOutletIds(restoredOutletIds);
+
       final restored =
           await ref.read(syncServiceProvider).pullAllForLogin(outletId);
       if (!restored) {
         throw StateError('Koneksi ke penyimpanan akun gagal');
       }
 
-      final db = ref.read(databaseProvider);
       final users = await db.sessionDao.getActiveUsers();
-      final restoredOutletIds = ownerOutlets
-          .map((outlet) => outlet['id'] as String?)
-          .whereType<String>()
-          .toSet();
       final hasRestoredOwner = users.any(
         (user) =>
             user.role == 'owner' && restoredOutletIds.contains(user.outletId),
@@ -373,6 +435,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
       ));
 
       await OnboardingService().saveCurrentOutletId(outletId);
+      await OnboardingService().saveVerifiedOwnerOutletIds([outletId]);
 
       // Update currentOutletIdProvider
       ref.read(currentOutletIdProvider.notifier).state = outletId;

@@ -84,6 +84,95 @@ class AppDatabase extends _$AppDatabase {
     // Outlet default — akan diupdate saat setup
     return;
   }
+
+  /// Whether this device still contains a configured business.
+  Future<bool> hasBusinessData() async {
+    final outlet = await (select(outlets)..limit(1)).getSingleOrNull();
+    if (outlet != null) return true;
+    final user = await (select(users)..limit(1)).getSingleOrNull();
+    return user != null;
+  }
+
+  /// Keeps local rows only for the verified owner's outlets.
+  ///
+  /// Sajia uses one encrypted local database per installation. A change of
+  /// Supabase owner must remove previous-account rows before PIN lookup or a
+  /// recovery push can run.
+  Future<void> retainOnlyOutlets(Set<String> allowedOutletIds) async {
+    final localOutlets = await select(outlets).get();
+    final removedOutletIds = localOutlets
+        .map((outlet) => outlet.id)
+        .where((id) => !allowedOutletIds.contains(id))
+        .toSet();
+    if (removedOutletIds.isEmpty) return;
+
+    await transaction(() async {
+      final removedOrders = await (select(orders)
+            ..where((order) => order.outletId.isIn(removedOutletIds)))
+          .get();
+      final removedOrderIds = removedOrders.map((order) => order.id).toSet();
+      if (removedOrderIds.isNotEmpty) {
+        await (delete(orderItems)
+              ..where((item) => item.orderId.isIn(removedOrderIds)))
+            .go();
+      }
+      await (delete(orders)
+            ..where((order) => order.outletId.isIn(removedOutletIds)))
+          .go();
+
+      final removedProducts = await (select(products)
+            ..where((product) => product.outletId.isIn(removedOutletIds)))
+          .get();
+      final removedProductIds =
+          removedProducts.map((product) => product.id).toSet();
+      if (removedProductIds.isNotEmpty) {
+        await (delete(productVariants)
+              ..where((variant) => variant.productId.isIn(removedProductIds)))
+            .go();
+      }
+
+      final removedUsers = await (select(users)
+            ..where((user) => user.outletId.isIn(removedOutletIds)))
+          .get();
+      final removedUserIds = removedUsers.map((user) => user.id).toSet();
+      await (delete(userOutletAccesses)
+            ..where((access) => access.outletId.isIn(removedOutletIds)))
+          .go();
+      if (removedUserIds.isNotEmpty) {
+        await (delete(userOutletAccesses)
+              ..where((access) => access.userId.isIn(removedUserIds)))
+            .go();
+      }
+
+      await (delete(sessions)
+            ..where((session) => session.outletId.isIn(removedOutletIds)))
+          .go();
+      await (delete(expenses)
+            ..where((expense) => expense.outletId.isIn(removedOutletIds)))
+          .go();
+      await (delete(restaurantTables)
+            ..where((table) => table.outletId.isIn(removedOutletIds)))
+          .go();
+      await (delete(products)
+            ..where((product) => product.outletId.isIn(removedOutletIds)))
+          .go();
+      await (delete(categories)
+            ..where((category) => category.outletId.isIn(removedOutletIds)))
+          .go();
+      await (delete(users)
+            ..where((user) => user.outletId.isIn(removedOutletIds)))
+          .go();
+      await (delete(outlets)
+            ..where((outlet) => outlet.id.isIn(removedOutletIds)))
+          .go();
+
+      // Legacy queue payloads are not all attributable to an outlet. Never
+      // risk offering a previous owner's mutation to the new account.
+      await delete(syncQueue).go();
+    });
+  }
+
+  Future<void> clearBusinessData() => retainOnlyOutlets(const <String>{});
 }
 
 LazyDatabase _openConnection() {

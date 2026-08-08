@@ -10,6 +10,8 @@ class OnboardingService {
 
   static const _keyIsSetupDone = 'onboarding_done';
   static const _keyOwnerEmail = 'owner_email';
+  static const _keyVerifiedAuthUserId = 'verified_auth_user_id';
+  static const _keyOwnerOutletIds = 'verified_owner_outlet_ids';
   static const _keyCurrentOutletId = 'current_outlet_id';
   static const _keyLastOtpEmail = 'last_otp_email';
   static const _keyLastOtpSentAt = 'last_otp_sent_at';
@@ -18,6 +20,8 @@ class OnboardingService {
   Duration? lastOtpRetryAfter;
 
   SupabaseClient get _supabase => Supabase.instance.client;
+  String? get authenticatedUserId => _supabase.auth.currentUser?.id;
+  String? get authenticatedEmail => _supabase.auth.currentUser?.email;
   Future<bool> accountExists(String email) async {
     final normalizedEmail = normalizeEmail(email);
     try {
@@ -73,7 +77,40 @@ class OnboardingService {
 
   Future<void> saveOwnerEmail(String email) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyOwnerEmail, email);
+    await prefs.setString(_keyOwnerEmail, normalizeEmail(email));
+  }
+
+  Future<String?> getVerifiedAuthUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyVerifiedAuthUserId);
+  }
+
+  Future<Set<String>> getVerifiedOwnerOutletIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(_keyOwnerOutletIds) ?? const <String>[])
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Future<void> bindVerifiedAccount({
+    required String authUserId,
+    required String email,
+    Iterable<String>? outletIds,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyVerifiedAuthUserId, authUserId);
+    await prefs.setString(_keyOwnerEmail, normalizeEmail(email));
+    if (outletIds != null) {
+      final ids = outletIds.where((id) => id.isNotEmpty).toSet().toList()
+        ..sort();
+      await prefs.setStringList(_keyOwnerOutletIds, ids);
+    }
+  }
+
+  Future<void> saveVerifiedOwnerOutletIds(Iterable<String> outletIds) async {
+    final prefs = await SharedPreferences.getInstance();
+    final ids = outletIds.where((id) => id.isNotEmpty).toSet().toList()..sort();
+    await prefs.setStringList(_keyOwnerOutletIds, ids);
   }
 
   // ── OTP via Supabase Auth ─────────────────────
@@ -142,7 +179,6 @@ class OnboardingService {
           )
           .timeout(const Duration(seconds: 25));
       await _rememberOtpSent(normalizedEmail);
-      await saveOwnerEmail(normalizedEmail);
       return OtpResult.sent;
     } on AuthException catch (e) {
       lastOtpError = e.message;
@@ -219,6 +255,9 @@ class OnboardingService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyIsSetupDone, false);
     await prefs.remove(_keyCurrentOutletId);
+    await prefs.remove(_keyOwnerEmail);
+    await prefs.remove(_keyVerifiedAuthUserId);
+    await prefs.remove(_keyOwnerOutletIds);
   }
 }
 

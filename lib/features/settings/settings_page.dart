@@ -23,9 +23,10 @@ import 'pro_checkout_page.dart';
 Future<User?> _findActiveUserUsingPin(
   AppDatabase db,
   String rawPin, {
+  required Iterable<String> outletIds,
   String? excludeUserId,
 }) async {
-  final activeUsers = await db.sessionDao.getActiveUsers();
+  final activeUsers = await db.sessionDao.getActiveUsersForOutlets(outletIds);
   for (final user in activeUsers) {
     if (excludeUserId != null && user.id == excludeUserId) continue;
     if (PinHasher.verify(rawPin, user.outletId, user.pin)) {
@@ -33,6 +34,20 @@ Future<User?> _findActiveUserUsingPin(
     }
   }
   return null;
+}
+
+Future<List<User>> _loadVerifiedAccountUsers(
+  AppDatabase db,
+  String currentOutletId,
+) async {
+  final verifiedOutletIds =
+      await OnboardingService().getVerifiedOwnerOutletIds();
+  final scope = verifiedOutletIds.isNotEmpty
+      ? verifiedOutletIds
+      : currentOutletId.isEmpty || currentOutletId == 'default-outlet'
+          ? const <String>{}
+          : <String>{currentOutletId};
+  return db.sessionDao.getActiveUsersForOutlets(scope);
 }
 
 String _nameInitial(String? name) {
@@ -1381,6 +1396,12 @@ class _OutletFormSheetState extends ConsumerState<_OutletFormSheet> {
                 ),
               ),
             );
+        final onboarding = OnboardingService();
+        final verifiedOutletIds = await onboarding.getVerifiedOwnerOutletIds();
+        await onboarding.saveVerifiedOwnerOutletIds({
+          ...verifiedOutletIds,
+          created.id,
+        });
         await _setActiveOutlet(ref, created.id);
         if (mounted) Navigator.pop(context);
       } on SajiaPlanException catch (error) {
@@ -1736,11 +1757,12 @@ class _UserListSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final db = ref.watch(databaseProvider);
+    final currentOutletId = ref.watch(currentOutletIdProvider);
 
     return _BottomSheet(
       title: 'Daftar Staff',
       child: FutureBuilder<List<User>>(
-        future: db.sessionDao.getActiveUsers(),
+        future: _loadVerifiedAccountUsers(db, currentOutletId),
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
@@ -2018,9 +2040,14 @@ class _UserFormSheetState extends ConsumerState<_UserFormSheet> {
 
     String pin = widget.user?.pin ?? '';
     if (_pinCtrl.text.isNotEmpty) {
+      final verifiedOutletIds =
+          await OnboardingService().getVerifiedOwnerOutletIds();
+      final accountOutletIds =
+          verifiedOutletIds.isEmpty ? <String>{outletId} : verifiedOutletIds;
       final existingPinOwner = await _findActiveUserUsingPin(
         db,
         _pinCtrl.text,
+        outletIds: accountOutletIds,
         excludeUserId: widget.user?.id,
       );
       if (existingPinOwner != null) {
@@ -2263,9 +2290,15 @@ class _ChangePINSheetState extends ConsumerState<_ChangePINSheet> {
       return;
     }
 
+    final verifiedOutletIds =
+        await OnboardingService().getVerifiedOwnerOutletIds();
+    final accountOutletIds = verifiedOutletIds.isEmpty
+        ? <String>{dbUser.outletId}
+        : verifiedOutletIds;
     final existingPinOwner = await _findActiveUserUsingPin(
       db,
       _newPinCtrl.text,
+      outletIds: accountOutletIds,
       excludeUserId: dbUser.id,
     );
     if (existingPinOwner != null) {

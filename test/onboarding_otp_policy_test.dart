@@ -54,4 +54,21 @@ void main() {
       Duration.zero,
     );
   });
+
+  test('verified owner binding keeps auth identity and outlet scope together',
+      () async {
+    final service = OnboardingService();
+    await service.bindVerifiedAccount(
+      authUserId: 'auth-owner-b',
+      email: ' OWNER-B@EXAMPLE.COM ',
+      outletIds: ['outlet-b', 'outlet-b', 'outlet-c'],
+    );
+
+    expect(await service.getVerifiedAuthUserId(), 'auth-owner-b');
+    expect(await service.getSavedOwnerEmail(), 'owner-b@example.com');
+    expect(
+      await service.getVerifiedOwnerOutletIds(),
+      {'outlet-b', 'outlet-c'},
+    );
+  });
 }

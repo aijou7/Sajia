@@ -91,6 +91,17 @@ class SessionDao extends DatabaseAccessor<AppDatabase> with _$SessionDaoMixin {
         ..orderBy([(u) => OrderingTerm.asc(u.name)]))
       .get();
 
+  Future<List<User>> getActiveUsersForOutlets(Iterable<String> outletIds) {
+    final scope = outletIds.toSet();
+    if (scope.isEmpty) return Future.value(const <User>[]);
+    return (select(users)
+          ..where(
+            (user) => user.isActive.equals(true) & user.outletId.isIn(scope),
+          )
+          ..orderBy([(user) => OrderingTerm.asc(user.name)]))
+        .get();
+  }
+
   Future<User?> getActiveUserById(String userId) => (select(users)
         ..where((u) => u.id.equals(userId) & u.isActive.equals(true))
         ..limit(1))

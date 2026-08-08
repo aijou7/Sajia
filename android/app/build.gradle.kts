@@ -21,7 +21,8 @@ val usesAndroidDebugCertificate =
     releaseStoreFile.replace('\\', '/').endsWith("/.android/debug.keystore") ||
         releaseKeyAlias == "androiddebugkey"
 val allowDebugReleaseSigning =
-    providers.gradleProperty("allowDebugReleaseSigning").orNull == "true"
+    providers.gradleProperty("allowDebugReleaseSigning").orNull == "true" ||
+        System.getenv("SAJIA_ALLOW_DEBUG_RELEASE_SIGNING") == "true"
 if (isReleaseBuild && !keystorePropertiesFile.exists()) {
     throw GradleException(
         "Release signing belum siap: key.properties tidak ditemukan. " +

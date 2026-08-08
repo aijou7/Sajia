@@ -33,6 +33,7 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
   int _failedAttempts = 0;
   DateTime? _lockoutUntil;
   Timer? _lockoutTimer;
+  late final Future<Set<String>> _accountOutletScope;
   late AnimationController _shakeCtrl;
   late Animation<double> _shakeAnim;
 
@@ -46,7 +47,55 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
     _shakeAnim = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _shakeCtrl, curve: Curves.elasticIn),
     );
+    _accountOutletScope = _loadAccountOutletScope();
     unawaited(_restoreLoginGuard());
+  }
+
+  Future<Set<String>> _loadAccountOutletScope() async {
+    final service = OnboardingService();
+    final db = ref.read(databaseProvider);
+    final savedScope = await service.getVerifiedOwnerOutletIds();
+
+    if (service.authenticatedUserId != null) {
+      try {
+        final remoteOutlets = await service
+            .getAuthenticatedOwnerOutlets()
+            .timeout(const Duration(seconds: 10));
+        final remoteScope = remoteOutlets
+            .map((outlet) => outlet['id'] as String?)
+            .whereType<String>()
+            .where((id) => id.isNotEmpty)
+            .toSet();
+        if (remoteScope.isNotEmpty) {
+          await db.retainOnlyOutlets(remoteScope);
+          await service.saveVerifiedOwnerOutletIds(remoteScope);
+          final email = service.authenticatedEmail;
+          if (email != null) {
+            await service.bindVerifiedAccount(
+              authUserId: service.authenticatedUserId!,
+              email: email,
+              outletIds: remoteScope,
+            );
+          }
+          final currentOutletId = ref.read(currentOutletIdProvider);
+          if (!remoteScope.contains(currentOutletId)) {
+            final target = remoteScope.first;
+            ref.read(currentOutletIdProvider.notifier).state = target;
+            await service.saveCurrentOutletId(target);
+          }
+          return remoteScope;
+        }
+      } catch (_) {
+        // Offline PIN login remains available using the last verified scope.
+      }
+    }
+
+    if (savedScope.isNotEmpty) return savedScope;
+    final currentOutletId = ref.read(currentOutletIdProvider);
+    if (currentOutletId.isNotEmpty && currentOutletId != 'default-outlet') {
+      return <String>{currentOutletId};
+    }
+    return const <String>{};
   }
 
   @override
@@ -160,7 +209,9 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
 
     final db = ref.read(databaseProvider);
     final currentOutletId = ref.read(currentOutletIdProvider);
-    final users = await db.sessionDao.getActiveUsers();
+    final accountOutletIds = await _accountOutletScope;
+    final users =
+        await db.sessionDao.getActiveUsersForOutlets(accountOutletIds);
     final matchingUsers = <User>[];
 
     for (final candidate in users) {
