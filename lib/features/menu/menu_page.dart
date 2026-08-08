@@ -291,7 +291,7 @@ class _ProductTile extends ConsumerWidget {
                       isLowStock
                           ? Icons.warning_amber_rounded
                           : Icons.inventory_2_outlined,
-                      size: 13,
+                      size: AppTheme.iconCompact,
                       color: isLowStock ? AppTheme.danger : AppTheme.success,
                     ),
                     const SizedBox(width: 4),
@@ -570,6 +570,7 @@ class _StockAdjustmentSheetState extends ConsumerState<StockAdjustmentSheet> {
             TextField(
               controller: _stockCtrl,
               autofocus: true,
+              selectAllOnFocus: true,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
@@ -1216,6 +1217,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                         const _FormLabel('Harga Jual *'),
                         TextFormField(
                           controller: _priceCtrl,
+                          selectAllOnFocus: true,
                           keyboardType: TextInputType.number,
                           decoration: _inputDeco('0'),
                           validator: (v) {
@@ -1237,6 +1239,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                         const _FormLabel('Harga Modal'),
                         TextFormField(
                           controller: _cogsCtrl,
+                          selectAllOnFocus: true,
                           keyboardType: TextInputType.number,
                           decoration: _inputDeco('0'),
                         ),
@@ -1443,6 +1446,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                             const _FormLabel('Stok Awal / Sisa Stok *'),
                             TextFormField(
                               controller: _stockCtrl,
+                              selectAllOnFocus: true,
                               keyboardType:
                                   const TextInputType.numberWithOptions(
                                 decimal: true,
@@ -1470,6 +1474,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                             const _FormLabel('Peringatan Stok Menipis'),
                             TextFormField(
                               controller: _lowStockCtrl,
+                              selectAllOnFocus: true,
                               keyboardType:
                                   const TextInputType.numberWithOptions(
                                 decimal: true,
@@ -1775,6 +1780,7 @@ class _VariantGroupEditorSheetState extends State<_VariantGroupEditorSheet> {
                             flex: 2,
                             child: TextField(
                               controller: _optionPriceCtrl,
+                              selectAllOnFocus: true,
                               keyboardType: TextInputType.number,
                               textInputAction: TextInputAction.done,
                               onSubmitted: (_) => _addOption(),

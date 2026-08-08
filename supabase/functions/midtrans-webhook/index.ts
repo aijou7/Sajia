@@ -1,38 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import { createClient } from "npm:@supabase/supabase-js@^2";
+import { readMidtransConfig } from "./midtrans_config.ts";
 
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
-
-type MidtransConfig = {
-  environment: "sandbox" | "production";
-  serverKey: string;
-};
-
-const getMidtransConfig = (): MidtransConfig | null => {
-  if (String(Deno.env.get("PAYMENT_PROVIDER") || "").trim().toUpperCase() !== "MIDTRANS") {
-    return null;
-  }
-  const productionFlag = String(Deno.env.get("MIDTRANS_IS_PRODUCTION") || "")
-    .trim()
-    .toLowerCase();
-  if (productionFlag !== "true" && productionFlag !== "false") return null;
-
-  const serverKey = String(Deno.env.get("MIDTRANS_SERVER_KEY") || "").trim();
-  const isProduction = productionFlag === "true";
-  const keyMatchesMode = isProduction
-    ? serverKey.startsWith("Mid-server-") && !serverKey.startsWith("SB-")
-    : serverKey.startsWith("SB-Mid-server-");
-  if (!keyMatchesMode) return null;
-  return {
-    environment: isProduction ? "production" : "sandbox",
-    serverKey,
-  };
-};
 
 const sha512 = async (text: string) => {
   const bytes = new TextEncoder().encode(text);
@@ -62,10 +37,14 @@ const handler = async (req: Request) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const midtrans = getMidtransConfig();
-  if (!supabaseUrl || !serviceRoleKey || !midtrans) {
+  const midtransResult = readMidtransConfig();
+  if (!supabaseUrl || !serviceRoleKey || !midtransResult.ok) {
+    if (!midtransResult.ok) {
+      console.error("Midtrans configuration error", midtransResult.code);
+    }
     return json({ error: "Service unavailable" }, 503);
   }
+  const midtrans = midtransResult.config;
 
   const event = await req.json().catch(() => null);
   const orderId = typeof event?.order_id === "string" ? event.order_id.trim() : "";

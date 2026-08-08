@@ -966,7 +966,7 @@ class _CategoryReportTab extends ConsumerWidget {
                           child: Icon(
                             Icons.label_rounded,
                             color: categoryColor,
-                            size: 21,
+                            size: AppTheme.iconDefault,
                           ),
                         ),
                         const SizedBox(width: 11),

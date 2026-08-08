@@ -379,6 +379,6 @@ class _IconBox extends StatelessWidget {
           color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(14),
         ),
-        child: Icon(icon, color: color, size: 23),
+        child: Icon(icon, color: color, size: AppTheme.iconProminent),
       );
 }

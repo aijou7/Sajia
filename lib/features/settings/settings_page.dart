@@ -1084,7 +1084,7 @@ class _PlanPoint extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Icon(Icons.check_circle_rounded,
-              size: 17, color: AppTheme.success),
+              size: 18, color: AppTheme.success),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1281,7 +1281,7 @@ class _OutletListSheet extends ConsumerWidget {
                         ),
                       IconButton(
                         tooltip: 'Edit cabang',
-                        icon: const Icon(Icons.edit_outlined, size: 19),
+                        icon: const Icon(Icons.edit_outlined, size: 20),
                         onPressed: () {
                           final navigatorContext =
                               Navigator.of(context, rootNavigator: true)
@@ -1551,11 +1551,11 @@ class _ReceiptSettingsSheetState extends ConsumerState<_ReceiptSettingsSheet> {
             children: [
               Expanded(
                   child: _FormField('Pajak (%)', _taxCtrl, '0',
-                      type: TextInputType.number)),
+                      type: TextInputType.number, selectAllOnFocus: true)),
               const SizedBox(width: 12),
               Expanded(
                   child: _FormField('Service Charge (%)', _serviceCtrl, '0',
-                      type: TextInputType.number)),
+                      type: TextInputType.number, selectAllOnFocus: true)),
             ],
           ),
           const SizedBox(height: 16),
@@ -2508,9 +2508,12 @@ class _FormField extends StatelessWidget {
   final String hint;
   final TextInputType type;
   final int maxLines;
+  final bool selectAllOnFocus;
 
   const _FormField(this.label, this.ctrl, this.hint,
-      {this.type = TextInputType.text, this.maxLines = 1});
+      {this.type = TextInputType.text,
+      this.maxLines = 1,
+      this.selectAllOnFocus = false});
 
   @override
   Widget build(BuildContext context) => Column(
@@ -2524,6 +2527,7 @@ class _FormField extends StatelessWidget {
           const SizedBox(height: 6),
           TextField(
             controller: ctrl,
+            selectAllOnFocus: selectAllOnFocus,
             keyboardType: type,
             maxLines: maxLines,
             decoration: InputDecoration(

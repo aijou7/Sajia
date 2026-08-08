@@ -796,6 +796,7 @@ class _OpeningCashSheetState extends State<_OpeningCashSheet> {
           TextField(
             controller: _controller,
             autofocus: true,
+            selectAllOnFocus: true,
             keyboardType: TextInputType.number,
             textInputAction: TextInputAction.done,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -887,6 +888,7 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
         TextField(
           controller: _cashController,
           autofocus: true,
+          selectAllOnFocus: true,
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.next,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],

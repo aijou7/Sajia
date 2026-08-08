@@ -1309,7 +1309,7 @@ class _DashboardMetric extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(icon, color: color, size: 21),
+            Icon(icon, color: color, size: AppTheme.iconDefault),
             const SizedBox(height: 18),
             Text(label,
                 style: const TextStyle(
@@ -1423,7 +1423,7 @@ class _OutletStatusRow extends StatelessWidget {
                       ? Icons.workspace_premium_outlined
                       : Icons.sell_outlined,
               color: outlet.isCloud ? AppTheme.primary : AppTheme.warning,
-              size: 19,
+              size: 20,
             ),
           );
           final status = Column(

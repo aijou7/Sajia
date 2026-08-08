@@ -576,8 +576,8 @@ class _TopBar extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      width: 18,
-                      height: 18,
+                      width: 20,
+                      height: 20,
                       decoration: const BoxDecoration(
                         color: AppTheme.primary,
                         shape: BoxShape.circle,
@@ -585,7 +585,7 @@ class _TopBar extends ConsumerWidget {
                       child: const Icon(
                         Icons.person_rounded,
                         color: Colors.white,
-                        size: 12,
+                        size: 14,
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -606,7 +606,7 @@ class _TopBar extends ConsumerWidget {
                     const Icon(
                       Icons.keyboard_arrow_down_rounded,
                       color: AppTheme.primary,
-                      size: 17,
+                      size: 18,
                     ),
                   ],
                 ),
@@ -1105,7 +1105,7 @@ class _MenuCardState extends State<_MenuCard> {
                               const Icon(
                                 Icons.touch_app_rounded,
                                 color: Color(0xFFB9C4D2),
-                                size: 15,
+                                size: AppTheme.iconCompact,
                               ),
                             ],
                           ),

@@ -315,7 +315,7 @@ class _TableCard extends StatelessWidget {
                           ? Icons.people_rounded
                           : Icons.table_restaurant_outlined,
                       color: statusColor,
-                      size: 25,
+                      size: AppTheme.iconProminent,
                     ),
                   ),
                   const SizedBox(height: 7),
@@ -705,6 +705,7 @@ class _OrderPaymentSheetState extends ConsumerState<_OrderPaymentSheet> {
               const SizedBox(height: 16),
               TextField(
                 controller: _paidCtrl,
+                selectAllOnFocus: true,
                 keyboardType: TextInputType.number,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(

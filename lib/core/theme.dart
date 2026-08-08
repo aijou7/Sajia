@@ -29,6 +29,11 @@ class AppTheme {
   static const textPrimary = Color(0xFF101828);
   static const textSecondary = Color(0xFF667085);
 
+  // Satu skala ikon menjaga baseline dan bobot visual konsisten.
+  static const iconCompact = 16.0;
+  static const iconDefault = 22.0;
+  static const iconProminent = 24.0;
+
   static const brandGradient = LinearGradient(
     colors: [primaryDeep, primary, primaryBright],
     begin: Alignment.topLeft,
@@ -78,6 +83,10 @@ class AppTheme {
     textTheme: GoogleFonts.interTextTheme().apply(
       bodyColor: textPrimary,
       displayColor: textPrimary,
+    ),
+    iconTheme: const IconThemeData(
+      size: iconDefault,
+      color: textSecondary,
     ),
     scaffoldBackgroundColor: surface,
     appBarTheme: AppBarTheme(
@@ -132,6 +141,10 @@ class AppTheme {
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: danger),
       ),
+      prefixIconColor: textSecondary,
+      suffixIconColor: textSecondary,
+      prefixIconConstraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+      suffixIconConstraints: const BoxConstraints(minWidth: 48, minHeight: 48),
     ),
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(
       backgroundColor: Colors.white,
@@ -141,6 +154,7 @@ class AppTheme {
     ),
     iconButtonTheme: IconButtonThemeData(
       style: IconButton.styleFrom(
+        iconSize: iconDefault,
         minimumSize: const Size(48, 48),
         tapTargetSize: MaterialTapTargetSize.padded,
       ),

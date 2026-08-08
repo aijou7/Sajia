@@ -690,6 +690,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                 const SizedBox(height: 8),
                 TextField(
                   controller: _paidController,
+                  selectAllOnFocus: true,
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: InputDecoration(

@@ -575,7 +575,7 @@ class _WifiPrinterSheetState extends State<WifiPrinterSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _field('Port', _portCtrl, '9100',
-                      type: TextInputType.number),
+                      type: TextInputType.number, selectAllOnFocus: true),
                 ),
               ],
             ),
@@ -608,7 +608,8 @@ class _WifiPrinterSheetState extends State<WifiPrinterSheet> {
   }
 
   Widget _field(String label, TextEditingController ctrl, String hint,
-      {TextInputType type = TextInputType.text}) {
+      {TextInputType type = TextInputType.text,
+      bool selectAllOnFocus = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -620,6 +621,7 @@ class _WifiPrinterSheetState extends State<WifiPrinterSheet> {
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
+          selectAllOnFocus: selectAllOnFocus,
           keyboardType: type,
           decoration: InputDecoration(
             hintText: hint,

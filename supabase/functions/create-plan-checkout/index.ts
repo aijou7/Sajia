@@ -5,6 +5,7 @@ import {
   checkoutIntegrityHash,
   verifyPlayIntegrity,
 } from "./play_integrity.ts";
+import { readMidtransConfig } from "./midtrans_config.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -33,35 +34,6 @@ const plans = {
     description: "Sajia Cloud - 1 outlet / 1 bulan",
   },
 } as const;
-
-type MidtransConfig = {
-  environment: "sandbox" | "production";
-  serverKey: string;
-  snapHost: string;
-};
-
-const getMidtransConfig = (): MidtransConfig | null => {
-  if (String(Deno.env.get("PAYMENT_PROVIDER") || "").trim().toUpperCase() !== "MIDTRANS") {
-    return null;
-  }
-  const productionFlag = String(Deno.env.get("MIDTRANS_IS_PRODUCTION") || "")
-    .trim()
-    .toLowerCase();
-  if (productionFlag !== "true" && productionFlag !== "false") return null;
-
-  const serverKey = String(Deno.env.get("MIDTRANS_SERVER_KEY") || "").trim();
-  const isProduction = productionFlag === "true";
-  const keyMatchesMode = isProduction
-    ? serverKey.startsWith("Mid-server-") && !serverKey.startsWith("SB-")
-    : serverKey.startsWith("SB-Mid-server-");
-  if (!keyMatchesMode) return null;
-
-  return {
-    environment: isProduction ? "production" : "sandbox",
-    serverKey,
-    snapHost: isProduction ? "https://app.midtrans.com" : "https://app.sandbox.midtrans.com",
-  };
-};
 
 const planAlias = (planCode: string) => planCode === "CLOUD_MONTHLY" ? "CLD" : "PRO";
 
@@ -171,12 +143,14 @@ const handler = async (req: Request) => {
     return json({ error: "Harga paket belum dikonfigurasi" }, 503);
   }
 
-  const midtrans = getMidtransConfig();
-  if (!midtrans) {
+  const midtransResult = readMidtransConfig();
+  if (!midtransResult.ok) {
     return json({
-      error: "Konfigurasi Midtrans tidak konsisten. Periksa provider, mode, dan Server Key.",
+      error: midtransResult.message,
+      code: midtransResult.code,
     }, 503);
   }
+  const midtrans = midtransResult.config;
 
   const { data: outlet, error: outletError } = await supabase
     .from("outlets")

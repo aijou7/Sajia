@@ -992,7 +992,7 @@ class _StatusPill extends StatelessWidget {
             color: AppTheme.success.withValues(alpha: .1),
             borderRadius: BorderRadius.circular(99)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 14, color: AppTheme.success),
+          Icon(icon, size: AppTheme.iconCompact, color: AppTheme.success),
           const SizedBox(width: 4),
           Text(label,
               style: const TextStyle(
@@ -1117,6 +1117,7 @@ class _ExpenseSheetState extends ConsumerState<_ExpenseSheet> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _amount,
+                selectAllOnFocus: true,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                     labelText: 'Nominal', prefixText: 'Rp '),
