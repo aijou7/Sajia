@@ -153,6 +153,8 @@ class AppUser extends Equatable {
   bool get isManager => role == 'manager';
   bool get isCashier => role == 'cashier';
   bool get canManageOperations => isOwner || isManager;
+  bool get canViewSalesHistory => isOwner || isManager || isCashier;
+  bool get canVoidTransactions => isOwner || isManager;
   bool get canViewFinancialReports => isOwner || isManager;
   bool get canViewAllBranches => isOwner;
   bool get canManageUsers => isOwner;
@@ -170,7 +172,7 @@ class AppUser extends Equatable {
       };
 
   @override
-  List<Object?> get props => [id, assignedOutletIds];
+  List<Object?> get props => [id, name, role, outletId, assignedOutletIds];
 }
 
 // FIX: Renamed dari Session ke SessionData untuk avoid conflict dengan Supabase Session

@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
-import 'package:drift/drift.dart' show OrderingTerm;
+import 'package:drift/drift.dart' hide Column;
+import '../../core/brand.dart';
+import '../../core/print_service.dart';
 import '../../data/local/app_database.dart';
 import '../shared/polish_widgets.dart';
 
@@ -16,6 +18,23 @@ class SalesHistoryPage extends ConsumerStatefulWidget {
 
 class _SalesHistoryPageState extends ConsumerState<SalesHistoryPage> {
   DateTime _selectedDate = DateTime.now();
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate.isAfter(DateTime.now())
+          ? DateTime.now()
+          : _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+      helpText: 'Pilih tanggal transaksi',
+      cancelText: 'Batal',
+      confirmText: 'Pilih',
+    );
+    if (picked != null && mounted) {
+      setState(() => _selectedDate = picked);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,12 +66,14 @@ class _SalesHistoryPageState extends ConsumerState<SalesHistoryPage> {
                       const BoxConstraints(minWidth: 48, minHeight: 48),
                 ),
                 Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _selectedDate = DateTime.now()),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: _pickDate,
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         const Text(
-                          'Periode',
+                          'Pilih tanggal',
                           style: TextStyle(
                             fontSize: 10,
                             color: AppTheme.textSecondary,
@@ -60,11 +81,22 @@ class _SalesHistoryPageState extends ConsumerState<SalesHistoryPage> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          DateHelper.formatDate(_selectedDate),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w800),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.calendar_month_outlined, size: 18),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                DateHelper.formatDate(_selectedDate),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -89,10 +121,11 @@ class _SalesHistoryPageState extends ConsumerState<SalesHistoryPage> {
 
           // Order list
           Expanded(
-            child: FutureBuilder<List<Order>>(
-              future: _getOrders(db, outletId, from, to),
+            child: StreamBuilder<List<Order>>(
+              stream: _watchOrders(db, outletId, from, to),
               builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError || !snapshot.hasData) {
@@ -192,16 +225,18 @@ class _SalesHistoryPageState extends ConsumerState<SalesHistoryPage> {
     );
   }
 
-  Future<List<Order>> _getOrders(
-      AppDatabase db, String outletId, DateTime from, DateTime to) async {
-    final all = await (db.select(db.orders)
-          ..where((o) => o.outletId.equals(outletId))
-          ..orderBy([(o) => OrderingTerm.desc(o.createdAt)]))
-        .get();
-    return all
-        .where((o) => !o.createdAt.isBefore(from) && !o.createdAt.isAfter(to))
-        .toList();
-  }
+  Stream<List<Order>> _watchOrders(
+    AppDatabase db,
+    String outletId,
+    DateTime from,
+    DateTime to,
+  ) =>
+      (db.select(db.orders)
+            ..where((order) =>
+                order.outletId.equals(outletId) &
+                order.createdAt.isBetweenValues(from, to))
+            ..orderBy([(order) => OrderingTerm.desc(order.createdAt)]))
+          .watch();
 }
 
 // ── ORDER TILE ────────────────────────────────────────────────
@@ -325,7 +360,7 @@ class _OrderDetail extends ConsumerWidget {
     final total = double.tryParse(order.total) ?? 0;
     final paid = double.tryParse(order.paidAmount ?? '0') ?? 0;
     final user = ref.watch(currentUserProvider);
-    final canCorrectOrder = user?.canManageOperations == true;
+    final canCorrectOrder = user?.canVoidTransactions == true;
 
     return itemsAsync.when(
       data: (items) => Column(
@@ -367,8 +402,19 @@ class _OrderDetail extends ConsumerWidget {
             _DetailRow('Alasan void', order.voidReason!,
                 color: AppTheme.danger),
           ],
-          if (canCorrectOrder && order.status != 'void') ...[
+          if (order.status == 'paid') ...[
             const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: () => _printReceipt(context, ref, items),
+                icon: const Icon(Icons.print_outlined),
+                label: const Text('Cetak ulang struk'),
+              ),
+            ),
+          ],
+          if (canCorrectOrder && order.status != 'void') ...[
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -399,6 +445,78 @@ class _OrderDetail extends ConsumerWidget {
           icon: const Icon(Icons.refresh_rounded),
           label: const Text('Muat ulang detail item'),
         ),
+      ),
+    );
+  }
+
+  Future<void> _printReceipt(
+    BuildContext context,
+    WidgetRef ref,
+    List<OrderItem> items,
+  ) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            SizedBox(width: 16),
+            Expanded(child: Text('Mengirim struk ke printer...')),
+          ],
+        ),
+      ),
+    );
+
+    PrintResult result;
+    try {
+      final db = ref.read(databaseProvider);
+      final outlet = await (db.select(db.outlets)
+            ..where((row) => row.id.equals(order.outletId)))
+          .getSingleOrNull();
+      final receipt = ReceiptData(
+        outletName: outlet?.name ?? AppBrand.name,
+        outletAddress: outlet?.address,
+        outletPhone: outlet?.phone,
+        receiptHeader: outlet?.receiptHeader,
+        receiptFooter: outlet?.receiptFooter,
+        orderNumber: order.orderNumber,
+        tableLabel: order.tableLabel,
+        cashierName: order.cashierName,
+        paymentMethod: order.paymentMethod ?? '-',
+        items: items
+            .map((item) => ReceiptItem(
+                  name: item.productName,
+                  variantSummary: item.variantSummary,
+                  quantity: double.tryParse(item.quantity) ?? 0,
+                  unitPrice: double.tryParse(item.unitPrice) ?? 0,
+                  subtotal: double.tryParse(item.subtotal) ?? 0,
+                ))
+            .toList(),
+        subtotal: double.tryParse(order.subtotal) ?? 0,
+        discountAmount: double.tryParse(order.discountAmount) ?? 0,
+        taxAmount: double.tryParse(order.taxAmount) ?? 0,
+        serviceCharge: double.tryParse(order.serviceCharge) ?? 0,
+        total: double.tryParse(order.total) ?? 0,
+        paidAmount: double.tryParse(order.paidAmount ?? '0') ?? 0,
+        changeAmount: double.tryParse(order.changeAmount ?? '0') ?? 0,
+        paidAt: order.paidAt ?? order.createdAt,
+      );
+      result = await PrintService().printReceipt(receipt);
+    } catch (_) {
+      result = PrintResult.error;
+    }
+
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message),
+        backgroundColor: result.isSuccess ? AppTheme.success : AppTheme.danger,
       ),
     );
   }
@@ -447,7 +565,7 @@ class _OrderDetail extends ConsumerWidget {
     if (!context.mounted) return;
 
     final user = ref.read(currentUserProvider);
-    if (user?.canManageOperations != true) {
+    if (user?.canVoidTransactions != true) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Kasir tidak memiliki akses membatalkan transaksi.'),
         backgroundColor: AppTheme.danger,

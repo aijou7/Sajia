@@ -144,6 +144,23 @@ final orderItemsProvider =
   return db.orderDao.watchOrderItems(orderId);
 });
 
+/// Sinyal perubahan data bisnis yang dipakai laporan dan dashboard.
+///
+/// Query agregasi kedua halaman tersebut tetap dijalankan sebagai Future agar
+/// perhitungannya sederhana, tetapi sinyal ini membuat Future dimuat ulang saat
+/// transaksi, item transaksi, pengeluaran, atau outlet berubah (termasuk saat
+/// hasil sinkronisasi baru masuk).
+final businessDataRevisionProvider = StreamProvider.autoDispose<int>((ref) {
+  final db = ref.watch(databaseProvider);
+  return db
+      .customSelect(
+        'SELECT 1 AS revision',
+        readsFrom: {db.orders, db.orderItems, db.expenses, db.outlets},
+      )
+      .watch()
+      .map((_) => DateTime.now().microsecondsSinceEpoch);
+});
+
 // Cart
 class CartNotifier extends WritableNotifier<Cart> {
   @override

@@ -465,48 +465,101 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             const SizedBox(height: 16),
           ],
 
-          const _SectionHeader('Akun'),
-          _SettingsCard(children: [
-            _SettingsTile(
-              icon: Icons.logout_rounded,
-              title: 'Keluar',
-              subtitle: 'Akhiri sesi kasir di perangkat ini',
-              onTap: () => _confirmLogout(context, ref),
-              trailing: const Icon(Icons.chevron_right_rounded,
-                  color: AppTheme.danger),
-            ),
-          ]),
-          const SizedBox(height: 16),
+          if (user?.isOwner == true) ...[
+            const _SectionHeader('Akun'),
+            _SettingsCard(children: [
+              _SettingsTile(
+                icon: Icons.logout_rounded,
+                title: 'Logout akun email',
+                subtitle: 'Putuskan akun Sajia dari perangkat ini',
+                onTap: () => _confirmAccountLogout(context, ref),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppTheme.danger,
+                ),
+              ),
+            ]),
+            const SizedBox(height: 16),
+          ],
         ],
       ),
     );
   }
 
-  void _confirmLogout(BuildContext context, WidgetRef ref) {
-    showDialog(
+  Future<void> _confirmAccountLogout(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Keluar dari Sajia?'),
-        content: const Text('Sesi kasir akan berakhir.'),
+        title: const Text('Logout akun Sajia?'),
+        content: const Text(
+          'Email owner akan diputus dari perangkat ini. Untuk menggunakan '
+          'akun dan PIN staff lagi, kamu harus login email/OTP kembali. '
+          'Data lokal tetap tersimpan terenkripsi.',
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Batal'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ref.read(cartProvider.notifier).clear();
-              ref.read(currentUserProvider.notifier).state = null;
-              context.go('/login');
-            },
+            onPressed: () => Navigator.pop(dialogContext, true),
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
-            child: const Text('Keluar'),
+            child: const Text('Logout akun'),
           ),
         ],
       ),
     );
+    if (confirmed != true || !context.mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            SizedBox(width: 16),
+            Expanded(child: Text('Mengeluarkan akun...')),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      // Supabase menghapus sesi lokal sebelum mencoba revoke token ke server.
+      // Logout perangkat tetap dilanjutkan saat revoke gagal karena offline.
+      try {
+        await ref.read(supabaseProvider).auth.signOut();
+      } catch (_) {}
+      await OnboardingService().resetSetup();
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ref.read(cartProvider.notifier).clear();
+      ref.read(currentUserProvider.notifier).state = null;
+      ref.read(activeShiftProvider.notifier).state = null;
+      ref.read(currentOutletIdProvider.notifier).state = 'default-outlet';
+      ref.invalidate(isSetupDoneProvider);
+      context.go('/onboarding');
+    } catch (_) {
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Akun belum berhasil dilogout. Periksa koneksi lalu coba lagi.',
+          ),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+    }
   }
 
   void _openOutletForm(BuildContext ctx) {

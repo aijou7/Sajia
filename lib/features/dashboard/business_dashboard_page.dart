@@ -25,6 +25,7 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
   late final TabController _tabs;
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   late Future<_DashboardData> _data;
+  int? _lastDataRevision;
 
   DateTime get _from => DateTime(_month.year, _month.month);
   DateTime get _to => DateTime(_month.year, _month.month + 1, 0, 23, 59, 59);
@@ -82,8 +83,33 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
     });
   }
 
+  Future<void> _pickMonth() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _month.isAfter(now) ? now : _month,
+      firstDate: DateTime(2000),
+      lastDate: now,
+      helpText: 'Pilih bulan dashboard',
+      cancelText: 'Batal',
+      confirmText: 'Pilih',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _month = DateTime(picked.year, picked.month);
+      _data = _loadData();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final revision = ref.watch(businessDataRevisionProvider).asData?.value;
+    if (revision != null && revision != _lastDataRevision) {
+      _lastDataRevision = revision;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _refresh();
+      });
+    }
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
@@ -124,7 +150,11 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
           final data = snapshot.data!;
           return Column(
             children: [
-              _MonthPicker(month: _month, onChange: _shiftMonth),
+              _MonthPicker(
+                month: _month,
+                onChange: _shiftMonth,
+                onPick: _pickMonth,
+              ),
               Expanded(
                 child: TabBarView(
                   controller: _tabs,
@@ -246,7 +276,12 @@ class _DashboardData {
 class _MonthPicker extends StatelessWidget {
   final DateTime month;
   final ValueChanged<int> onChange;
-  const _MonthPicker({required this.month, required this.onChange});
+  final VoidCallback onPick;
+  const _MonthPicker({
+    required this.month,
+    required this.onChange,
+    required this.onPick,
+  });
 
   @override
   Widget build(BuildContext context) => Container(
@@ -259,10 +294,26 @@ class _MonthPicker extends StatelessWidget {
               icon: const Icon(Icons.chevron_left_rounded),
             ),
             Expanded(
-              child: Text(
-                _monthName(month),
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.w800),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: onPick,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.calendar_month_outlined, size: 18),
+                      const SizedBox(width: 7),
+                      Flexible(
+                        child: Text(
+                          _monthName(month),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
             IconButton(

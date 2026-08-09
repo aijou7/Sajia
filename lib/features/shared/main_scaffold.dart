@@ -64,8 +64,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
-    final canViewHistory = user?.canManageOperations == true ||
-        user?.canViewFinancialReports == true;
+    final canViewHistory = user?.canViewSalesHistory == true;
     final canViewReports = user?.canViewFinancialReports == true;
     final canManageSettings = user?.canManageOperations == true;
     final isRestrictedDestination = switch (_currentIndex) {

@@ -27,10 +27,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (path == '/onboarding') return '/login';
       if (user == null && path != '/login') return '/login';
       if (user != null && path == '/login') return '/cashier';
-      if (user != null &&
-          path == '/history' &&
-          !user.canManageOperations &&
-          !user.canViewFinancialReports) {
+      if (user != null && path == '/history' && !user.canViewSalesHistory) {
         return '/cashier';
       }
       if (user != null &&

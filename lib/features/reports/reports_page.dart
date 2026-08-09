@@ -395,8 +395,27 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       ? '${_selectedDate.month}/${_selectedDate.year}'
       : DateHelper.formatDate(_selectedDate);
 
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate.isAfter(now) ? now : _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: now,
+      helpText: _isMonthly ? 'Pilih bulan laporan' : 'Pilih tanggal laporan',
+      cancelText: 'Batal',
+      confirmText: 'Pilih',
+    );
+    if (picked != null && mounted) {
+      setState(() => _selectedDate = picked);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Memuat ulang agregasi saat transaksi hasil sync/checkout masuk tanpa
+    // mengharuskan pengguna menggeser tanggal terlebih dahulu.
+    ref.watch(businessDataRevisionProvider);
     return Scaffold(
       backgroundColor: AppTheme.surface,
       appBar: AppBar(
@@ -460,7 +479,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                 setState(() => _selectedDate = next);
               }
             },
-            onToday: () => setState(() => _selectedDate = DateTime.now()),
+            onPick: _pickDate,
           ),
           Expanded(
             child: TabBarView(
@@ -495,13 +514,13 @@ class _DateNavigator extends StatelessWidget {
   final String label;
   final VoidCallback onPrev;
   final VoidCallback onNext;
-  final VoidCallback onToday;
+  final VoidCallback onPick;
 
   const _DateNavigator({
     required this.label,
     required this.onPrev,
     required this.onNext,
-    required this.onToday,
+    required this.onPick,
   });
 
   @override
@@ -518,12 +537,29 @@ class _DateNavigator extends StatelessWidget {
             constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           ),
           Expanded(
-            child: GestureDetector(
-              onTap: onToday,
-              child: Text(label,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w800)),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onPick,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.calendar_month_outlined, size: 18),
+                    const SizedBox(width: 7),
+                    Flexible(
+                      child: Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
           IconButton(

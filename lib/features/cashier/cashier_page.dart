@@ -677,8 +677,8 @@ class _TopBar extends ConsumerWidget {
                     Navigator.pop(sheetContext);
                     _confirmLogout(context, ref);
                   },
-                  icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Keluar dari akun'),
+                  icon: const Icon(Icons.lock_person_rounded),
+                  label: const Text('Kunci kasir / ganti pengguna'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.danger,
                     side: const BorderSide(color: AppTheme.danger),
@@ -697,8 +697,11 @@ class _TopBar extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Keluar dari Sajia?'),
-        content: const Text('Sesi pengguna di perangkat ini akan diakhiri.'),
+        title: const Text('Kunci sesi kasir?'),
+        content: const Text(
+          'Aplikasi kembali ke layar PIN agar pengguna lain dapat masuk. '
+          'Akun email owner tetap terhubung di perangkat ini.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -707,7 +710,7 @@ class _TopBar extends ConsumerWidget {
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
-            child: const Text('Keluar'),
+            child: const Text('Kunci'),
           ),
         ],
       ),
