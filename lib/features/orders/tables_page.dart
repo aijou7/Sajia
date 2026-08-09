@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart' show Value;
 
+import '../../core/numeric_input_formatter.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
@@ -707,10 +708,12 @@ class _OrderPaymentSheetState extends ConsumerState<_OrderPaymentSheet> {
                 controller: _paidCtrl,
                 selectAllOnFocus: true,
                 keyboardType: TextInputType.number,
+                inputFormatters: const [NormalizedNumberInputFormatter()],
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   labelText: 'Uang diterima',
                   prefixText: 'Rp ',
+                  hintText: '0',
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10)),
                 ),

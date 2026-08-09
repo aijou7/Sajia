@@ -1,5 +1,4 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "jsr:@supabase/server@^1";
 import { createClient } from "npm:@supabase/supabase-js@^2";
 
 const corsHeaders = {
@@ -85,6 +84,4 @@ const handler = async (req: Request) => {
   });
 };
 
-export default {
-  fetch: withSupabase({ auth: "none" }, handler),
-};
+Deno.serve(handler);

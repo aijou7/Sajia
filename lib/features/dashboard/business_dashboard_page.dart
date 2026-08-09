@@ -5,6 +5,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/numeric_input_formatter.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
@@ -1170,8 +1171,9 @@ class _ExpenseSheetState extends ConsumerState<_ExpenseSheet> {
                 controller: _amount,
                 selectAllOnFocus: true,
                 keyboardType: TextInputType.number,
+                inputFormatters: const [NormalizedNumberInputFormatter()],
                 decoration: const InputDecoration(
-                    labelText: 'Nominal', prefixText: 'Rp '),
+                    labelText: 'Nominal', prefixText: 'Rp ', hintText: '0'),
                 validator: (value) =>
                     (value ?? '').replaceAll(RegExp(r'[^0-9]'), '').isEmpty
                         ? 'Nominal wajib diisi'

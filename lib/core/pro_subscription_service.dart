@@ -124,10 +124,24 @@ class SajiaPlanService {
     final details = error.details;
     if (details is Map) {
       final message = details['error'] ?? details['message'];
-      if (message is String && message.isNotEmpty) return message;
+      if (message is String && message.isNotEmpty) {
+        return _friendlyFunctionMessage(message, error.status);
+      }
     }
-    if (details is String && details.isNotEmpty) return details;
+    if (details is String && details.isNotEmpty) {
+      return _friendlyFunctionMessage(details, error.status);
+    }
     return 'Payment service error ${error.status}. Cek deploy Edge Function dan secret Midtrans.';
+  }
+
+  String _friendlyFunctionMessage(String message, int status) {
+    final normalized = message.toLowerCase();
+    if (normalized.contains('function failed to start') ||
+        normalized.contains('boot error')) {
+      return 'Layanan pembayaran belum aktif sempurna. Coba lagi setelah '
+          'Edge Function Midtrans selesai diperbarui (kode $status).';
+    }
+    return message;
   }
 
   String _networkErrorMessage(Object error) {

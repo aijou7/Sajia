@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import '../../core/numeric_input_formatter.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
@@ -573,6 +574,9 @@ class _StockAdjustmentSheetState extends ConsumerState<StockAdjustmentSheet> {
               selectAllOnFocus: true,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: const [
+                NormalizedNumberInputFormatter(allowDecimal: true),
+              ],
               decoration: InputDecoration(
                 hintText: '0',
                 prefixIcon: const Icon(Icons.inventory_2_outlined),
@@ -847,10 +851,16 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     final p = widget.product;
     _nameCtrl = TextEditingController(text: p?.name ?? '');
     _priceCtrl = TextEditingController(text: p?.price ?? '');
-    _cogsCtrl = TextEditingController(text: p?.cogs ?? '0');
+    _cogsCtrl = TextEditingController(
+      text: p == null || p.cogs == '0' ? '' : p.cogs,
+    );
     _descCtrl = TextEditingController(text: p?.description ?? '');
-    _stockCtrl = TextEditingController(text: p?.stock ?? '0');
-    _lowStockCtrl = TextEditingController(text: p?.lowStockAlert ?? '5');
+    _stockCtrl = TextEditingController(
+      text: p == null || p.stock == '0' ? '' : p.stock,
+    );
+    _lowStockCtrl = TextEditingController(
+      text: p == null || p.lowStockAlert == '0' ? '' : p.lowStockAlert,
+    );
     _imagePath = p?.imageUrl;
     _selectedCategoryId = p?.categoryId;
     _isAvailable = p?.isAvailable ?? true;
@@ -993,10 +1003,14 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
           isAvailable: Value(_isAvailable),
           trackStock: Value(_trackStock),
           stock: Value(_trackStock
-              ? _stockCtrl.text.trim().replaceAll(',', '.')
+              ? (_stockCtrl.text.trim().isEmpty
+                  ? '0'
+                  : _stockCtrl.text.trim().replaceAll(',', '.'))
               : (widget.product?.stock ?? '0')),
           lowStockAlert: Value(_trackStock
-              ? _lowStockCtrl.text.trim().replaceAll(',', '.')
+              ? (_lowStockCtrl.text.trim().isEmpty
+                  ? '5'
+                  : _lowStockCtrl.text.trim().replaceAll(',', '.'))
               : (widget.product?.lowStockAlert ?? '5')),
           updatedAt: Value(DateTime.now()),
           isSynced: const Value(false),
@@ -1219,6 +1233,9 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                           controller: _priceCtrl,
                           selectAllOnFocus: true,
                           keyboardType: TextInputType.number,
+                          inputFormatters: const [
+                            NormalizedNumberInputFormatter(),
+                          ],
                           decoration: _inputDeco('0'),
                           validator: (v) {
                             if (v?.trim().isEmpty == true) return 'Wajib diisi';
@@ -1241,6 +1258,9 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                           controller: _cogsCtrl,
                           selectAllOnFocus: true,
                           keyboardType: TextInputType.number,
+                          inputFormatters: const [
+                            NormalizedNumberInputFormatter(),
+                          ],
                           decoration: _inputDeco('0'),
                         ),
                       ],
@@ -1451,12 +1471,18 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                                   const TextInputType.numberWithOptions(
                                 decimal: true,
                               ),
+                              inputFormatters: const [
+                                NormalizedNumberInputFormatter(
+                                  allowDecimal: true,
+                                ),
+                              ],
                               decoration: _inputDeco('0'),
                               validator: (value) {
                                 if (!_trackStock) return null;
-                                final parsed = double.tryParse(
-                                  (value ?? '').trim().replaceAll(',', '.'),
-                                );
+                                final raw = (value ?? '').trim();
+                                final parsed = raw.isEmpty
+                                    ? 0
+                                    : double.tryParse(raw.replaceAll(',', '.'));
                                 if (parsed == null || parsed < 0) {
                                   return 'Minimal 0';
                                 }
@@ -1479,12 +1505,18 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                                   const TextInputType.numberWithOptions(
                                 decimal: true,
                               ),
+                              inputFormatters: const [
+                                NormalizedNumberInputFormatter(
+                                  allowDecimal: true,
+                                ),
+                              ],
                               decoration: _inputDeco('5'),
                               validator: (value) {
                                 if (!_trackStock) return null;
-                                final parsed = double.tryParse(
-                                  (value ?? '').trim().replaceAll(',', '.'),
-                                );
+                                final raw = (value ?? '').trim();
+                                final parsed = raw.isEmpty
+                                    ? 5
+                                    : double.tryParse(raw.replaceAll(',', '.'));
                                 if (parsed == null || parsed < 0) {
                                   return 'Minimal 0';
                                 }
@@ -1583,7 +1615,7 @@ class _VariantGroupEditorSheetState extends State<_VariantGroupEditorSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   final _optionCtrl = TextEditingController();
-  final _optionPriceCtrl = TextEditingController(text: '0');
+  final _optionPriceCtrl = TextEditingController();
   late final List<ProductVariantOption> _options;
   late bool _isRequired;
   String? _optionError;
@@ -1639,7 +1671,7 @@ class _VariantGroupEditorSheetState extends State<_VariantGroupEditorSheet> {
         priceDelta: priceDelta,
       ));
       _optionCtrl.clear();
-      _optionPriceCtrl.text = '0';
+      _optionPriceCtrl.clear();
       _optionError = null;
     });
   }
@@ -1782,11 +1814,14 @@ class _VariantGroupEditorSheetState extends State<_VariantGroupEditorSheet> {
                               controller: _optionPriceCtrl,
                               selectAllOnFocus: true,
                               keyboardType: TextInputType.number,
+                              inputFormatters: const [
+                                NormalizedNumberInputFormatter(),
+                              ],
                               textInputAction: TextInputAction.done,
                               onSubmitted: (_) => _addOption(),
                               decoration: _variantInputDecoration(
                                 'Tambah harga',
-                              ).copyWith(prefixText: 'Rp '),
+                              ).copyWith(prefixText: 'Rp ', hintText: '0'),
                             ),
                           ),
                           const SizedBox(width: 8),

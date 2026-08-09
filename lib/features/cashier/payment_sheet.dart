@@ -8,6 +8,7 @@ import '../../core/brand.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../core/notification_service.dart';
+import '../../core/numeric_input_formatter.dart';
 import '../../core/print_service.dart';
 import '../../data/local/app_database.dart';
 import '../../data/local/daos/product_dao.dart';
@@ -462,8 +463,18 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.attach_money,
-                        color: Color(0xFFD97706), size: 18),
+                    const SizedBox(
+                      width: 22,
+                      child: Text(
+                        'Rp',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFFD97706),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
                     const SizedBox(width: 4),
                     Text('Kembalian: ${change.toRupiah}',
                         style: const TextStyle(
@@ -692,7 +703,10 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                   controller: _paidController,
                   selectAllOnFocus: true,
                   keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    const NormalizedNumberInputFormatter(),
+                  ],
                   decoration: InputDecoration(
                     prefixText: 'Rp ',
                     hintText: '0',
@@ -765,8 +779,18 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.attach_money,
-                            color: AppTheme.success, size: 20),
+                        const SizedBox(
+                          width: 22,
+                          child: Text(
+                            'Rp',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppTheme.success,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
                         const SizedBox(width: 8),
                         Text('Kembalian: ${_change.toRupiah}',
                             style: const TextStyle(

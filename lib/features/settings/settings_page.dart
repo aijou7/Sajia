@@ -10,6 +10,7 @@ import '../../core/app_distribution.dart';
 import '../settings/printer_settings.dart';
 import '../../core/bluetooth_system.dart';
 import '../../core/notification_service.dart';
+import '../../core/numeric_input_formatter.dart';
 import '../../core/onboarding_service.dart';
 import '../../core/pro_subscription_service.dart';
 import '../../core/providers.dart';
@@ -65,6 +66,7 @@ class SettingsPage extends ConsumerStatefulWidget {
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   late final Future<PackageInfo> _packageInfo;
+  bool _backupBusy = false;
 
   @override
   void initState() {
@@ -428,38 +430,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               _SettingsTile(
                 icon: Icons.backup_outlined,
                 title: 'Backup Data',
-                subtitle: 'Export data ke file terenkripsi',
-                onTap: () async {
-                  final passphrase = await _askBackupPassword(context);
-                  if (passphrase == null) return;
-                  if (!context.mounted) return;
-
-                  final db = ref.read(databaseProvider);
-                  final outletId = ref.read(currentOutletIdProvider);
-                  final result = await BackupService().createBackup(
-                    db,
-                    outletId,
-                    passphrase: passphrase,
-                  );
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(result == BackupResult.success
-                          ? 'Backup berhasil dibuat'
-                          : 'Backup gagal: ${result.message}'),
-                      backgroundColor: result == BackupResult.success
-                          ? AppTheme.success
-                          : AppTheme.danger,
-                    ));
-                  }
-                },
+                subtitle: 'Simpan dan bagikan file data terenkripsi',
+                onTap: _backupBusy ? null : () => _createManualBackup(context),
               ),
               const SizedBox(height: 16),
               _SettingsDivider(),
               _SettingsTile(
                 icon: Icons.restore_outlined,
                 title: 'Restore Data',
-                subtitle: 'Import data dari file backup terenkripsi',
-                onTap: () => _confirmRestore(context, ref),
+                subtitle: 'Pilih dan pulihkan file backup terenkripsi',
+                onTap: _backupBusy ? null : () => _restoreManualBackup(context),
               ),
             ]),
             const SizedBox(height: 16),
@@ -482,6 +462,105 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             const SizedBox(height: 16),
           ],
         ],
+      ),
+    );
+  }
+
+  Future<void> _createManualBackup(BuildContext context) async {
+    final backupService = BackupService();
+    final isRepeatBackup = await backupService.hasInitializedBackupPassword();
+    if (!context.mounted) return;
+    final passphrase = await _askBackupPassword(
+      context,
+      requireConfirmation: !isRepeatBackup,
+    );
+    if (passphrase == null || !context.mounted) return;
+
+    setState(() => _backupBusy = true);
+    _showDataProgress(context, 'Mengenkripsi backup...');
+    final result = await backupService.createBackup(
+      ref.read(databaseProvider),
+      ref.read(currentOutletIdProvider),
+      passphrase: passphrase,
+    );
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    setState(() => _backupBusy = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result == BackupResult.success
+              ? 'Backup berhasil dibuat dan siap disimpan.'
+              : 'Backup gagal: ${result.message}',
+        ),
+        backgroundColor:
+            result == BackupResult.success ? AppTheme.success : AppTheme.danger,
+      ),
+    );
+  }
+
+  Future<void> _restoreManualBackup(BuildContext context) async {
+    final confirmed = await _confirmRestore(context);
+    if (confirmed != true || !context.mounted) return;
+
+    final backupService = BackupService();
+    final pickedBackup = await backupService.pickBackupFile();
+    if (pickedBackup == null || !context.mounted) return;
+    final passphrase = await _askRestorePassword(context);
+    if (passphrase == null || !context.mounted) return;
+
+    setState(() => _backupBusy = true);
+    _showDataProgress(
+      context,
+      'Memeriksa ${pickedBackup.name} dan memulihkan data...',
+    );
+    final result = await backupService.restoreBackup(
+      ref.read(databaseProvider),
+      fileContent: pickedBackup.content,
+      passphrase: passphrase,
+    );
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    setState(() => _backupBusy = false);
+    if (result == BackupResult.success) {
+      ref.invalidate(currentOutletProvider);
+      ref.invalidate(allProductsProvider);
+      ref.invalidate(availableProductsProvider);
+      ref.invalidate(categoriesProvider);
+      ref.invalidate(tablesProvider);
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result == BackupResult.success
+              ? 'Data berhasil dipulihkan dari backup.'
+              : result.message,
+        ),
+        backgroundColor:
+            result == BackupResult.success ? AppTheme.success : AppTheme.danger,
+      ),
+    );
+  }
+
+  void _showDataProgress(BuildContext context, String message) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: Text(message)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -712,10 +791,14 @@ Future<bool> _ensureCanCreateOutlet(BuildContext context, WidgetRef ref) async {
   return false;
 }
 
-Future<String?> _askBackupPassword(BuildContext ctx) async {
+Future<String?> _askBackupPassword(
+  BuildContext ctx, {
+  required bool requireConfirmation,
+}) async {
   final passCtrl = TextEditingController();
   final confirmCtrl = TextEditingController();
-  var obscure = true;
+  var obscurePassword = true;
+  var obscureConfirmation = true;
   String? error;
 
   final result = await showDialog<String>(
@@ -727,36 +810,61 @@ Future<String?> _askBackupPassword(BuildContext ctx) async {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'File backup akan dienkripsi. Simpan password ini baik-baik, '
-              'karena restore tidak bisa dilakukan tanpa password.',
+            Text(
+              requireConfirmation
+                  ? 'Buat password untuk backup pertama. File akan dienkripsi '
+                      'dan tidak bisa dipulihkan tanpa password ini.'
+                  : 'Masukkan password backup. Untuk backup berikutnya kamu '
+                      'cukup memasukkannya satu kali.',
             ),
             const SizedBox(height: 14),
             TextField(
               controller: passCtrl,
-              obscureText: obscure,
-              autofillHints: const [AutofillHints.newPassword],
+              obscureText: obscurePassword,
+              autofillHints: [
+                requireConfirmation
+                    ? AutofillHints.newPassword
+                    : AutofillHints.password,
+              ],
               decoration: InputDecoration(
                 labelText: 'Password backup',
                 hintText: 'Minimal 8 karakter',
                 errorText: error,
                 suffixIcon: IconButton(
-                  icon: Icon(obscure
+                  tooltip: obscurePassword
+                      ? 'Tampilkan password'
+                      : 'Sembunyikan password',
+                  icon: Icon(obscurePassword
                       ? Icons.visibility_outlined
                       : Icons.visibility_off_outlined),
-                  onPressed: () => setState(() => obscure = !obscure),
+                  onPressed: () => setState(
+                    () => obscurePassword = !obscurePassword,
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: confirmCtrl,
-              obscureText: obscure,
-              autofillHints: const [AutofillHints.newPassword],
-              decoration: const InputDecoration(
-                labelText: 'Ulangi password',
+            if (requireConfirmation) ...[
+              const SizedBox(height: 10),
+              TextField(
+                controller: confirmCtrl,
+                obscureText: obscureConfirmation,
+                autofillHints: const [AutofillHints.newPassword],
+                decoration: InputDecoration(
+                  labelText: 'Ulangi password',
+                  suffixIcon: IconButton(
+                    tooltip: obscureConfirmation
+                        ? 'Tampilkan konfirmasi password'
+                        : 'Sembunyikan konfirmasi password',
+                    icon: Icon(obscureConfirmation
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined),
+                    onPressed: () => setState(
+                      () => obscureConfirmation = !obscureConfirmation,
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ],
         ),
         actions: [
@@ -771,7 +879,7 @@ Future<String?> _askBackupPassword(BuildContext ctx) async {
                 setState(() => error = 'Password minimal 8 karakter');
                 return;
               }
-              if (password != confirmCtrl.text.trim()) {
+              if (requireConfirmation && password != confirmCtrl.text.trim()) {
                 setState(() => error = 'Konfirmasi password tidak cocok');
                 return;
               }
@@ -851,43 +959,22 @@ Future<String?> _askRestorePassword(BuildContext ctx) async {
   return result;
 }
 
-void _confirmRestore(BuildContext ctx, WidgetRef ref) {
-  showDialog(
+Future<bool?> _confirmRestore(BuildContext ctx) {
+  return showDialog<bool>(
     context: ctx,
-    builder: (_) => AlertDialog(
-      // title: const Text('Restore Data?'),
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Pulihkan data backup?'),
       content: const Text(
         'Data yang ada akan ditimpa dengan data dari file backup. '
         'Pastikan kamu punya backup terbaru sebelum melanjutkan.',
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(ctx),
+          onPressed: () => Navigator.pop(dialogContext, false),
           child: const Text('Batal'),
         ),
         TextButton(
-          onPressed: () async {
-            Navigator.pop(ctx);
-            final passphrase = await _askRestorePassword(ctx);
-            if (passphrase == null) return;
-            if (!ctx.mounted) return;
-
-            final db = ref.read(databaseProvider);
-            final result = await BackupService().restoreBackup(
-              db,
-              passphrase: passphrase,
-            );
-            if (ctx.mounted) {
-              ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                content: Text(result == BackupResult.success
-                    ? 'Data berhasil di-restore'
-                    : result.message),
-                backgroundColor: result == BackupResult.success
-                    ? AppTheme.success
-                    : AppTheme.danger,
-              ));
-            }
-          },
+          onPressed: () => Navigator.pop(dialogContext, true),
           child:
               const Text('Restore', style: TextStyle(color: AppTheme.danger)),
         ),
@@ -1529,8 +1616,8 @@ class _ReceiptSettingsSheet extends ConsumerStatefulWidget {
 class _ReceiptSettingsSheetState extends ConsumerState<_ReceiptSettingsSheet> {
   final _headerCtrl = TextEditingController();
   final _footerCtrl = TextEditingController();
-  final _taxCtrl = TextEditingController(text: '0');
-  final _serviceCtrl = TextEditingController(text: '0');
+  final _taxCtrl = TextEditingController();
+  final _serviceCtrl = TextEditingController();
   bool _isSaving = false;
 
   @override
@@ -1549,8 +1636,10 @@ class _ReceiptSettingsSheetState extends ConsumerState<_ReceiptSettingsSheet> {
       setState(() {
         _headerCtrl.text = outlet.receiptHeader ?? '';
         _footerCtrl.text = outlet.receiptFooter ?? '';
-        _taxCtrl.text = outlet.taxPercent;
-        _serviceCtrl.text = outlet.serviceChargePercent;
+        _taxCtrl.text = outlet.taxPercent == '0' ? '' : outlet.taxPercent;
+        _serviceCtrl.text = outlet.serviceChargePercent == '0'
+            ? ''
+            : outlet.serviceChargePercent;
       });
     }
   }
@@ -2300,7 +2389,8 @@ class _ChangePINSheetState extends ConsumerState<_ChangePINSheet> {
   final _confirmPinCtrl = TextEditingController();
   bool _isSaving = false;
   String? _error;
-  bool _obscure = true;
+  bool _obscureOldPin = true;
+  bool _obscureNewPin = true;
 
   @override
   void dispose() {
@@ -2391,15 +2481,27 @@ class _ChangePINSheetState extends ConsumerState<_ChangePINSheet> {
       title: 'Ganti PIN',
       child: Column(
         children: [
-          _PinField('PIN Lama', _oldPinCtrl, _obscure,
-              () => setState(() => _obscure = !_obscure)),
+          _PinField(
+            'PIN Lama',
+            _oldPinCtrl,
+            _obscureOldPin,
+            () => setState(() => _obscureOldPin = !_obscureOldPin),
+          ),
           const SizedBox(height: 12),
-          _PinField('PIN Baru', _newPinCtrl, _obscure,
-              () => setState(() => _obscure = !_obscure)),
+          _PinField(
+            'PIN Baru',
+            _newPinCtrl,
+            _obscureNewPin,
+            () => setState(() => _obscureNewPin = !_obscureNewPin),
+          ),
           const SizedBox(height: 12),
-          _PinField('Konfirmasi PIN Baru', _confirmPinCtrl, _obscure,
-              () => setState(() => _obscure = !_obscure),
-              errorText: _error),
+          _PinField(
+            'Konfirmasi PIN Baru',
+            _confirmPinCtrl,
+            _obscureNewPin,
+            () => setState(() => _obscureNewPin = !_obscureNewPin),
+            errorText: _error,
+          ),
           const SizedBox(height: 24),
           _SaveButton(isSaving: _isSaving, onTap: _save, label: 'Simpan PIN'),
         ],
@@ -2582,6 +2684,9 @@ class _FormField extends StatelessWidget {
             controller: ctrl,
             selectAllOnFocus: selectAllOnFocus,
             keyboardType: type,
+            inputFormatters: type == TextInputType.number
+                ? const [NormalizedNumberInputFormatter(allowDecimal: true)]
+                : null,
             maxLines: maxLines,
             decoration: InputDecoration(
               hintText: hint,

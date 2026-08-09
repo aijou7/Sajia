@@ -734,11 +734,11 @@ class _CategoryBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final catsAsync = ref.watch(categoriesProvider);
     return SizedBox(
-      height: 56,
+      height: 64,
       child: catsAsync.when(
         data: (cats) => ListView(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           children: [
             _CatChip(
                 label: 'Semua',
@@ -791,33 +791,55 @@ class _CatChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = color ?? AppTheme.primary;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? c : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? c : AppTheme.subtleBorder),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: c.withValues(alpha: 0.22),
-                    blurRadius: 14,
-                    offset: const Offset(0, 7),
-                  ),
-                ]
-              : null,
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: 'Kategori $label',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(20),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: selected ? c : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: selected ? c : AppTheme.subtleBorder),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: c.withValues(alpha: 0.22),
+                          blurRadius: 14,
+                          offset: const Offset(0, 7),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                strutStyle: const StrutStyle(
+                  fontSize: 12,
+                  height: 1,
+                  forceStrutHeight: true,
+                ),
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  color: selected ? Colors.white : AppTheme.textSecondary,
+                ),
+              ),
+            ),
+          ),
         ),
-        child: Text(label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              color: selected ? Colors.white : AppTheme.textSecondary,
-            )),
       ),
     );
   }

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/numeric_input_formatter.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
@@ -799,7 +800,10 @@ class _OpeningCashSheetState extends State<_OpeningCashSheet> {
             selectAllOnFocus: true,
             keyboardType: TextInputType.number,
             textInputAction: TextInputAction.done,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              const NormalizedNumberInputFormatter(),
+            ],
             onSubmitted: (_) => _submit(),
             decoration: InputDecoration(
               labelText: 'Modal awal',
@@ -891,7 +895,10 @@ class _CloseShiftSheetState extends State<_CloseShiftSheet> {
           selectAllOnFocus: true,
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.next,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            const NormalizedNumberInputFormatter(),
+          ],
           onChanged: (_) => setState(() => _error = null),
           decoration: InputDecoration(
             labelText: 'Kas aktual',

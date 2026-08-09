@@ -1,5 +1,4 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "jsr:@supabase/server@^1";
 import { createClient } from "npm:@supabase/supabase-js@^2";
 import { readMidtransConfig } from "./midtrans_config.ts";
 
@@ -111,6 +110,4 @@ const handler = async (req: Request) => {
   return json({ received: true, result: data });
 };
 
-export default {
-  fetch: withSupabase({ auth: "none" }, handler),
-};
+Deno.serve(handler);
