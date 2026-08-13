@@ -11,7 +11,7 @@ Buka `site/index.html` langsung di browser, atau serve folder ini dengan static 
 Tombol download mengarah ke:
 
 ```text
-https://github.com/aijou7/Sajia/releases/download/V1.0.8/Sajia-v1.0.8-arm64.apk
+https://github.com/aijou7/Sajia/releases/latest/download/Sajia-latest-arm64.apk
 ```
 
 Upload APK sebagai GitHub Release asset dengan nama `Sajia-v1.0.4-arm64.apk`.

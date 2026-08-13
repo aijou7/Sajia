@@ -341,25 +341,6 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
                         children: [
                           const SizedBox(height: 18),
                           const _SajiaLogo(),
-                          const SizedBox(height: 14),
-                          const Text(
-                            AppBrand.name,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 34,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            AppBrand.descriptor,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.68),
-                              fontSize: 13,
-                              letterSpacing: 0.4,
-                            ),
-                          ),
                           const SizedBox(height: 34),
                           _LoginPanel(
                             isLoading: _isLoading,
@@ -466,7 +447,7 @@ class _LoginPanel extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: filled
-                        ? (isError ? AppTheme.danger : AppTheme.gold)
+                        ? (isError ? AppTheme.danger : AppTheme.accent)
                         : Colors.white.withValues(alpha: 0.14),
                     border: Border.all(
                       color: Colors.white.withValues(alpha: 0.42),
@@ -549,26 +530,15 @@ class _SajiaLogo extends StatelessWidget {
       builder: (context, scale, child) {
         return Transform.scale(scale: scale, child: child);
       },
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.26),
-            width: 0.7,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.14),
-              blurRadius: 26,
-              offset: const Offset(0, 16),
-            ),
-          ],
-        ),
-        child: SajiaMark(
-          size: 76,
-          radius: 24,
-          backgroundColor: Colors.white.withValues(alpha: 0.16),
-        ),
+      child: const SajiaLogoLockup(
+        markSize: 76,
+        markRadius: 24,
+        gap: 16,
+        nameFontSize: 34,
+        descriptorFontSize: 10,
+        textColor: Colors.white,
+        descriptorColor: Color(0xB8FFFFFF),
+        markBackgroundColor: Color(0x29FFFFFF),
       ),
     );
   }

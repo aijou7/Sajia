@@ -36,6 +36,7 @@ class ReceiptData {
   final List<ReceiptItem> items;
   final double subtotal;
   final double discountAmount;
+  final double discountPercent;
   final double taxAmount;
   final double serviceCharge;
   final double total;
@@ -56,6 +57,7 @@ class ReceiptData {
     required this.items,
     required this.subtotal,
     required this.discountAmount,
+    this.discountPercent = 0,
     required this.taxAmount,
     required this.serviceCharge,
     required this.total,
@@ -344,8 +346,11 @@ class PrintService {
           styles: const PosStyles(align: PosAlign.right)),
     ]);
     if (data.discountAmount > 0) {
+      final percentLabel = data.discountPercent > 0
+          ? ' (${_formatPercent(data.discountPercent)}%)'
+          : '';
       bytes += generator.row([
-        PosColumn(text: 'Diskon', width: 6),
+        PosColumn(text: 'Diskon$percentLabel', width: 6),
         PosColumn(
             text: '-${_formatRupiah(data.discountAmount)}',
             width: 6,
@@ -419,6 +424,14 @@ class PrintService {
     bytes += generator.cut();
 
     return bytes;
+  }
+
+  String _formatPercent(double value) {
+    if (value == value.roundToDouble()) return value.toInt().toString();
+    return value
+        .toStringAsFixed(2)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
   }
 
   // ── Helpers ───────────────────────────────────

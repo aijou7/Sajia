@@ -359,6 +359,9 @@ class _OrderDetail extends ConsumerWidget {
     final itemsAsync = ref.watch(orderItemsProvider(order.id));
     final total = double.tryParse(order.total) ?? 0;
     final paid = double.tryParse(order.paidAmount ?? '0') ?? 0;
+    final subtotal = double.tryParse(order.subtotal) ?? 0;
+    final discountAmount = double.tryParse(order.discountAmount) ?? 0;
+    final discountPercent = double.tryParse(order.discountPercent) ?? 0;
     final user = ref.watch(currentUserProvider);
     final canCorrectOrder = user?.canVoidTransactions == true;
 
@@ -392,6 +395,13 @@ class _OrderDetail extends ConsumerWidget {
           const Divider(height: 1),
           const SizedBox(height: 8),
           // Payment info
+          _DetailRow('Subtotal', subtotal.toRupiah),
+          if (discountAmount > 0)
+            _DetailRow(
+              'Diskon (${_formatHistoryPercent(discountPercent)}%)',
+              '-${discountAmount.toRupiah}',
+              color: AppTheme.success,
+            ),
           _DetailRow('Total', total.toRupiah, bold: true),
           _DetailRow('Bayar (${order.paymentMethod?.toUpperCase() ?? '-'})',
               paid.toRupiah),
@@ -499,6 +509,7 @@ class _OrderDetail extends ConsumerWidget {
             .toList(),
         subtotal: double.tryParse(order.subtotal) ?? 0,
         discountAmount: double.tryParse(order.discountAmount) ?? 0,
+        discountPercent: double.tryParse(order.discountPercent) ?? 0,
         taxAmount: double.tryParse(order.taxAmount) ?? 0,
         serviceCharge: double.tryParse(order.serviceCharge) ?? 0,
         total: double.tryParse(order.total) ?? 0,
@@ -618,6 +629,14 @@ class _DetailRow extends StatelessWidget {
 }
 
 // ── SUMMARY ITEM ──────────────────────────────────────────────
+String _formatHistoryPercent(double value) {
+  if (value == value.roundToDouble()) return value.toInt().toString();
+  return value
+      .toStringAsFixed(2)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
+}
+
 class _SummaryItem extends StatelessWidget {
   final String label;
   final String value;

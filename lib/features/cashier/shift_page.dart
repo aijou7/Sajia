@@ -425,7 +425,7 @@ class _ActiveShiftHero extends StatelessWidget {
                       const Text(
                         'SHIFT AKTIF',
                         style: TextStyle(
-                          color: AppTheme.goldLight,
+                          color: AppTheme.accentLight,
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 1,
@@ -608,7 +608,8 @@ class _CashReconciliation extends StatelessWidget {
         children: [
           const Row(
             children: [
-              Icon(Icons.account_balance_wallet_rounded, color: AppTheme.gold),
+              Icon(Icons.account_balance_wallet_rounded,
+                  color: AppTheme.accent),
               SizedBox(width: 10),
               Expanded(
                 child: Text(

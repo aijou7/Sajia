@@ -459,7 +459,7 @@ class _ProductTile extends ConsumerWidget {
         height: 52,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [AppTheme.primaryLight, AppTheme.goldLight],
+            colors: [AppTheme.primaryLight, AppTheme.accentLight],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -1948,30 +1948,30 @@ class CategoryFormSheet extends ConsumerStatefulWidget {
 
 class _CategoryFormSheetState extends ConsumerState<CategoryFormSheet> {
   final _nameCtrl = TextEditingController();
-  String _colorHex = '#1B6CA8';
+  String _colorHex = '#356B66';
   bool _isSaving = false;
 
   final _colors = [
-    '#1B6CA8',
-    '#1A9E6A',
-    '#F59E0B',
-    '#DC2626',
-    '#0EA5E9',
-    '#2D9CDB',
-    '#0F4C7A',
-    '#07395F',
-    '#EF9F27',
-    '#059669',
-    '#D97706',
-    '#6B7280',
-    '#0284C7',
+    '#356B66',
+    '#6F9E98',
+    '#746FA8',
+    '#557FA3',
+    '#2F7D64',
+    '#C57843',
+    '#C55252',
+    '#8A6E82',
+    '#68809B',
+    '#73807C',
+    '#9B776D',
+    '#596C68',
+    '#7D8FA8',
   ];
 
   @override
   void initState() {
     super.initState();
     _nameCtrl.text = widget.category?.name ?? '';
-    _colorHex = widget.category?.colorHex ?? '#1B6CA8';
+    _colorHex = widget.category?.colorHex ?? '#356B66';
   }
 
   @override

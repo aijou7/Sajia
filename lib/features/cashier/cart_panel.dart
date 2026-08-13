@@ -171,10 +171,62 @@ class CartPanel extends ConsumerWidget {
       ),
       child: Column(
         children: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _showDiscountSheet(context, ref, cart),
+                  icon: Icon(
+                    cart.discountValue > 0
+                        ? Icons.sell_rounded
+                        : Icons.percent_rounded,
+                    size: 18,
+                  ),
+                  label: Text(
+                    cart.discountValue > 0
+                        ? 'Diskon ${_formatPercent(cart.discountPercent)}%'
+                        : 'Atur diskon',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46),
+                    foregroundColor: cart.discountValue > 0
+                        ? AppTheme.success
+                        : AppTheme.primary,
+                    side: BorderSide(
+                      color: (cart.discountValue > 0
+                              ? AppTheme.success
+                              : AppTheme.primary)
+                          .withValues(alpha: 0.35),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                  ),
+                ),
+              ),
+              if (cart.discountValue > 0) ...[
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: () =>
+                      ref.read(cartProvider.notifier).setDiscount(percent: 0),
+                  tooltip: 'Hapus diskon',
+                  icon: const Icon(Icons.close_rounded),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(46, 46),
+                    foregroundColor: AppTheme.danger,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 12),
           _SummaryRow('Subtotal', cart.subtotal.toRupiah),
           if (cart.discountValue > 0)
-            _SummaryRow('Diskon', '-${cart.discountValue.toRupiah}',
-                color: AppTheme.success),
+            _SummaryRow(
+              'Diskon (${_formatPercent(cart.discountPercent)}%)',
+              '-${cart.discountValue.toRupiah}',
+              color: AppTheme.success,
+            ),
           if (taxPercent > 0)
             _SummaryRow('Pajak (${taxPercent.toInt()}%)',
                 cart.taxAmount(taxPercent).toRupiah),
@@ -238,6 +290,22 @@ class CartPanel extends ConsumerWidget {
     );
   }
 
+  Future<void> _showDiscountSheet(
+    BuildContext context,
+    WidgetRef ref,
+    Cart cart,
+  ) async {
+    final result = await showModalBottomSheet<double>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DiscountSheet(initialPercent: cart.discountPercent),
+    );
+    if (result == null) return;
+    ref.read(cartProvider.notifier).setDiscount(percent: result);
+  }
+
   void _confirmClear(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
@@ -257,6 +325,183 @@ class CartPanel extends ConsumerWidget {
                 const Text('Hapus', style: TextStyle(color: AppTheme.danger)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+String _formatPercent(double value) {
+  if (value == value.roundToDouble()) return value.toInt().toString();
+  return value.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '').replaceFirst(
+        RegExp(r'\.$'),
+        '',
+      );
+}
+
+class _DiscountSheet extends StatefulWidget {
+  final double initialPercent;
+
+  const _DiscountSheet({required this.initialPercent});
+
+  @override
+  State<_DiscountSheet> createState() => _DiscountSheetState();
+}
+
+class _DiscountSheetState extends State<_DiscountSheet> {
+  late final TextEditingController _controller;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.initialPercent > 0
+          ? _formatPercent(widget.initialPercent)
+          : '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _selectQuickValue(double value) {
+    setState(() {
+      _controller.text = _formatPercent(value);
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+      _error = null;
+    });
+  }
+
+  void _apply() {
+    final normalized = _controller.text.trim().replaceAll(',', '.');
+    final value = double.tryParse(normalized);
+    if (value == null || !value.isFinite || value < 0 || value > 100) {
+      setState(() => _error = 'Masukkan diskon dari 0 sampai 100%.');
+      return;
+    }
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    const quickValues = <double>[5, 10, 15, 20, 25, 50];
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + keyboard),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Atur Diskon',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Diskon berlaku untuk seluruh pesanan sebelum pajak dan service.',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9,.]')),
+              ],
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _apply(),
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
+              decoration: InputDecoration(
+                labelText: 'Persentase diskon',
+                hintText: 'Contoh: 10',
+                suffixText: '%',
+                errorText: _error,
+                prefixIcon: const Icon(Icons.percent_rounded),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Pilihan cepat',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: quickValues
+                  .map(
+                    (value) => ActionChip(
+                      onPressed: () => _selectQuickValue(value),
+                      label: Text('${_formatPercent(value)}%'),
+                      avatar: const Icon(Icons.local_offer_outlined, size: 16),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _apply,
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('Terapkan Diskon'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                ),
+              ),
+            ),
+            if (widget.initialPercent > 0) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(0.0),
+                  child: const Text('Hapus diskon'),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

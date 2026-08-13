@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart' show OrderingTerm, Value;
 import '../../core/backup_service.dart';
@@ -20,6 +21,11 @@ import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
 import '../shared/polish_widgets.dart';
 import 'pro_checkout_page.dart';
+
+const _ownerDashboardUrl = String.fromEnvironment(
+  'OWNER_DASHBOARD_URL',
+  defaultValue: 'https://sajia-owner.pages.dev',
+);
 
 Future<User?> _findActiveUserUsingPin(
   AppDatabase db,
@@ -365,13 +371,29 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     color: isCloud
                         ? AppTheme.success
                         : isPro
-                            ? AppTheme.gold
+                            ? AppTheme.accent
                             : AppTheme.primary,
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                   )),
             ),
             _SettingsDivider(),
+            if (user?.isOwner == true) ...[
+              _SettingsTile(
+                icon: Icons.space_dashboard_outlined,
+                title: 'Dashboard Owner',
+                subtitle: isCloud
+                    ? 'Buka laporan dan pantau seluruh cabang di web'
+                    : 'Buka dashboard web Sajia',
+                onTap: () => _openOwnerDashboard(context),
+                trailing: const Icon(
+                  Icons.open_in_new_rounded,
+                  size: 20,
+                  color: AppTheme.primary,
+                ),
+              ),
+              _SettingsDivider(),
+            ],
             FutureBuilder<PackageInfo>(
               future: _packageInfo,
               builder: (context, snapshot) {
@@ -561,6 +583,27 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _openOwnerDashboard(BuildContext context) async {
+    final uri = Uri.tryParse(_ownerDashboardUrl);
+    var opened = false;
+    if (uri != null && uri.hasScheme) {
+      try {
+        opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        opened = false;
+      }
+    }
+    if (!context.mounted || opened) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Dashboard belum bisa dibuka. Periksa koneksi internet lalu coba lagi.',
+        ),
+        backgroundColor: AppTheme.danger,
       ),
     );
   }

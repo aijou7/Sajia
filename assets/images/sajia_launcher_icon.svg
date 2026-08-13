@@ -1,6 +1,6 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1024" height="1024" rx="226" fill="url(#sajia-gradient)"/>
-  <!-- Lumer-organik mark, optically centered and kept inside launcher safe bounds. -->
+  <!-- Full-bleed background for Android/Web maskable launchers. The OS supplies its own mask. -->
+  <rect width="1024" height="1024" fill="url(#sajia-gradient)"/>
   <path d="M160 611C192 349 342 198 512 198C682 198 832 349 864 611H752C739 547 707 502 662 502C598 502 624 653 560 653C496 653 522 458 458 458C394 458 419 605 355 605C294 605 317 506 256 506C205 506 192 557 186 611H160Z" fill="white"/>
   <rect x="115" y="653" width="794" height="102" rx="51" fill="white"/>
   <rect x="422" y="122" width="179" height="90" rx="45" fill="white"/>

@@ -284,6 +284,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
             .toList(),
         subtotal: subtotal,
         discountAmount: discountAmt,
+        discountPercent: cart.discountPercent,
         taxAmount: taxAmt,
         serviceCharge: serviceAmt,
         total: total,

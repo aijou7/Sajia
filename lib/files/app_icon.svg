@@ -1,41 +1,14 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="1024" height="1024" rx="226" fill="#1B6CA8"/>
-
-  <!-- Subtle gradient overlay -->
-  <rect width="1024" height="1024" rx="226" fill="url(#grad)"/>
-
+  <rect width="1024" height="1024" rx="226" fill="url(#sajia-gradient)"/>
+  <path d="M160 611C192 349 342 198 512 198C682 198 832 349 864 611H752C739 547 707 502 662 502C598 502 624 653 560 653C496 653 522 458 458 458C394 458 419 605 355 605C294 605 317 506 256 506C205 506 192 557 186 611H160Z" fill="white"/>
+  <rect x="115" y="653" width="794" height="102" rx="51" fill="white"/>
+  <rect x="422" y="122" width="179" height="90" rx="45" fill="white"/>
+  <circle cx="760" cy="206" r="112" fill="#746FA8"/>
+  <text x="760" y="246" text-anchor="middle" fill="white" font-family="Inter, Arial, sans-serif" font-size="96" font-weight="850">Rp</text>
   <defs>
-    <linearGradient id="grad" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#2585C7" stop-opacity="0.5"/>
-      <stop offset="100%" stop-color="#0F4C7A" stop-opacity="0.5"/>
+    <linearGradient id="sajia-gradient" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5F8E89"/>
+      <stop offset="1" stop-color="#285752"/>
     </linearGradient>
   </defs>
-
-  <!-- Plate circle -->
-  <circle cx="512" cy="560" r="260"
-    stroke="white" stroke-width="52" fill="none" stroke-opacity="0.95"/>
-
-  <!-- Cloche handle stem -->
-  <line x1="512" y1="300" x2="512" y2="420"
-    stroke="white" stroke-width="52" stroke-linecap="round"/>
-
-  <!-- Cloche handle arch -->
-  <path d="M370 415 Q370 260 512 260 Q654 260 654 415"
-    stroke="white" stroke-width="52" fill="none" stroke-linecap="round"/>
-
-  <!-- Subtle plate line -->
-  <line x1="330" y1="560" x2="694" y2="560"
-    stroke="white" stroke-width="24" stroke-linecap="round" stroke-opacity="0.35"/>
-
-  <!-- Gold badge circle -->
-  <circle cx="730" cy="310" r="130" fill="#EF9F27"/>
-
-  <!-- Rp text in badge -->
-  <text x="730" y="365"
-    text-anchor="middle"
-    fill="white"
-    font-family="system-ui, -apple-system, sans-serif"
-    font-size="130"
-    font-weight="800">Rp</text>
 </svg>

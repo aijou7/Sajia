@@ -463,20 +463,21 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
         children: [
           const SizedBox(height: 40),
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.fromLTRB(12, 12, 20, 12),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(26),
               boxShadow: AppTheme.softShadow,
             ),
-            child: const SajiaMark(
-              size: 76,
-              radius: 22,
-              backgroundGradient: AppTheme.brandGradient,
+            child: const SajiaLogoLockup(
+              markSize: 68,
+              markRadius: 20,
+              nameFontSize: 31,
+              descriptorFontSize: 9.5,
             ),
           ),
-          const SizedBox(height: 24),
-          const Text('Selamat Datang di\nSajia',
+          const SizedBox(height: 28),
+          const Text('Selamat Datang',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 28, fontWeight: FontWeight.w800, height: 1.2)),
@@ -800,7 +801,7 @@ class _Wrapper extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [AppTheme.primaryLight, AppTheme.goldLight],
+                colors: [AppTheme.primaryLight, AppTheme.accentLight],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),

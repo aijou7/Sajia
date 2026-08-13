@@ -145,7 +145,7 @@ class EmptyStateView extends StatelessWidget {
               height: 74,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [AppTheme.primaryLight, AppTheme.goldLight],
+                  colors: [AppTheme.primaryLight, AppTheme.accentLight],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),

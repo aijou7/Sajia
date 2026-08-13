@@ -1,0 +1,21 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="16" y="16" width="288" height="288" rx="76" fill="url(#mark-gradient)"/>
+  <!-- Exact 0.9x application of the approved 320px reference tile. -->
+  <g transform="translate(16 16)">
+    <g transform="scale(0.9)">
+      <path d="M50 191C60 109 107 62 160 62C213 62 260 109 270 191H235C231 171 221 157 207 157C187 157 195 204 175 204C155 204 163 143 143 143C123 143 131 189 111 189C92 189 99 158 80 158C64 158 60 174 58 191H50Z" fill="white"/>
+      <rect x="36" y="204" width="248" height="32" rx="16" fill="white"/>
+      <rect x="132" y="38" width="56" height="28" rx="14" fill="white"/>
+      <circle cx="264" cy="62" r="42" fill="#746FA8"/>
+      <text x="264" y="77" text-anchor="middle" fill="white" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="850">Rp</text>
+    </g>
+  </g>
+  <text x="354" y="170" fill="#172321" font-family="Inter, Arial, sans-serif" font-size="132" font-weight="850" letter-spacing="-5">Sajia</text>
+  <text x="362" y="229" fill="#667470" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="4.5">KASIR &amp; OPERASIONAL F&amp;B</text>
+  <defs>
+    <linearGradient id="mark-gradient" x1="16" y1="16" x2="304" y2="304" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5F8E89"/>
+      <stop offset="1" stop-color="#285752"/>
+    </linearGradient>
+  </defs>
+</svg>

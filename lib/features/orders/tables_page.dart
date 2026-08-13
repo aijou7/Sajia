@@ -10,6 +10,14 @@ import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
 import '../shared/polish_widgets.dart';
 
+String _tablePercentLabel(double value) {
+  if (value == value.roundToDouble()) return value.toInt().toString();
+  return value
+      .toStringAsFixed(2)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
+}
+
 class TablesPage extends ConsumerWidget {
   const TablesPage({super.key});
 
@@ -484,6 +492,37 @@ class _ActiveOrderSheet extends ConsumerWidget {
             ),
 
             const Divider(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Subtotal',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                Text((double.tryParse(order.subtotal) ?? 0).toRupiah,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600)),
+              ],
+            ),
+            if ((double.tryParse(order.discountAmount) ?? 0) > 0) ...[
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Diskon (${_tablePercentLabel(double.tryParse(order.discountPercent) ?? 0)}%)',
+                    style:
+                        const TextStyle(fontSize: 13, color: AppTheme.success),
+                  ),
+                  Text(
+                    '-${(double.tryParse(order.discountAmount) ?? 0).toRupiah}',
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.success),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [

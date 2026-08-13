@@ -86,8 +86,14 @@ class Cart extends Equatable {
   });
 
   double get subtotal => items.fold(0, (sum, i) => sum + i.subtotal);
-  double get discountValue =>
-      discountAmount > 0 ? discountAmount : subtotal * discountPercent / 100;
+  double get discountValue {
+    if (subtotal <= 0) return 0;
+    final rawValue =
+        discountAmount > 0 ? discountAmount : subtotal * discountPercent / 100;
+    if (!rawValue.isFinite) return 0;
+    return rawValue.clamp(0, subtotal).toDouble();
+  }
+
   double get subtotalAfterDiscount => subtotal - discountValue;
   double taxAmount(double taxPercent) =>
       subtotalAfterDiscount * taxPercent / 100;

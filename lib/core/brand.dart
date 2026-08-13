@@ -14,19 +14,21 @@ class AppBrand {
 
   static const logoAsset = 'assets/images/sajia_app_icon.png';
 
-  static const primary = Color(0xFF1B6CA8);
-  static const primaryDark = Color(0xFF0F4C7A);
-  static const primaryDeep = Color(0xFF07395F);
-  static const primaryBright = Color(0xFF2D9CDB);
-  static const primaryLight = Color(0xFFE8F2FB);
-  static const gold = Color(0xFFEF9F27);
-  static const goldLight = Color(0xFFFFF5DE);
-  static const success = Color(0xFF1A9E6A);
-  static const warning = Color(0xFFF59E0B);
-  static const danger = Color(0xFFDC2626);
-  static const info = Color(0xFF0EA5E9);
-  static const ink = Color(0xFF101828);
-  static const mutedInk = Color(0xFF667085);
+  // Soft contemporary cafe: dusty teal keeps long cashier sessions calm,
+  // while the muted periwinkle accent gives Sajia a younger premium feel.
+  static const primary = Color(0xFF356B66);
+  static const primaryDark = Color(0xFF285752);
+  static const primaryDeep = Color(0xFF1D403D);
+  static const primaryBright = Color(0xFF6F9E98);
+  static const primaryLight = Color(0xFFE7F1EF);
+  static const accent = Color(0xFF746FA8);
+  static const accentLight = Color(0xFFF0EEF8);
+  static const success = Color(0xFF2F7D64);
+  static const warning = Color(0xFFC57843);
+  static const danger = Color(0xFFC55252);
+  static const info = Color(0xFF557FA3);
+  static const ink = Color(0xFF172321);
+  static const mutedInk = Color(0xFF667470);
 }
 
 class SajiaMark extends StatelessWidget {
@@ -83,6 +85,92 @@ class SajiaMark extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Logo utama Sajia untuk area yang cukup lebar.
+///
+/// Ikon launcher sengaja tetap berupa simbol agar terbaca pada ukuran kecil,
+/// sedangkan lockup ini menyatukan simbol, wordmark, dan descriptor merek.
+class SajiaLogoLockup extends StatelessWidget {
+  final double markSize;
+  final double markRadius;
+  final double gap;
+  final double nameFontSize;
+  final double descriptorFontSize;
+  final bool showDescriptor;
+  final Color textColor;
+  final Color descriptorColor;
+  final Color? markBackgroundColor;
+  final Gradient? markBackgroundGradient;
+
+  const SajiaLogoLockup({
+    super.key,
+    this.markSize = 56,
+    this.markRadius = 18,
+    this.gap = 14,
+    this.nameFontSize = 28,
+    this.descriptorFontSize = 11,
+    this.showDescriptor = true,
+    this.textColor = AppBrand.ink,
+    this.descriptorColor = AppBrand.mutedInk,
+    this.markBackgroundColor,
+    this.markBackgroundGradient,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: showDescriptor
+          ? '${AppBrand.name}, ${AppBrand.descriptor}'
+          : AppBrand.name,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ExcludeSemantics(
+            child: SajiaMark(
+              size: markSize,
+              radius: markRadius,
+              backgroundColor: markBackgroundColor,
+              backgroundGradient: markBackgroundGradient,
+            ),
+          ),
+          SizedBox(width: gap),
+          ExcludeSemantics(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppBrand.name,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: nameFontSize,
+                    height: 0.94,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.7,
+                  ),
+                ),
+                if (showDescriptor) ...[
+                  SizedBox(height: markSize * 0.10),
+                  Text(
+                    AppBrand.descriptor.toUpperCase(),
+                    style: TextStyle(
+                      color: descriptorColor,
+                      fontSize: descriptorFontSize,
+                      height: 1,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.75,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

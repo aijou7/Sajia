@@ -11,23 +11,23 @@ class AppTheme {
   static const primaryDeep = AppBrand.primaryDeep;
   static const primaryBright = AppBrand.primaryBright;
   static const primaryLight = AppBrand.primaryLight;
-  static const gold = AppBrand.gold;
-  static const goldLight = AppBrand.goldLight;
+  static const accent = AppBrand.accent;
+  static const accentLight = AppBrand.accentLight;
   static const success = AppBrand.success;
   static const warning = AppBrand.warning;
   static const danger = AppBrand.danger;
   static const info = AppBrand.info;
   static const qris = primaryBright;
-  static const revenue = gold;
-  static const darkColor = Color(0xFF0F172A); // Malam Dark
+  static const revenue = accent;
+  static const darkColor = Color(0xFF172321);
 
-  static const surface = Color(0xFFF4F8FB);
-  static const surfaceWarm = Color(0xFFFAFCFE);
-  static const borderColor = Color(0xFFE5E7EB);
-  static const subtleBorder = Color(0xFFDDE7F0);
+  static const surface = Color(0xFFF5F7F6);
+  static const surfaceWarm = Color(0xFFFBFCFB);
+  static const borderColor = Color(0xFFDCE5E2);
+  static const subtleBorder = Color(0xFFD1DFDB);
   static const cardBg = Colors.white;
-  static const textPrimary = Color(0xFF101828);
-  static const textSecondary = Color(0xFF667085);
+  static const textPrimary = Color(0xFF172321);
+  static const textSecondary = Color(0xFF667470);
 
   // Satu skala ikon menjaga baseline dan bobot visual konsisten.
   static const iconCompact = 16.0;
@@ -41,14 +41,14 @@ class AppTheme {
   );
 
   static const payGradient = LinearGradient(
-    colors: [Color(0xFF16A36D), Color(0xFF0E8F80)],
+    colors: [Color(0xFF347A68), Color(0xFF285752)],
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
   );
 
   static List<BoxShadow> get softShadow => [
         BoxShadow(
-          color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+          color: const Color(0xFF172321).withValues(alpha: 0.08),
           blurRadius: 22,
           offset: const Offset(0, 10),
         ),
@@ -63,10 +63,10 @@ class AppTheme {
       ];
 
   // Status meja
-  static const tableAvailable = Color(0xFF1A9E6A);
-  static const tableOccupied = Color(0xFFDC2626);
-  static const tableHold = Color(0xFFF59E0B);
-  static const tableCleaning = Color(0xFF6B7280);
+  static const tableAvailable = success;
+  static const tableOccupied = danger;
+  static const tableHold = warning;
+  static const tableCleaning = Color(0xFF73807C);
 
   // ── LIGHT THEME ───────────────────────────────
   static final ThemeData light = ThemeData(
@@ -123,7 +123,7 @@ class AppTheme {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: const Color(0xFFF9FAFB),
+      fillColor: const Color(0xFFF8FAF9),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -149,7 +149,7 @@ class AppTheme {
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(
       backgroundColor: Colors.white,
       selectedItemColor: primary,
-      unselectedItemColor: Color(0xFF9CA3AF),
+      unselectedItemColor: Color(0xFF8B9894),
       elevation: 0,
     ),
     iconButtonTheme: IconButtonThemeData(

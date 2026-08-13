@@ -415,7 +415,7 @@ class _OverviewTab extends StatelessWidget {
         else
           _InsightCard(
             icon: Icons.emoji_events_outlined,
-            color: AppTheme.gold,
+            color: AppTheme.accent,
             title: data.isAllBranches
                 ? '${best.outletName} memimpin penjualan'
                 : data.branches.length > 1
@@ -852,7 +852,7 @@ class _BranchCard extends StatelessWidget {
             height: 32,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-                color: rank == 1 ? AppTheme.goldLight : AppTheme.primaryLight,
+                color: rank == 1 ? AppTheme.accentLight : AppTheme.primaryLight,
                 borderRadius: BorderRadius.circular(10)),
             child: Text('#$rank',
                 style: TextStyle(

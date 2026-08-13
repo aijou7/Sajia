@@ -233,8 +233,16 @@ class CartNotifier extends WritableNotifier<Cart> {
 
   void setOrderType(String type) => state = state.copyWith(orderType: type);
 
-  void setDiscount({double percent = 0, double amount = 0}) =>
-      state = state.copyWith(discountPercent: percent, discountAmount: amount);
+  void setDiscount({double percent = 0, double amount = 0}) {
+    final safePercent =
+        percent.isFinite ? percent.clamp(0, 100).toDouble() : 0.0;
+    final safeAmount =
+        amount.isFinite ? amount.clamp(0, state.subtotal).toDouble() : 0.0;
+    state = state.copyWith(
+      discountPercent: safePercent,
+      discountAmount: safeAmount,
+    );
+  }
 
   void setNotes(String? notes) => state = state.copyWith(notes: notes);
 

@@ -780,7 +780,7 @@ class _OwnerDashboard extends StatelessWidget {
                           label: 'Cabang Pro',
                           value: '${data.proOutletCount}',
                           icon: Icons.workspace_premium_outlined,
-                          color: AppTheme.gold,
+                          color: AppTheme.accent,
                         ),
                         _MetricData(
                           label: 'Cabang Free',
@@ -941,7 +941,7 @@ class _BranchList extends StatelessWidget {
                   label: 'Cabang Pro',
                   value: '${data.proOutletCount}',
                   icon: Icons.workspace_premium_outlined,
-                  color: AppTheme.gold,
+                  color: AppTheme.accent,
                 ),
                 _MetricData(
                   label: 'Cabang Free',
@@ -1335,7 +1335,7 @@ class _BranchRow extends StatelessWidget {
         builder: (context, constraints) {
           final avatar = CircleAvatar(
             backgroundColor:
-                rank == 1 ? AppTheme.goldLight : AppTheme.primaryLight,
+                rank == 1 ? AppTheme.accentLight : AppTheme.primaryLight,
             child: Text('$rank',
                 style: TextStyle(
                     color: rank == 1 ? AppTheme.warning : AppTheme.primary,
@@ -1411,11 +1411,11 @@ class _OutletStatusRow extends StatelessWidget {
           final statusColor = outlet.isCloud
               ? AppTheme.success
               : outlet.isPro
-                  ? AppTheme.gold
+                  ? AppTheme.accent
                   : AppTheme.warning;
           final avatar = CircleAvatar(
             backgroundColor:
-                outlet.isCloud ? AppTheme.primaryLight : AppTheme.goldLight,
+                outlet.isCloud ? AppTheme.primaryLight : AppTheme.accentLight,
             child: Icon(
               outlet.isCloud
                   ? Icons.cloud_done_outlined
@@ -1501,18 +1501,11 @@ class _BrandHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(children: [
-        Container(
-          width: 36,
-          height: 36,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color:
-                dark ? Colors.white.withValues(alpha: .15) : AppTheme.primary,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: const Text('S',
-              style:
-                  TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        SajiaMark(
+          size: 36,
+          radius: 10,
+          backgroundColor:
+              dark ? Colors.white.withValues(alpha: .15) : AppTheme.primary,
         ),
         const SizedBox(width: 10),
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

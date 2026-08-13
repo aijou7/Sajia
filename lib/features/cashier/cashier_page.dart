@@ -1154,7 +1154,7 @@ class _MenuCardState extends State<_MenuCard> {
   Widget _imgPlaceholder() => Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [AppTheme.primaryLight, AppTheme.goldLight],
+            colors: [AppTheme.primaryLight, AppTheme.accentLight],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
