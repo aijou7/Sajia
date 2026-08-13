@@ -391,6 +391,9 @@ class _DiscountSheetState extends State<_DiscountSheet> {
   Widget build(BuildContext context) {
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     const quickValues = <double>[5, 10, 15, 20, 25, 50];
+    final currentValue = double.tryParse(
+      _controller.text.trim().replaceAll(',', '.'),
+    );
 
     return Container(
       constraints: BoxConstraints(
@@ -446,7 +449,7 @@ class _DiscountSheetState extends State<_DiscountSheet> {
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _apply(),
               onChanged: (_) {
-                if (_error != null) setState(() => _error = null);
+                setState(() => _error = null);
               },
               decoration: InputDecoration(
                 labelText: 'Persentase diskon',
@@ -465,15 +468,41 @@ class _DiscountSheetState extends State<_DiscountSheet> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: quickValues
-                  .map(
-                    (value) => ActionChip(
-                      onPressed: () => _selectQuickValue(value),
-                      label: Text('${_formatPercent(value)}%'),
-                      avatar: const Icon(Icons.local_offer_outlined, size: 16),
+              children: quickValues.map(
+                (value) {
+                  final selected = currentValue == value;
+                  return ChoiceChip(
+                    selected: selected,
+                    onSelected: (_) => _selectQuickValue(value),
+                    label: Text('${_formatPercent(value)}%'),
+                    avatar: Icon(
+                      Icons.local_offer_outlined,
+                      size: 16,
+                      color: selected ? Colors.white : AppTheme.primary,
                     ),
-                  )
-                  .toList(),
+                    backgroundColor: Colors.white,
+                    selectedColor: AppTheme.primary,
+                    labelStyle: TextStyle(
+                      color: selected ? Colors.white : AppTheme.primaryDeep,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    side: BorderSide(
+                      color: selected
+                          ? AppTheme.primary
+                          : AppTheme.primary.withValues(alpha: 0.28),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    showCheckmark: false,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 7,
+                    ),
+                  );
+                },
+              ).toList(),
             ),
             const SizedBox(height: 24),
             SizedBox(

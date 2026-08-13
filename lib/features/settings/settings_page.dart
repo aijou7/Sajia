@@ -24,7 +24,7 @@ import 'pro_checkout_page.dart';
 
 const _ownerDashboardUrl = String.fromEnvironment(
   'OWNER_DASHBOARD_URL',
-  defaultValue: 'https://sajia-owner.pages.dev',
+  defaultValue: 'https://www.aijoutek.pro/sajia/owner',
 );
 
 Future<User?> _findActiveUserUsingPin(

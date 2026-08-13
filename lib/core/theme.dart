@@ -19,15 +19,17 @@ class AppTheme {
   static const info = AppBrand.info;
   static const qris = primaryBright;
   static const revenue = accent;
-  static const darkColor = Color(0xFF172321);
+  static const darkColor = Color(0xFF111615);
 
-  static const surface = Color(0xFFF5F7F6);
-  static const surfaceWarm = Color(0xFFFBFCFB);
-  static const borderColor = Color(0xFFDCE5E2);
-  static const subtleBorder = Color(0xFFD1DFDB);
+  // Neutral surfaces keep long cashier sessions easy on the eyes. Brand
+  // colors are deliberately reserved for active states and primary actions.
+  static const surface = Color(0xFFF6F7F6);
+  static const surfaceWarm = Colors.white;
+  static const borderColor = Color(0xFFE2E6E4);
+  static const subtleBorder = Color(0xFFD8DEDB);
   static const cardBg = Colors.white;
-  static const textPrimary = Color(0xFF172321);
-  static const textSecondary = Color(0xFF667470);
+  static const textPrimary = Color(0xFF111615);
+  static const textSecondary = Color(0xFF626C68);
 
   // Satu skala ikon menjaga baseline dan bobot visual konsisten.
   static const iconCompact = 16.0;
@@ -35,7 +37,7 @@ class AppTheme {
   static const iconProminent = 24.0;
 
   static const brandGradient = LinearGradient(
-    colors: [primaryDeep, primary, primaryBright],
+    colors: [Color(0xFF101514), Color(0xFF252C2A)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -56,9 +58,9 @@ class AppTheme {
 
   static List<BoxShadow> get floatingShadow => [
         BoxShadow(
-          color: primary.withValues(alpha: 0.18),
-          blurRadius: 28,
-          offset: const Offset(0, 14),
+          color: textPrimary.withValues(alpha: 0.12),
+          blurRadius: 24,
+          offset: const Offset(0, 12),
         ),
       ];
 
@@ -97,8 +99,9 @@ class AppTheme {
       centerTitle: false,
       systemOverlayStyle: SystemUiOverlayStyle.dark,
       titleTextStyle: GoogleFonts.inter(
-        fontSize: 17,
-        fontWeight: FontWeight.w600,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.2,
         color: textPrimary,
       ),
     ),
@@ -123,7 +126,7 @@ class AppTheme {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: const Color(0xFFF8FAF9),
+      fillColor: const Color(0xFFF8F9F8),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),

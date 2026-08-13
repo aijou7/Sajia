@@ -35,9 +35,10 @@ class MorePage extends ConsumerWidget {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                gradient: AppTheme.brandGradient,
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
-                boxShadow: AppTheme.floatingShadow,
+                border: Border.all(color: AppTheme.subtleBorder),
+                boxShadow: AppTheme.softShadow,
               ),
               child: Row(
                 children: [
@@ -45,12 +46,12 @@ class MorePage extends ConsumerWidget {
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.16),
+                      color: AppTheme.primaryLight,
                       borderRadius: BorderRadius.circular(18),
                     ),
                     child: const Icon(
                       Icons.person_rounded,
-                      color: Colors.white,
+                      color: AppTheme.primary,
                       size: 28,
                     ),
                   ),
@@ -64,17 +65,19 @@ class MorePage extends ConsumerWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: AppTheme.textPrimary,
                             fontSize: 19,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.3,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           '$roleLabel · ${AppBrand.descriptor}',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.72),
+                            color: AppTheme.textSecondary,
                             fontSize: 12,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],

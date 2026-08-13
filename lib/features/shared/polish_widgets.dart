@@ -22,9 +22,10 @@ class ModernHeroHeader extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: AppTheme.brandGradient,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        boxShadow: AppTheme.floatingShadow,
+        border: Border.all(color: AppTheme.subtleBorder),
+        boxShadow: AppTheme.softShadow,
       ),
       child: Row(
         children: [
@@ -32,11 +33,13 @@ class ModernHeroHeader extends StatelessWidget {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.16),
+              color: AppTheme.primaryLight,
               borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+              border: Border.all(
+                color: AppTheme.primary.withValues(alpha: 0.14),
+              ),
             ),
-            child: Icon(icon, color: Colors.white, size: 24),
+            child: Icon(icon, color: AppTheme.primary, size: 24),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -48,9 +51,10 @@ class ModernHeroHeader extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: AppTheme.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
+                    letterSpacing: -0.25,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -59,10 +63,10 @@ class ModernHeroHeader extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.74),
+                    color: AppTheme.textSecondary,
                     fontSize: 12,
                     height: 1.25,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -144,12 +148,9 @@ class EmptyStateView extends StatelessWidget {
               width: 74,
               height: 74,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppTheme.primaryLight, AppTheme.accentLight],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: AppTheme.subtleBorder),
               ),
               child: Icon(icon, size: 34, color: AppTheme.primary),
             ),
