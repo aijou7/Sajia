@@ -677,11 +677,8 @@ class _CategoryTab extends ConsumerWidget {
           buildDefaultDragHandles: canManage,
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
           itemCount: cats.length,
-          onReorder: canManage
+          onReorderItem: canManage
               ? (oldIndex, newIndex) async {
-                  if (newIndex > oldIndex) {
-                    newIndex--;
-                  }
                   final db = ref.read(databaseProvider);
                   // Update sort order
                   for (int i = 0; i < cats.length; i++) {
