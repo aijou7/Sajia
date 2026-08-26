@@ -228,7 +228,7 @@ class GradientActionButton extends StatelessWidget {
     required this.icon,
     this.onTap,
     this.loading = false,
-    this.gradient = AppTheme.brandGradient,
+    this.gradient = AppTheme.actionGradient,
   });
 
   @override

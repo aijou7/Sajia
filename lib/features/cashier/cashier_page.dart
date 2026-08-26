@@ -474,7 +474,7 @@ class _ProductVariantSelectionSheetState
                       : 'Tambah ke Pesanan',
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
+                  backgroundColor: AppTheme.action,
                   minimumSize: const Size.fromHeight(52),
                 ),
               ),
@@ -1243,7 +1243,7 @@ class _CartBar extends ConsumerWidget {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         decoration: BoxDecoration(
-          gradient: AppTheme.brandGradient,
+          gradient: AppTheme.actionGradient,
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(

@@ -14,8 +14,8 @@ class AppBrand {
 
   static const logoAsset = 'assets/images/sajia_app_icon.png';
 
-  // Soft contemporary cafe: dusty teal keeps long cashier sessions calm,
-  // while the muted periwinkle accent gives Sajia a younger premium feel.
+  // Warna brand tetap tersedia untuk logo dan aksen interaksi. UI utama
+  // memakai tinta netral agar warna ini tidak menyebar ke teks dan frame.
   static const primary = Color(0xFF356B66);
   static const primaryDark = Color(0xFF285752);
   static const primaryDeep = Color(0xFF1D403D);
@@ -27,8 +27,8 @@ class AppBrand {
   static const warning = Color(0xFFC57843);
   static const danger = Color(0xFFC55252);
   static const info = Color(0xFF557FA3);
-  static const ink = Color(0xFF172321);
-  static const mutedInk = Color(0xFF667470);
+  static const ink = Color(0xFF111111);
+  static const mutedInk = Color(0xFF626262);
 }
 
 class SajiaMark extends StatelessWidget {

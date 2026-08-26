@@ -37,17 +37,17 @@ Aturan pemakaian:
 
 | Token | Hex | Use |
 | --- | --- | --- |
-| Sajia Blue | `#1B6CA8` | Primary actions, selected state, core brand |
-| Deep Blue | `#07395F` | Gradients, elevated shadows, high-emphasis backgrounds |
-| Bright Blue | `#2D9CDB` | Gradient highlight, active accents |
-| Soft Blue | `#E8F2FB` | Selected chips, icon backgrounds |
-| Rupiah Gold | `#EF9F27` | Logo badge, revenue highlights, celebratory accents |
-| Gold Light | `#FFF5DE` | Warm secondary surface |
-| Success Green | `#1A9E6A` | Paid, success, completed states |
-| Warning Amber | `#F59E0B` | Hold, warning, pending attention |
-| Danger Red | `#DC2626` | Delete, void, failed states |
-| Ink | `#101828` | Main text |
-| Muted Ink | `#667085` | Secondary text |
+| Sajia Teal | `#356B66` | Primary buttons, progress, focus, and deliberate interaction accents |
+| Deep Teal | `#285752` | Primary-button gradient only |
+| Soft Teal | `#E7F1EF` | Rare brand moments; never a default card or frame color |
+| Ink | `#111111` | Main text, selected labels, icons, and strong UI chrome |
+| Muted Ink | `#626262` | Secondary text and inactive icons |
+| Surface | `#F6F6F6` | App background |
+| Soft Neutral | `#F1F1F1` | Selected surfaces and quiet icon backgrounds |
+| Border | `#E0E0E0` | Cards, fields, dividers, and frames |
+| Success Green | `#2F7D64` | Paid, success, and completed states only |
+| Warning Amber | `#C57843` | Hold, warning, and pending-attention states only |
+| Danger Red | `#C55252` | Delete, void, failed, and destructive states only |
 
 ## Typography
 
@@ -64,10 +64,13 @@ Usage:
 ## UI Direction
 
 - Keep screens dense, clean, and fast to scan.
-- Prefer white surfaces on soft blue backgrounds.
+- Prefer white surfaces on neutral gray backgrounds.
 - Use rounded controls, but keep cards and panels practical.
-- Use gradients only for brand moments and primary calls to action.
-- For transaction states, color must map consistently: blue active, green success, amber waiting, red failed/void.
+- Treat Sajia Teal as an accent, not as the base color of the interface.
+- Keep normal text black or gray; use white text only on dark or accent-filled controls.
+- Keep frames, dividers, cards, fields, and default icon backgrounds neutral.
+- Use the teal gradient only for primary calls to action. Use black gradients for high-emphasis information surfaces.
+- For transaction states, color must map consistently: neutral active, green success, amber waiting, red failed/void.
 
 ## Product Packaging
 

@@ -2830,7 +2830,7 @@ class _SaveButton extends StatelessWidget {
         child: ElevatedButton(
           onPressed: isSaving ? null : onTap,
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppTheme.primary,
+            backgroundColor: AppTheme.action,
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

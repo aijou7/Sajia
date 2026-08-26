@@ -5,31 +5,40 @@ import 'package:google_fonts/google_fonts.dart';
 import 'brand.dart';
 
 class AppTheme {
-  // ── SAJIA BRAND COLORS ────────────────────────
-  static const primary = AppBrand.primary;
-  static const primaryDark = AppBrand.primaryDark;
-  static const primaryDeep = AppBrand.primaryDeep;
-  static const primaryBright = AppBrand.primaryBright;
-  static const primaryLight = AppBrand.primaryLight;
-  static const accent = AppBrand.accent;
-  static const accentLight = AppBrand.accentLight;
+  // ── NEUTRAL UI + BRAND ACCENT ─────────────────
+  // Warna Sajia dipakai sebagai aksen interaksi, bukan sebagai warna chrome,
+  // teks, frame, atau permukaan aplikasi.
+  static const action = AppBrand.primary;
+  static const actionDark = AppBrand.primaryDark;
+  static const actionBright = AppBrand.primaryBright;
+  static const actionSoft = AppBrand.primaryLight;
+
+  static const surface = Color(0xFFF6F6F6);
+  static const surfaceWarm = Colors.white;
+  static const neutralSoft = Color(0xFFF1F1F1);
+  static const borderColor = Color(0xFFE0E0E0);
+  static const subtleBorder = Color(0xFFE7E7E7);
+  static const cardBg = Colors.white;
+  static const textPrimary = Color(0xFF111111);
+  static const textSecondary = Color(0xFF626262);
+
+  // Alias lama sengaja dinetralkan agar komponen yang sebelumnya mewarnai
+  // teks, ikon, kartu, dan frame otomatis kembali ke hitam/abu. Gunakan
+  // `action*` bila warna brand memang dibutuhkan sebagai aksen interaksi.
+  static const primary = textPrimary;
+  static const primaryDark = textPrimary;
+  static const primaryDeep = textPrimary;
+  static const primaryBright = textSecondary;
+  static const primaryLight = neutralSoft;
+  static const accent = textPrimary;
+  static const accentLight = neutralSoft;
   static const success = AppBrand.success;
   static const warning = AppBrand.warning;
   static const danger = AppBrand.danger;
   static const info = AppBrand.info;
-  static const qris = primaryBright;
-  static const revenue = accent;
-  static const darkColor = Color(0xFF111615);
-
-  // Neutral surfaces keep long cashier sessions easy on the eyes. Brand
-  // colors are deliberately reserved for active states and primary actions.
-  static const surface = Color(0xFFF6F7F6);
-  static const surfaceWarm = Colors.white;
-  static const borderColor = Color(0xFFE2E6E4);
-  static const subtleBorder = Color(0xFFD8DEDB);
-  static const cardBg = Colors.white;
-  static const textPrimary = Color(0xFF111615);
-  static const textSecondary = Color(0xFF626C68);
+  static const qris = actionBright;
+  static const revenue = textPrimary;
+  static const darkColor = textPrimary;
 
   // Satu skala ikon menjaga baseline dan bobot visual konsisten.
   static const iconCompact = 16.0;
@@ -37,13 +46,19 @@ class AppTheme {
   static const iconProminent = 24.0;
 
   static const brandGradient = LinearGradient(
-    colors: [Color(0xFF101514), Color(0xFF252C2A)],
+    colors: [Color(0xFF111111), Color(0xFF292929)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
+  static const actionGradient = LinearGradient(
+    colors: [action, actionDark],
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+  );
+
   static const payGradient = LinearGradient(
-    colors: [Color(0xFF347A68), Color(0xFF285752)],
+    colors: [action, actionDark],
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
   );
@@ -73,14 +88,30 @@ class AppTheme {
   // ── LIGHT THEME ───────────────────────────────
   static final ThemeData light = ThemeData(
     useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: primary,
-      brightness: Brightness.light,
-      primary: primary,
-      secondary: success,
+    colorScheme: const ColorScheme.light(
+      primary: action,
+      onPrimary: Colors.white,
+      primaryContainer: neutralSoft,
+      onPrimaryContainer: textPrimary,
+      secondary: textPrimary,
+      onSecondary: Colors.white,
+      secondaryContainer: neutralSoft,
+      onSecondaryContainer: textPrimary,
+      tertiary: textSecondary,
+      onTertiary: Colors.white,
+      tertiaryContainer: neutralSoft,
+      onTertiaryContainer: textPrimary,
       error: danger,
+      onError: Colors.white,
+      errorContainer: Color(0xFFFFEAEA),
+      onErrorContainer: danger,
       surface: surfaceWarm,
       onSurface: textPrimary,
+      surfaceTint: Colors.transparent,
+      outline: borderColor,
+      outlineVariant: subtleBorder,
+      shadow: Colors.black,
+      scrim: Colors.black,
     ),
     textTheme: GoogleFonts.interTextTheme().apply(
       bodyColor: textPrimary,
@@ -115,7 +146,7 @@ class AppTheme {
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: primary,
+        backgroundColor: action,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         minimumSize: const Size(48, 48),
@@ -164,15 +195,31 @@ class AppTheme {
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
+        foregroundColor: textPrimary,
         minimumSize: const Size(48, 48),
         tapTargetSize: MaterialTapTargetSize.padded,
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
+        foregroundColor: textPrimary,
+        side: const BorderSide(color: borderColor),
         minimumSize: const Size(48, 48),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: action,
+        foregroundColor: Colors.white,
+        minimumSize: const Size(48, 48),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    ),
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      backgroundColor: action,
+      foregroundColor: Colors.white,
+      elevation: 0,
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
@@ -190,12 +237,32 @@ class AppTheme {
     ),
     chipTheme: ChipThemeData(
       backgroundColor: surface,
-      selectedColor: primaryLight,
-      labelStyle: GoogleFonts.inter(fontSize: 12),
+      selectedColor: neutralSoft,
+      labelStyle: GoogleFonts.inter(fontSize: 12, color: textPrimary),
+      secondaryLabelStyle:
+          GoogleFonts.inter(fontSize: 12, color: textPrimary),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: const BorderSide(color: borderColor),
       ),
+    ),
+    tabBarTheme: TabBarThemeData(
+      labelColor: textPrimary,
+      unselectedLabelColor: textSecondary,
+      indicatorColor: textPrimary,
+      dividerColor: borderColor,
+      labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w700),
+    ),
+    listTileTheme: const ListTileThemeData(
+      iconColor: textSecondary,
+      textColor: textPrimary,
+      selectedColor: textPrimary,
+      selectedTileColor: neutralSoft,
+    ),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(
+      color: action,
+      linearTrackColor: neutralSoft,
+      circularTrackColor: neutralSoft,
     ),
   );
 
@@ -203,7 +270,7 @@ class AppTheme {
     useMaterial3: true,
     brightness: Brightness.dark,
     colorScheme:
-        ColorScheme.fromSeed(seedColor: primary, brightness: Brightness.dark),
+        ColorScheme.fromSeed(seedColor: action, brightness: Brightness.dark),
     textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
   );
 }

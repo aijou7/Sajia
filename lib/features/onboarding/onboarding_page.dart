@@ -906,7 +906,7 @@ class _Btn extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          gradient: onTap == null ? null : AppTheme.brandGradient,
+          gradient: onTap == null ? null : AppTheme.actionGradient,
           color: onTap == null ? const Color(0xFFD1D5DB) : null,
           borderRadius: BorderRadius.circular(16),
           boxShadow: onTap == null ? null : AppTheme.floatingShadow,

@@ -177,7 +177,7 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showExpenseSheet,
-        backgroundColor: AppTheme.primary,
+        backgroundColor: AppTheme.action,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add_rounded),
         label: const Text('Pengeluaran'),

@@ -412,7 +412,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
               icon: const Icon(Icons.refresh, size: 16),
               label: const Text('Coba Lagi'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
+                backgroundColor: AppTheme.action,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8)),
               ),
@@ -529,7 +529,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
+              backgroundColor: AppTheme.action,
               minimumSize: const Size(130, 44),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),

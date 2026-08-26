@@ -80,7 +80,7 @@ class _MenuPageState extends ConsumerState<MenuPage>
               onPressed: () => isProductTab
                   ? _openProductForm(context, ref)
                   : _openCategoryForm(context, ref),
-              backgroundColor: AppTheme.primary,
+              backgroundColor: AppTheme.action,
               icon: const Icon(Icons.add, color: Colors.white),
               label: Text(
                 isProductTab ? 'Tambah Produk' : 'Tambah Kategori',
@@ -614,7 +614,7 @@ class _StockAdjustmentSheetState extends ConsumerState<StockAdjustmentSheet> {
                     : const Icon(Icons.save_outlined),
                 label: const Text('Simpan Stok'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
+                  backgroundColor: AppTheme.action,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
@@ -1541,7 +1541,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                           ? null
                           : _save,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
+                    backgroundColor: AppTheme.action,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
@@ -1902,7 +1902,7 @@ class _VariantGroupEditorSheetState extends State<_VariantGroupEditorSheet> {
                 child: ElevatedButton(
                   onPressed: _save,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
+                    backgroundColor: AppTheme.action,
                     minimumSize: const Size.fromHeight(52),
                   ),
                   child: const Text('Simpan Grup Pilihan'),
@@ -2107,7 +2107,7 @@ class _CategoryFormSheetState extends ConsumerState<CategoryFormSheet> {
               child: ElevatedButton(
                 onPressed: _isSaving ? null : _save,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
+                  backgroundColor: AppTheme.action,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
