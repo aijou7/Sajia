@@ -883,7 +883,7 @@ class _ProgressBar extends StatelessWidget {
           }),
         ),
         const SizedBox(height: 8),
-        Text('Langkah ${current + 1} dari ${_steps.length}',
+        Text('Langkah ${current + 1} dari ${steps.length}',
             style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
       ]),
     );
