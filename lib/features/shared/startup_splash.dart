@@ -85,6 +85,7 @@ class _SajiaStartupSplashState extends State<SajiaStartupSplash>
                     const Spacer(flex: 5),
                     FadeTransition(
                       opacity: _fade,
+                      alwaysIncludeSemantics: true,
                       child: SlideTransition(
                         position: _slide,
                         child: ScaleTransition(
@@ -98,6 +99,7 @@ class _SajiaStartupSplashState extends State<SajiaStartupSplash>
                     const Spacer(flex: 4),
                     FadeTransition(
                       opacity: _fade,
+                      alwaysIncludeSemantics: true,
                       child: _LoadingStatus(
                         motionController: _motionController,
                       ),
