@@ -37,6 +37,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
   String? _emailError;
   bool _isDeviceRecovery = false;
   String? _authUserIdBeforeOtp;
+  String? _recoveryPrimaryOutletId;
+  Set<String> _recoveryOutletIds = const <String>{};
   Timer? _otpCooldownTimer;
   int _otpCooldownSeconds = 0;
 
@@ -318,9 +320,14 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
         if (!mounted) return;
         setState(() {
           _isLoading = false;
-          _emailError =
-              'PIN akun belum tersimpan di cloud. Buka Sajia di perangkat lama, sambungkan internet, lalu tunggu sinkronisasi sebelum mencoba lagi.';
+          _recoveryPrimaryOutletId = outletId;
+          _recoveryOutletIds = restoredOutletIds;
+          _pin = '';
+          _confirmPin = '';
+          _settingConfirm = false;
+          _pinError = null;
         });
+        _goTo(_Step.pin);
         return;
       }
 
@@ -374,7 +381,11 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
 
   void _checkPins() {
     if (_pin == _confirmPin) {
-      _finishSetup();
+      if (_recoveryPrimaryOutletId != null) {
+        _finishRecoverySetup();
+      } else {
+        _finishSetup();
+      }
     } else {
       setState(() {
         _pinError = 'PIN tidak cocok. Coba lagi.';
@@ -393,6 +404,78 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
   }
 
   // ── FINISH SETUP ──────────────────────────────
+  Future<void> _finishRecoverySetup() async {
+    final outletId = _recoveryPrimaryOutletId;
+    final outletIds = _recoveryOutletIds;
+    if (outletId == null || outletIds.isEmpty) {
+      setState(() {
+        _pinError = 'Data outlet recovery tidak lengkap. Verifikasi ulang email.';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final service = OnboardingService();
+      final ownerId = service.authenticatedUserId;
+      if (ownerId == null || ownerId.isEmpty) {
+        throw StateError('Sesi email owner sudah berakhir');
+      }
+
+      final db = ref.read(databaseProvider);
+      final updatedAt = DateTime.now();
+      final hashedPin = PinHasher.hash(_pin, outletId);
+      await db.sessionDao.upsertUser(UsersCompanion(
+        id: Value(ownerId),
+        outletId: Value(outletId),
+        name: const Value('Owner'),
+        pin: Value(hashedPin),
+        role: const Value('owner'),
+        isActive: const Value(true),
+        updatedAt: Value(updatedAt),
+        isSynced: const Value(false),
+      ));
+
+      // Simpan kredensial recovery sebelum menyelesaikan onboarding. Jangan
+      // hanya mengandalkan background sync karena proses itu mungkin sedang
+      // sibuk dan menunda upload sampai siklus berikutnya.
+      await ref.read(supabaseProvider).from('users').upsert({
+        'id': ownerId,
+        'outlet_id': outletId,
+        'name': 'Owner',
+        'pin': hashedPin,
+        'role': 'owner',
+        'is_active': true,
+        'updated_at': updatedAt.toUtc().toIso8601String(),
+      });
+      await db.sessionDao.markUserSynced(ownerId);
+
+      await service.saveCurrentOutletId(outletId);
+      await service.saveVerifiedOwnerOutletIds(outletIds);
+      ref.read(currentOutletIdProvider.notifier).state = outletId;
+      await service.markSetupDone();
+      ref.invalidate(isSetupDoneProvider);
+
+      // OTP email sudah membuktikan kepemilikan outlet. Simpan PIN baru ke
+      // cloud agar perangkat berikutnya dapat dipulihkan tanpa perangkat lama.
+      await ref.read(syncServiceProvider).syncAll();
+
+      if (!mounted) return;
+      context.go('/login');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _pin = '';
+        _confirmPin = '';
+        _settingConfirm = false;
+        _pinError =
+            'PIN baru belum dapat disimpan. Periksa internet lalu coba lagi.';
+      });
+    }
+  }
+
   Future<void> _finishSetup() async {
     setState(() => _isLoading = true);
     try {
@@ -639,13 +722,24 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
 
   Widget _buildPin() {
     final current = _settingConfirm ? _confirmPin : _pin;
+    final isRecovery = _recoveryPrimaryOutletId != null;
     return _Wrapper(
       icon: Icons.lock_rounded,
-      title: _settingConfirm ? 'Konfirmasi PIN' : 'Buat PIN Owner',
+      title: _settingConfirm
+          ? (isRecovery ? 'Konfirmasi PIN baru' : 'Konfirmasi PIN')
+          : (isRecovery ? 'Buat PIN baru' : 'Buat PIN Owner'),
       subtitle: _settingConfirm
           ? 'Masukkan PIN yang sama sekali lagi'
-          : 'PIN 6 digit untuk login sebagai owner',
+          : isRecovery
+              ? 'Email sudah terverifikasi. Buat PIN 6 digit untuk masuk sebagai owner.'
+              : 'PIN 6 digit untuk login sebagai owner',
       child: Column(children: [
+        if (isRecovery) ...[
+          const _InfoBox(
+            'Perangkat lama tidak diperlukan. PIN baru akan disimpan ke akun cloud setelah dibuat.',
+          ),
+          const SizedBox(height: 24),
+        ],
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(_pinLength, (i) {
@@ -685,7 +779,11 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
       backgroundColor: AppTheme.surface,
       body: SafeArea(
         child: Column(children: [
-          if (_step != _Step.welcome) _ProgressBar(step: _step),
+          if (_step != _Step.welcome)
+            _ProgressBar(
+              step: _step,
+              isDeviceRecovery: _isDeviceRecovery,
+            ),
           Expanded(
             child: SlideTransition(
               position: _slideAnim,
@@ -718,25 +816,36 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
 // ── PROGRESS BAR ──────────────────────────────────────────────
 class _ProgressBar extends StatelessWidget {
   final _Step step;
-  const _ProgressBar({required this.step});
+  final bool isDeviceRecovery;
+  const _ProgressBar({
+    required this.step,
+    required this.isDeviceRecovery,
+  });
 
-  static const _steps = [
+  static const _setupSteps = [
     _Step.email,
     _Step.otp,
     _Step.outlet,
     _Step.pin,
   ];
 
+  static const _recoverySteps = [
+    _Step.email,
+    _Step.otp,
+    _Step.pin,
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final current = _steps.indexOf(step);
+    final steps = isDeviceRecovery ? _recoverySteps : _setupSteps;
+    final current = steps.indexOf(step);
     if (current < 0) return const SizedBox();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(
-          children: List.generate(_steps.length * 2 - 1, (i) {
+          children: List.generate(steps.length * 2 - 1, (i) {
             if (i.isOdd) {
               return Expanded(
                 child: Container(

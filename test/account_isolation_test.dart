@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pos_mobile/core/utils.dart';
 import 'package:pos_mobile/data/local/app_database.dart';
 
 void main() {
@@ -90,5 +91,41 @@ void main() {
       ['product-owner-b-outlet'],
     );
     expect(await database.syncDao.getPending(), isEmpty);
+  });
+
+  test('verified email recovery can create a new owner PIN locally', () async {
+    for (final outletId in ['owner-outlet', 'owner-branch']) {
+      await database.into(database.outlets).insert(
+            OutletsCompanion.insert(
+              id: outletId,
+              name: outletId,
+              licenseKey: 'FREE',
+            ),
+          );
+    }
+
+    const rawPin = '246810';
+    await database.sessionDao.upsertUser(
+      UsersCompanion.insert(
+        id: 'verified-auth-user',
+        name: 'Owner',
+        pin: PinHasher.hash(rawPin, 'owner-outlet'),
+        role: 'owner',
+        outletId: 'owner-outlet',
+      ),
+    );
+
+    final users = await database.sessionDao.getActiveUsersForOutlets(
+      {'owner-outlet', 'owner-branch'},
+    );
+
+    expect(users, hasLength(1));
+    expect(users.single.id, 'verified-auth-user');
+    expect(users.single.role, 'owner');
+    expect(
+      PinHasher.verify(rawPin, users.single.outletId, users.single.pin),
+      isTrue,
+    );
+    expect(await database.sessionDao.getUnsyncedUsers(), hasLength(1));
   });
 }

@@ -10,6 +10,7 @@ import 'core/brand.dart';
 import 'core/onboarding_service.dart';
 import 'core/router.dart';
 import 'core/theme.dart';
+import 'features/shared/startup_splash.dart';
 
 const _supabaseUrl = String.fromEnvironment(
   'SUPABASE_URL',
@@ -22,14 +23,8 @@ const _supabasePublishableKey = String.fromEnvironment(
       defaultValue: 'sb_publishable_muNOtjPaEROhkExG6Dd1Vw_oQg4AUFo'),
 );
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
 
   // Status bar transparan
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -37,17 +32,96 @@ Future<void> main() async {
     statusBarIconBrightness: Brightness.dark,
   ));
 
+  runApp(const ProviderScope(child: SajiaBootstrap()));
+}
+
+bool _supabaseInitialized = false;
+
+Future<_BootstrapData> _initializeApplication() async {
+  // Durasi minimum singkat membuat gerak masuk logo selesai tanpa menahan
+  // startup yang memang membutuhkan waktu lebih lama.
+  final minimumSplashTime =
+      Future<void>.delayed(const Duration(milliseconds: 1100));
+
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
+
   await initializeDateFormatting('id_ID');
 
-  await Supabase.initialize(
-    url: _supabaseUrl,
-    publishableKey: _supabasePublishableKey,
-  );
+  if (!_supabaseInitialized) {
+    await Supabase.initialize(
+      url: _supabaseUrl,
+      publishableKey: _supabasePublishableKey,
+    );
+    _supabaseInitialized = true;
+  }
 
   final initialOutletId = await OnboardingService().getCurrentOutletId();
-  runApp(ProviderScope(
-    child: SajiaApp(initialOutletId: initialOutletId),
-  ));
+  await minimumSplashTime;
+  return _BootstrapData(initialOutletId: initialOutletId);
+}
+
+class _BootstrapData {
+  final String? initialOutletId;
+
+  const _BootstrapData({required this.initialOutletId});
+}
+
+class SajiaBootstrap extends StatefulWidget {
+  const SajiaBootstrap({super.key});
+
+  @override
+  State<SajiaBootstrap> createState() => _SajiaBootstrapState();
+}
+
+class _SajiaBootstrapState extends State<SajiaBootstrap> {
+  late Future<_BootstrapData> _initialization;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialization = _initializeApplication();
+  }
+
+  void _retry() {
+    setState(() => _initialization = _initializeApplication());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<_BootstrapData>(
+      future: _initialization,
+      builder: (context, snapshot) {
+        final Widget child;
+        if (snapshot.connectionState == ConnectionState.done &&
+            snapshot.hasData) {
+          child = SajiaApp(
+            key: const ValueKey('sajia-app'),
+            initialOutletId: snapshot.requireData.initialOutletId,
+          );
+        } else if (snapshot.hasError) {
+          child = SajiaStartupError(
+            key: const ValueKey('startup-error'),
+            onRetry: _retry,
+          );
+        } else {
+          child = const SajiaStartupSplash(
+            key: ValueKey('startup-splash'),
+          );
+        }
+
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 360),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          child: child,
+        );
+      },
+    );
+  }
 }
 
 class SajiaApp extends ConsumerStatefulWidget {
