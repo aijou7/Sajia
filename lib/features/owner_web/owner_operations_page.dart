@@ -425,6 +425,29 @@ extension on _OperationsTab {
       };
 }
 
+class _CategoryColorOption {
+  final String name;
+  final String hex;
+
+  const _CategoryColorOption(this.name, this.hex);
+}
+
+const _categoryColorPalette = <_CategoryColorOption>[
+  _CategoryColorOption('Teal', '#356B66'),
+  _CategoryColorOption('Sage', '#6F9E98'),
+  _CategoryColorOption('Ungu lembut', '#746FA8'),
+  _CategoryColorOption('Biru', '#557FA3'),
+  _CategoryColorOption('Hijau', '#2F7D64'),
+  _CategoryColorOption('Oranye', '#C57843'),
+  _CategoryColorOption('Merah', '#C55252'),
+  _CategoryColorOption('Mauve', '#8A6E82'),
+  _CategoryColorOption('Biru abu', '#68809B'),
+  _CategoryColorOption('Abu hijau', '#73807C'),
+  _CategoryColorOption('Cokelat', '#9B776D'),
+  _CategoryColorOption('Hijau tua', '#596C68'),
+  _CategoryColorOption('Biru terang', '#7D8FA8'),
+];
+
 class _OperationsData {
   final List<_OwnerCategory> categories;
   final List<_OwnerProduct> products;
@@ -869,35 +892,36 @@ class _CategoryEditor extends StatefulWidget {
 
 class _CategoryEditorState extends State<_CategoryEditor> {
   late final TextEditingController _name;
-  late final TextEditingController _color;
+  late String _colorHex;
   late bool _isActive;
   bool _saving = false;
   String? _error;
+
+  String get _selectedColorName {
+    for (final color in _categoryColorPalette) {
+      if (color.hex == _colorHex) return color.name;
+    }
+    return 'Warna tersimpan';
+  }
 
   @override
   void initState() {
     super.initState();
     _name = TextEditingController(text: widget.category?.name ?? '');
-    _color = TextEditingController(text: widget.category?.colorHex ?? '#D97706');
+    _colorHex = widget.category?.colorHex.toUpperCase() ?? '#356B66';
     _isActive = widget.category?.isActive ?? true;
   }
 
   @override
   void dispose() {
     _name.dispose();
-    _color.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     final name = _name.text.trim();
-    final color = _color.text.trim();
     if (name.isEmpty) {
       setState(() => _error = 'Nama kategori wajib diisi.');
-      return;
-    }
-    if (!RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(color)) {
-      setState(() => _error = 'Warna harus berupa kode seperti #D97706.');
       return;
     }
     setState(() {
@@ -908,7 +932,7 @@ class _CategoryEditorState extends State<_CategoryEditor> {
       await widget.onSave(
         category: widget.category,
         name: name,
-        colorHex: color,
+        colorHex: _colorHex,
         isActive: _isActive,
       );
       if (mounted) Navigator.of(context).pop();
@@ -941,15 +965,66 @@ class _CategoryEditorState extends State<_CategoryEditor> {
                   decoration: const InputDecoration(labelText: 'Nama kategori'),
                 ),
                 const SizedBox(height: 14),
-                TextField(
-                  controller: _color,
-                  textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(
-                    labelText: 'Kode warna',
-                    helperText: 'Contoh: #D97706',
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Warna kategori',
+                    style: Theme.of(context).textTheme.labelLarge,
                   ),
                 ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final color in _categoryColorPalette)
+                      Tooltip(
+                        message: color.name,
+                        child: Semantics(
+                          button: true,
+                          selected: _colorHex == color.hex,
+                          label: 'Warna ${color.name}',
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(99),
+                            onTap: _saving
+                                ? null
+                                : () => setState(() => _colorHex = color.hex),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 140),
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: _colorFromHex(color.hex),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _colorHex == color.hex
+                                      ? AppTheme.textPrimary
+                                      : Colors.transparent,
+                                  width: 3,
+                                ),
+                              ),
+                              child: _colorHex == color.hex
+                                  ? Icon(
+                                      Icons.check_rounded,
+                                      color: _colorFromHex(color.hex)
+                                                  .computeLuminance() >
+                                              .55
+                                          ? Colors.black
+                                          : Colors.white,
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 8),
+                Text(
+                  _selectedColorName,
+                  style: const TextStyle(color: AppTheme.textSecondary),
+                ),
+                const SizedBox(height: 6),
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Kategori aktif'),
