@@ -45,5 +45,8 @@ void main() {
 
     expect(find.text('Pembayaran berhasil'), findsNothing);
     expect(find.text('Sinkronisasi selesai'), findsOneWidget);
+
+    AppNotice.dismiss();
+    await tester.pump();
   });
 }
