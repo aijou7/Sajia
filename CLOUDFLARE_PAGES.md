@@ -1,5 +1,14 @@
 # Deploy dashboard Sajia ke Cloudflare Pages
 
+## URL portal yang dipakai aplikasi
+
+Dashboard owner dipublikasikan pada path **`/sajia/owner/`**, sehingga link
+produksinya adalah `https://www.aijoutek.pro/sajia/owner/`. Path
+`/sajia/admin` bukan route portal ini dan saat ini akan menampilkan 404.
+
+Workflow GitHub `Owner dashboard web build` hanya membuat artefak `build/web`;
+artefak itu tetap perlu dipublikasikan ke host/Cloudflare setelah build sukses.
+
 Cloudflare Pages menyediakan subdomain gratis, misalnya
 `sajia-owner.pages.dev`. Domain sendiri bersifat opsional.
 

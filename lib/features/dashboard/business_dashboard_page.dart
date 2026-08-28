@@ -134,7 +134,7 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
           indicatorColor: AppTheme.primary,
           tabs: const [
             Tab(text: 'Ikhtisar'),
-            Tab(text: 'Laba Rugi'),
+            Tab(text: 'Estimasi laba-rugi'),
             Tab(text: 'Cabang'),
           ],
         ),
@@ -382,7 +382,7 @@ class _OverviewTab extends StatelessWidget {
         Row(children: [
           Expanded(
             child: _MetricCard(
-              label: 'Laba kotor',
+              label: 'Estimasi laba kotor',
               value: data.grossProfit.toRupiahCompact,
               icon: Icons.show_chart_rounded,
               color: AppTheme.success,
@@ -422,7 +422,7 @@ class _OverviewTab extends StatelessWidget {
                     ? 'Cabang tugasmu bulan ini'
                     : '${best.outletName} bulan ini',
             subtitle:
-                '${best.revenue.toRupiah} dari ${best.transactions} transaksi • margin bersih ${best.margin.toStringAsFixed(1)}%',
+                '${best.revenue.toRupiah} dari ${best.transactions} transaksi • margin operasional ${best.margin.toStringAsFixed(1)}%',
           ),
       ],
     );
@@ -542,7 +542,7 @@ class _BranchesTab extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             data.isAllBranches
-                ? 'Bandingkan omzet, laba bersih, dan margin dalam satu tampilan.'
+                ? 'Bandingkan omzet, hasil estimasi, dan margin operasional dalam satu tampilan.'
                 : 'Manager hanya melihat cabang yang ditugaskan owner.',
             style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
           ),
@@ -566,7 +566,7 @@ class _BranchesTab extends StatelessWidget {
             color: AppTheme.primary,
             title: 'Kontrol cabang, bukan sekadar lihat angka',
             subtitle:
-                'Pantau performa konsolidasi, lalu catat biaya dari outlet aktif agar laba bersih tetap akurat.',
+                'Pantau performa konsolidasi, lalu catat biaya dari outlet aktif agar hasil estimasi tetap relevan.',
           ),
         ],
       );
@@ -590,7 +590,7 @@ class _NetProfitHero extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('LABA BERSIH',
+                Text('ESTIMASI HASIL',
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: .78),
                         fontSize: 11,
@@ -603,10 +603,15 @@ class _NetProfitHero extends StatelessWidget {
                         fontSize: 25,
                         fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                Text('Margin ${margin.toStringAsFixed(1)}% bulan ini',
+                Text('Margin operasional ${margin.toStringAsFixed(1)}% bulan ini',
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: .86),
                         fontSize: 12)),
+                const SizedBox(height: 3),
+                Text('Berdasarkan HPP menu dan beban yang tercatat',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: .72),
+                        fontSize: 10)),
               ],
             ),
           ),
@@ -749,14 +754,21 @@ class _ProfitLossCard extends StatelessWidget {
           const Divider(),
           _MoneyLine('Harga pokok penjualan (HPP)', -data.cogs,
               AppTheme.textSecondary),
-          _MoneyLine('Laba kotor', data.grossProfit, AppTheme.success,
+          _MoneyLine('Estimasi laba kotor', data.grossProfit, AppTheme.success,
               bold: true),
           const Divider(),
           _MoneyLine('Beban operasional', -data.expenses, AppTheme.danger),
           Container(height: 1, color: AppTheme.borderColor),
-          _MoneyLine('LABA BERSIH', data.netProfit,
+          _MoneyLine('ESTIMASI HASIL SETELAH BEBAN TERCATAT', data.netProfit,
               data.netProfit >= 0 ? AppTheme.success : AppTheme.danger,
               bold: true, large: true),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: Text(
+              'Angka ini untuk kontrol operasional dan bukan laporan akuntansi final.',
+              style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+            ),
+          ),
         ]),
       );
 }
@@ -799,7 +811,7 @@ class _HealthCard extends StatelessWidget {
         data.revenue == 0 ? 0.0 : data.expenses / data.revenue * 100;
     return ModernCard(
       child: Column(children: [
-        _RatioRow('Margin laba bersih', data.margin, AppTheme.success),
+        _RatioRow('Margin operasional (estimasi)', data.margin, AppTheme.success),
         const SizedBox(height: 14),
         _RatioRow('Porsi HPP', cogsRatio, AppTheme.warning),
         const SizedBox(height: 14),
@@ -872,7 +884,7 @@ class _BranchCard extends StatelessWidget {
                         fontSize: 14, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 4),
                 Text(
-                    '${branch.transactions} transaksi • margin ${branch.margin.toStringAsFixed(1)}%',
+                    '${branch.transactions} transaksi • margin operasional ${branch.margin.toStringAsFixed(1)}%',
                     style: const TextStyle(
                         fontSize: 11, color: AppTheme.textSecondary)),
                 const SizedBox(height: 10),
@@ -884,7 +896,7 @@ class _BranchCard extends StatelessWidget {
                           color: AppTheme.primary)),
                   Expanded(
                       child: _BranchAmount(
-                          label: 'Laba bersih',
+                          label: 'Estimasi hasil',
                           amount: branch.netProfit,
                           color: branch.netProfit >= 0
                               ? AppTheme.success

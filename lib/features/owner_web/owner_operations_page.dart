@@ -152,8 +152,6 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
       'price': price,
       'cogs': cogs,
       'is_available': isAvailable,
-      'track_stock': trackStock,
-      'stock': stock,
       'low_stock_alert': lowStockAlert,
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
@@ -163,12 +161,45 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
         ...payload,
         'id': const Uuid().v4(),
         'outlet_id': outletId,
+        // A product created in the portal cannot have a prior sale/reversal
+        // on another device, so its opening stock can be written safely.
+        'track_stock': trackStock,
+        'stock': stock,
         'sort_order': 0,
       });
     } else {
+      // Stock and the tracking mode are protected separately. Updating either
+      // as part of a general product edit can lose a sale/reversal that an
+      // offline cashier device is currently syncing.
       await table.update(payload).eq('id', product.id).eq('outlet_id', outletId);
     }
     _reload();
+  }
+
+  Future<void> _adjustProductStock({
+    required _OwnerProduct product,
+    required String newStock,
+  }) async {
+    final expectedStock = _parseNumber(product.stock);
+    final requestedStock = _parseNumber(newStock);
+    if (expectedStock == null || requestedStock == null) {
+      throw const FormatException('Stok tidak valid.');
+    }
+    final response = await Supabase.instance.client.rpc(
+      'set_owner_product_stock_if_current',
+      params: {
+        'p_product_id': product.id,
+        'p_expected_stock': expectedStock,
+        'p_new_stock': requestedStock,
+      },
+    );
+    final result = response is Map
+        ? Map<String, dynamic>.from(response)
+        : const <String, dynamic>{};
+    _reload();
+    if (result['applied'] != true) {
+      throw _StockConflictException(result['current_stock']?.toString());
+    }
   }
 
   Future<void> _saveTable({
@@ -333,6 +364,8 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
                             onAddProduct: () => _openProductEditor(context, data),
                             onEditProduct: (product) =>
                                 _openProductEditor(context, data, product: product),
+                            onAdjustProductStock: (product) =>
+                                _openStockAdjustment(context, product),
                           ),
                         _OperationsTab.tables => _TableDataPanel(
                             tables: data.tables,
@@ -384,6 +417,22 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
         product: product,
         categories: data.categories,
         onSave: _saveProduct,
+      ),
+    );
+  }
+
+  Future<void> _openStockAdjustment(
+    BuildContext context,
+    _OwnerProduct product,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _StockAdjustmentDialog(
+        product: product,
+        onSave: (stock) => _adjustProductStock(
+          product: product,
+          newStock: stock,
+        ),
       ),
     );
   }
@@ -584,6 +633,7 @@ class _MenuDataPanel extends StatelessWidget {
   final ValueChanged<_OwnerCategory> onEditCategory;
   final VoidCallback onAddProduct;
   final ValueChanged<_OwnerProduct> onEditProduct;
+  final ValueChanged<_OwnerProduct> onAdjustProductStock;
 
   const _MenuDataPanel({
     required this.data,
@@ -592,6 +642,7 @@ class _MenuDataPanel extends StatelessWidget {
     required this.onEditCategory,
     required this.onAddProduct,
     required this.onEditProduct,
+    required this.onAdjustProductStock,
   });
 
   @override
@@ -688,6 +739,13 @@ class _MenuDataPanel extends StatelessWidget {
                           onPressed: () => onEditProduct(data.products[index]),
                           icon: const Icon(Icons.edit_outlined),
                         ),
+                        if (data.products[index].trackStock)
+                          IconButton(
+                            tooltip: 'Sesuaikan stok',
+                            onPressed: () =>
+                                onAdjustProductStock(data.products[index]),
+                            icon: const Icon(Icons.inventory_2_outlined),
+                          ),
                       ],
                     ),
                   ),
@@ -1234,20 +1292,45 @@ class _ProductEditorState extends State<_ProductEditor> {
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Lacak stok'),
+                  subtitle: widget.product == null
+                      ? null
+                      : Text(
+                          _trackStock
+                              ? 'Mode stok dikunci dari dashboard agar transaksi perangkat offline tidak terlewat.'
+                              : 'Mode stok hanya dapat ditentukan saat menu dibuat dari dashboard.',
+                        ),
                   value: _trackStock,
-                  onChanged: _saving ? null : (value) => setState(() => _trackStock = value),
+                  onChanged: widget.product == null && !_saving
+                      ? (value) => setState(() => _trackStock = value)
+                      : null,
                 ),
+                if (widget.product != null && _trackStock)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 10),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Gunakan tombol stok pada daftar menu untuk melakukan penyesuaian stok dengan aman.',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
                 if (_trackStock)
                   Row(
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _stock,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'Stok saat ini'),
+                      if (widget.product == null) ...[
+                        Expanded(
+                          child: TextField(
+                            controller: _stock,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Stok awal'),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
+                        const SizedBox(width: 12),
+                      ],
                       Expanded(
                         child: TextField(
                           controller: _lowStockAlert,
@@ -1274,6 +1357,127 @@ class _ProductEditorState extends State<_ProductEditor> {
           FilledButton(
             onPressed: _saving ? null : _submit,
             child: Text(_saving ? 'Menyimpan...' : 'Simpan menu'),
+          ),
+        ],
+      );
+}
+
+class _StockConflictException implements Exception {
+  final String? currentStock;
+  const _StockConflictException(this.currentStock);
+}
+
+class _StockAdjustmentDialog extends StatefulWidget {
+  final _OwnerProduct product;
+  final Future<void> Function(String stock) onSave;
+
+  const _StockAdjustmentDialog({
+    required this.product,
+    required this.onSave,
+  });
+
+  @override
+  State<_StockAdjustmentDialog> createState() =>
+      _StockAdjustmentDialogState();
+}
+
+class _StockAdjustmentDialogState extends State<_StockAdjustmentDialog> {
+  late final TextEditingController _stock;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _stock = TextEditingController(text: _numberLabel(widget.product.stock));
+  }
+
+  @override
+  void dispose() {
+    _stock.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final stock = _validNumber(_stock.text);
+    if (stock == null) {
+      setState(() => _error = 'Stok harus berupa angka nol atau lebih.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.onSave(stock);
+      if (mounted) Navigator.of(context).pop();
+    } on _StockConflictException catch (_) {
+      if (mounted) {
+        setState(() => _error =
+            'Stok berubah karena sinkronisasi transaksi. Data terbaru sudah dimuat; periksa lalu simpan kembali.');
+      }
+    } on PostgrestException {
+      if (mounted) {
+        setState(() => _error = 'Stok belum dapat disimpan. Coba lagi.');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Stok belum dapat disimpan. Periksa koneksi.');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text('Sesuaikan stok ${widget.product.name}'),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Stok server saat ini: ${_numberLabel(widget.product.stock)}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Gunakan jumlah fisik terbaru. Jika perangkat lain sedang menyinkronkan transaksi, sistem akan menolak data lama agar stok tidak tertimpa.',
+                  style: TextStyle(color: AppTheme.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _stock,
+                  autofocus: true,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Stok fisik terbaru',
+                  ),
+                ),
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(color: AppTheme.danger),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : () => Navigator.of(context).pop(),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: _saving ? null : _submit,
+            child: Text(_saving ? 'Menyimpan...' : 'Simpan stok'),
           ),
         ],
       );
@@ -1641,9 +1845,15 @@ String? _emptyToNull(String? value) {
   return normalized.isEmpty ? null : normalized;
 }
 
-String? _validNumber(String input, {bool allowZero = true}) {
+double? _parseNumber(String input) {
   final value = double.tryParse(input.trim().replaceAll(',', '.'));
-  if (value == null || value < 0 || (!allowZero && value == 0)) return null;
+  if (value == null || !value.isFinite || value < 0) return null;
+  return value;
+}
+
+String? _validNumber(String input, {bool allowZero = true}) {
+  final value = _parseNumber(input);
+  if (value == null || (!allowZero && value == 0)) return null;
   return value.toString();
 }
 
@@ -1652,7 +1862,7 @@ int _asInt(dynamic value, {required int fallback}) => value is int
     : int.tryParse(value?.toString() ?? '') ?? fallback;
 
 String _numberLabel(String value) {
-  final number = double.tryParse(value) ?? 0;
+  final number = _parseNumber(value) ?? 0;
   return number == number.roundToDouble()
       ? number.toInt().toString()
       : number.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');

@@ -1380,7 +1380,7 @@ class _FinanceSummary extends StatelessWidget {
                   color: AppTheme.warning,
                 ),
                 _MetricData(
-                  label: 'Laba kotor',
+                  label: 'Estimasi laba kotor*',
                   value: _rupiah(data.grossProfit),
                   icon: Icons.trending_up_rounded,
                   color: AppTheme.success,
@@ -1699,9 +1699,13 @@ class _BepSimulationCardState extends State<_BepSimulationCard> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    progress.projectedBepGap > 0
-                        ? 'Target harian tersisa ${_rupiah(progress.requiredDailyRevenue)}. Proyeksi gap ${_rupiah(progress.projectedBepGap)}.'
-                        : 'BEP sudah tercapai atau proyeksi periode ini melewatinya.',
+                    progress.daysRemaining == 0
+                        ? (progress.projectedBepGap > 0
+                            ? 'Periode sudah berakhir. Kekurangan dari BEP: ${_rupiah(progress.projectedBepGap)}.'
+                            : 'BEP sudah tercapai pada periode ini.')
+                        : progress.projectedBepGap > 0
+                            ? 'Target harian tersisa ${_rupiah(progress.requiredDailyRevenue)}. Proyeksi gap ${_rupiah(progress.projectedBepGap)}.'
+                            : 'BEP sudah tercapai atau proyeksi periode ini melewatinya.',
                     style: const TextStyle(
                       color: AppTheme.textSecondary,
                       height: 1.4,
@@ -2054,7 +2058,7 @@ class _FinanceBreakdownCard extends StatelessWidget {
               _FinanceLine(label: 'Harga pokok', value: -data.cogs),
               const Divider(height: 24),
               _FinanceLine(
-                label: 'Laba kotor',
+                label: 'Estimasi laba kotor*',
                 value: data.grossProfit,
                 emphasized: true,
               ),
@@ -2303,10 +2307,12 @@ class _BranchRow extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          'Laba ${_rupiah(branch.netProfit)}',
-                          style: const TextStyle(
+                          'Estimasi hasil ${_rupiah(branch.netProfit)}',
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AppTheme.success,
+                            color: branch.netProfit < 0
+                                ? AppTheme.danger
+                                : AppTheme.success,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -2328,9 +2334,13 @@ class _BranchRow extends StatelessWidget {
               children: [
                 Text(_rupiah(branch.revenue),
                     style: const TextStyle(fontWeight: FontWeight.w800)),
-                Text('Laba ${_rupiah(branch.netProfit)}',
-                    style:
-                        const TextStyle(fontSize: 11, color: AppTheme.success)),
+                Text('Estimasi hasil ${_rupiah(branch.netProfit)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: branch.netProfit < 0
+                          ? AppTheme.danger
+                          : AppTheme.success,
+                    )),
               ],
             ),
           );
