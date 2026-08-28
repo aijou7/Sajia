@@ -792,7 +792,8 @@ class _OwnerReportPeriod {
       ? null
       : DateTime(from!.year, from!.month - 1);
 
-  DateTime? get previousTo => from == null ? null : from!.subtract(const Duration(microseconds: 1));
+  DateTime? get previousTo =>
+      from?.subtract(const Duration(microseconds: 1));
 
   bool get isAllTime => from == null && to == null;
 
