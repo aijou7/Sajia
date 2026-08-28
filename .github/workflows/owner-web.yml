@@ -1,0 +1,49 @@
+name: Owner dashboard web build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "lib/**"
+      - "assets/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - "web/**"
+      - ".github/workflows/owner-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+
+      - name: Set up Flutter stable
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: "3.47.1"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build owner dashboard
+        run: flutter build web --target=lib/main_owner_web.dart --release --base-href=/sajia/owner/
+
+      - name: Upload owner dashboard bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-web-${{ github.sha }}
+          path: build/web
+          if-no-files-found: error
+          retention-days: 7
