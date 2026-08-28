@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/brand.dart';
 import '../../core/onboarding_service.dart';
 import '../../core/theme.dart';
+import 'platform_admin_page.dart';
 
 class OwnerWebApp extends StatelessWidget {
   const OwnerWebApp({super.key});
@@ -292,6 +293,27 @@ class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
 
   Future<_OwnerDashboardData> _loadDashboard() async {
     final client = Supabase.instance.client;
+    var isPlatformAdmin = false;
+    try {
+      final adminContext = Map<String, dynamic>.from(
+        (await client.rpc('get_platform_admin_context')) as Map,
+      );
+      isPlatformAdmin = adminContext['is_admin'] == true;
+    } catch (_) {
+      // Keep existing owner dashboard compatibility while the admin migration
+      // is being rolled out to the production Supabase project.
+    }
+    if (isPlatformAdmin) {
+      final responses = await Future.wait([
+        client.rpc('get_platform_entitlement_accounts'),
+        client.rpc('get_platform_entitlement_audit', params: {'p_limit': 50}),
+      ]);
+      return _OwnerDashboardData.forPlatformAdmin(
+        accounts: PlatformAdminData.accountsFromRpc(responses[0]),
+        audit: PlatformAdminData.auditFromRpc(responses[1]),
+      );
+    }
+
     await client.rpc('ensure_owner_organization');
     final now = DateTime.now();
     final from = DateTime(now.year, now.month);
@@ -373,6 +395,14 @@ class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
                           onRetry: _reload,
                         );
                       }
+                      if (data.isPlatformAdmin) {
+                        return PlatformAdminPage(
+                          accounts: data.adminAccounts,
+                          audit: data.adminAudit,
+                          onRefresh: _reload,
+                          onSetEntitlement: _setPlatformEntitlement,
+                        );
+                      }
                       return switch (_selectedSection) {
                         _OwnerSection.dashboard => _OwnerDashboard(
                             data: data,
@@ -395,6 +425,28 @@ class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
           );
         },
       );
+
+  Future<void> _setPlatformEntitlement({
+    required String ownerEmail,
+    required String planCode,
+    required DateTime? cloudExpiry,
+    required String reason,
+  }) async {
+    await Supabase.instance.client.rpc(
+      'set_platform_entitlement',
+      params: {
+        'p_owner_email': ownerEmail,
+        'p_plan_code': planCode,
+        'p_cloud_expiry': cloudExpiry?.toUtc().toIso8601String(),
+        'p_reason': reason.trim().isEmpty ? null : reason.trim(),
+      },
+    );
+    if (mounted) {
+      setState(() {
+        _dashboard = _loadDashboard();
+      });
+    }
+  }
 }
 
 enum _OwnerSection { dashboard, finance, branches }
@@ -593,8 +645,11 @@ class _OwnerDashboardData {
   final double expenses;
   final int transactions;
   final bool cloudRequired;
+  final bool isPlatformAdmin;
   final List<_BranchData> branches;
   final List<_OwnerOutletData> outlets;
+  final List<PlatformAdminAccount> adminAccounts;
+  final List<PlatformAdminAuditEntry> adminAudit;
 
   const _OwnerDashboardData({
     required this.revenue,
@@ -602,9 +657,29 @@ class _OwnerDashboardData {
     required this.expenses,
     required this.transactions,
     required this.cloudRequired,
+    required this.isPlatformAdmin,
     required this.branches,
     required this.outlets,
+    required this.adminAccounts,
+    required this.adminAudit,
   });
+
+  factory _OwnerDashboardData.forPlatformAdmin({
+    required List<PlatformAdminAccount> accounts,
+    required List<PlatformAdminAuditEntry> audit,
+  }) =>
+      _OwnerDashboardData(
+        revenue: 0,
+        cogs: 0,
+        expenses: 0,
+        transactions: 0,
+        cloudRequired: false,
+        isPlatformAdmin: true,
+        branches: const [],
+        outlets: const [],
+        adminAccounts: accounts,
+        adminAudit: audit,
+      );
 
   factory _OwnerDashboardData.fromJson(
     Map<String, dynamic> json, {
@@ -620,8 +695,11 @@ class _OwnerDashboardData {
       expenses: _asDouble(json['expenses']),
       transactions: _asDouble(json['transactions']).toInt(),
       cloudRequired: json['cloud_required'] == true,
+      isPlatformAdmin: false,
       branches: rawBranches,
       outlets: outlets,
+      adminAccounts: const [],
+      adminAudit: const [],
     );
   }
 
