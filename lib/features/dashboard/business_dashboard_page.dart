@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/numeric_input_formatter.dart';
 import '../../core/providers.dart';
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
@@ -188,7 +189,7 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
   Future<void> _deleteExpense(Expense expense) async {
     final user = ref.read(currentUserProvider);
     if (user?.isOwner != true) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppNotice.show(context,
         const SnackBar(
           content: Text('Hanya owner yang dapat menghapus pengeluaran.'),
           backgroundColor: AppTheme.danger,
@@ -233,7 +234,7 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
 
     if (!mounted) return;
     _refresh();
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppNotice.show(context,
       const SnackBar(
         content: Text('Pengeluaran berhasil dihapus.'),
         backgroundColor: AppTheme.success,

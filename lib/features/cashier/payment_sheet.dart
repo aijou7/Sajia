@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/providers.dart';
 import '../../core/brand.dart';
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../core/notification_service.dart';
@@ -321,8 +322,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
       if (!mounted) return;
       if (paymentCommitted) {
         ref.read(cartProvider.notifier).clear();
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppNotice.show(context,
           const SnackBar(
             content: Text(
               'Pembayaran sudah tersimpan. Struk dapat dibuka dari Riwayat.',
@@ -330,6 +330,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
             backgroundColor: AppTheme.success,
           ),
         );
+        Navigator.of(context).pop();
         return;
       }
       setState(() {
@@ -386,7 +387,7 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
     Navigator.pop(context); // tutup loading
 
     if (result.isSuccess) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppNotice.show(context,
         const SnackBar(
           content: Text('Nota berhasil dicetak'),
           backgroundColor: AppTheme.success,

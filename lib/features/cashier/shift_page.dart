@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/numeric_input_formatter.dart';
 import '../../core/providers.dart';
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
@@ -204,14 +205,14 @@ class _ShiftPageState extends ConsumerState<ShiftPage> {
       await _load();
       unawaited(ref.read(syncServiceProvider).syncAll());
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppNotice.show(context,
           const SnackBar(content: Text('Shift kasir berhasil dibuka.')),
         );
       }
     } catch (error) {
       debugPrint('[ShiftPage] open failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppNotice.show(context,
           const SnackBar(content: Text('Shift gagal dibuka. Coba lagi.')),
         );
       }
@@ -286,7 +287,7 @@ class _ShiftPageState extends ConsumerState<ShiftPage> {
       unawaited(ref.read(syncServiceProvider).syncAll());
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppNotice.show(context,
           SnackBar(
             content: Text(
               discrepancy.abs() < 0.5
@@ -299,7 +300,7 @@ class _ShiftPageState extends ConsumerState<ShiftPage> {
     } catch (error) {
       debugPrint('[ShiftPage] close failed: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppNotice.show(context,
           const SnackBar(content: Text('Shift gagal ditutup. Coba lagi.')),
         );
       }

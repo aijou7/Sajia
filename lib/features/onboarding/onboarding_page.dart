@@ -10,6 +10,7 @@ import 'package:drift/drift.dart' show Value;
 import '../../core/providers.dart';
 import '../../core/app_distribution.dart';
 import '../../core/brand.dart';
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../core/onboarding_service.dart';
@@ -805,7 +806,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
   }
 
   void _snack(String msg, {bool success = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    AppNotice.show(context, SnackBar(
       content: Text(msg),
       backgroundColor: success ? AppTheme.success : AppTheme.danger,
       behavior: SnackBarBehavior.floating,

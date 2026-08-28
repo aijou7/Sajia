@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import '../../core/numeric_input_formatter.dart';
 import '../../core/providers.dart';
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
@@ -389,7 +390,7 @@ class _ProductTile extends ConsumerWidget {
 
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
     if (ref.read(currentUserProvider)?.isOwner != true) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Hanya owner yang dapat menghapus produk.'),
         backgroundColor: AppTheme.danger,
       ));
@@ -442,7 +443,7 @@ class _ProductTile extends ConsumerWidget {
 
     await ref.read(syncServiceProvider).syncAll();
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppNotice.show(context,
       SnackBar(
         content: Text('${product.name} berhasil dihapus.'),
         backgroundColor: AppTheme.success,
@@ -505,7 +506,7 @@ class _StockAdjustmentSheetState extends ConsumerState<StockAdjustmentSheet> {
     if (ref.read(currentUserProvider)?.canManageOperations != true) return;
     final value = double.tryParse(_stockCtrl.text.trim().replaceAll(',', '.'));
     if (value == null || value < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Stok harus berupa angka 0 atau lebih.'),
         backgroundColor: AppTheme.danger,
       ));
@@ -804,7 +805,7 @@ class _CategoryTab extends ConsumerWidget {
     await ref.read(databaseProvider).productDao.deleteCategory(category.id);
     await ref.read(syncServiceProvider).syncAll();
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppNotice.show(context,
       SnackBar(
         content: Text('Kategori ${category.name} berhasil dihapus.'),
         backgroundColor: AppTheme.success,
@@ -959,7 +960,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
 
   Future<void> _save() async {
     if (ref.read(currentUserProvider)?.canManageOperations != true) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Kasir tidak memiliki akses mengubah menu.'),
         backgroundColor: AppTheme.danger,
       ));
@@ -970,7 +971,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     final variantNames = <String>{};
     for (final variant in _variants) {
       if (!variantNames.add(variant.name.trim().toLowerCase())) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        AppNotice.show(context, SnackBar(
           content:
               Text('Grup pilihan "${variant.name}" dibuat lebih dari sekali.'),
           backgroundColor: AppTheme.danger,
@@ -1060,7 +1061,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Produk gagal disimpan. Periksa data lalu coba lagi.'),
         backgroundColor: AppTheme.danger,
       ));
@@ -1979,7 +1980,7 @@ class _CategoryFormSheetState extends ConsumerState<CategoryFormSheet> {
 
   Future<void> _save() async {
     if (ref.read(currentUserProvider)?.canManageOperations != true) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Kasir tidak memiliki akses mengubah kategori.'),
         backgroundColor: AppTheme.danger,
       ));

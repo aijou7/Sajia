@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' show Value;
 
 import '../../core/numeric_input_formatter.dart';
 import '../../core/providers.dart';
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
@@ -193,7 +194,7 @@ class TablesPage extends ConsumerWidget {
         ..setOrderType('dine_in')
         ..setTable(table.id, table.tableLabel);
 
-      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+      AppNotice.show(ctx, SnackBar(
         content: Text('Meja ${table.tableLabel} dipilih'),
         backgroundColor: AppTheme.success,
         duration: const Duration(seconds: 2),
@@ -636,7 +637,7 @@ class _OrderPaymentSheetState extends ConsumerState<_OrderPaymentSheet> {
 
   Future<void> _save() async {
     if (_method == 'cash' && _paidAmount < _total) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Uang bayar kurang'),
         backgroundColor: AppTheme.danger,
       ));
@@ -654,13 +655,12 @@ class _OrderPaymentSheetState extends ConsumerState<_OrderPaymentSheet> {
         );
 
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    Navigator.pop(context);
-    messenger.showSnackBar(SnackBar(
+    AppNotice.show(context, SnackBar(
       content: Text('Order ${widget.order.orderNumber} sudah dibayar'),
       backgroundColor: AppTheme.success,
       behavior: SnackBarBehavior.floating,
     ));
+    Navigator.pop(context);
   }
 
   @override
@@ -875,7 +875,7 @@ class _TableFormSheetState extends ConsumerState<_TableFormSheet> {
 
   Future<void> _save() async {
     if (ref.read(currentUserProvider)?.canManageOperations != true) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Kasir tidak memiliki akses mengubah meja.'),
         backgroundColor: AppTheme.danger,
       ));
@@ -904,7 +904,7 @@ class _TableFormSheetState extends ConsumerState<_TableFormSheet> {
 
   Future<void> _delete() async {
     if (ref.read(currentUserProvider)?.canManageOperations != true) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Kasir tidak memiliki akses menghapus meja.'),
         backgroundColor: AppTheme.danger,
       ));

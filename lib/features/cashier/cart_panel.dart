@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../domain/entities/entities.dart';
@@ -587,8 +588,7 @@ class _CartItemTile extends ConsumerWidget {
                     if (item.trackStock &&
                         item.availableStock != null &&
                         item.quantity >= item.availableStock!) {
-                      ScaffoldMessenger.of(context).clearSnackBars();
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      AppNotice.show(context, SnackBar(
                         content: Text(
                           'Stok ${item.productName} hanya ${_formatStock(item.availableStock!)}.',
                         ),

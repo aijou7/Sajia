@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/providers.dart';
 import '../../core/brand.dart';
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
@@ -136,8 +137,7 @@ class _CashierPageState extends ConsumerState<CashierPage> {
         .fold<double>(0, (sum, item) => sum + item.quantity);
 
     if (product.trackStock && quantityInCart >= availableStock) {
-      ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      AppNotice.show(context, SnackBar(
         content: Text(
           availableStock <= 0
               ? '${product.name} sedang habis.'
@@ -158,7 +158,7 @@ class _CashierPageState extends ConsumerState<CashierPage> {
           await ref.read(databaseProvider).productDao.getVariants(product.id);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Pilihan produk gagal dibaca. Coba lagi.'),
         backgroundColor: AppTheme.danger,
       ));

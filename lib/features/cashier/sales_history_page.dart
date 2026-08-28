@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import 'package:drift/drift.dart' hide Column;
@@ -524,7 +525,7 @@ class _OrderDetail extends ConsumerWidget {
 
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppNotice.show(context,
       SnackBar(
         content: Text(result.message),
         backgroundColor: result.isSuccess ? AppTheme.success : AppTheme.danger,
@@ -577,7 +578,7 @@ class _OrderDetail extends ConsumerWidget {
 
     final user = ref.read(currentUserProvider);
     if (user?.canVoidTransactions != true) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Kasir tidak memiliki akses membatalkan transaksi.'),
         backgroundColor: AppTheme.danger,
       ));
@@ -591,7 +592,7 @@ class _OrderDetail extends ConsumerWidget {
         );
     onChanged();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Transaksi berhasil di-void.'),
         backgroundColor: AppTheme.success,
       ));

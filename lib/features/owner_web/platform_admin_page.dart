@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 
 class PlatformAdminData {
@@ -210,12 +211,12 @@ class _PlatformAdminPageState extends State<PlatformAdminPage> {
         reason: change.reason,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppNotice.show(context,
         SnackBar(content: Text('Paket ${account.ownerEmail} sudah diperbarui.')),
       );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppNotice.show(context,
         const SnackBar(
           content: Text('Perubahan belum tersimpan. Coba lagi.'),
           backgroundColor: AppTheme.danger,

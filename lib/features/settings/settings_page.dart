@@ -16,6 +16,7 @@ import '../../core/onboarding_service.dart';
 import '../../core/pro_subscription_service.dart';
 import '../../core/providers.dart';
 import '../../core/brand.dart';
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
@@ -435,7 +436,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   final sync = ref.read(syncServiceProvider);
                   await sync.syncAll();
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    AppNotice.show(context, const SnackBar(
                       content: Text('Sinkronisasi selesai'),
                       backgroundColor: AppTheme.success,
                     ));
@@ -508,7 +509,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
     setState(() => _backupBusy = false);
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppNotice.show(context,
       SnackBar(
         content: Text(
           result == BackupResult.success
@@ -551,7 +552,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ref.invalidate(categoriesProvider);
       ref.invalidate(tablesProvider);
     }
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppNotice.show(context,
       SnackBar(
         content: Text(
           result == BackupResult.success
@@ -598,7 +599,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       }
     }
     if (!context.mounted || opened) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppNotice.show(context,
       const SnackBar(
         content: Text(
           'Dashboard belum bisa dibuka. Periksa koneksi internet lalu coba lagi.',
@@ -673,7 +674,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     } catch (_) {
       if (!context.mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppNotice.show(context,
         const SnackBar(
           content: Text(
             'Akun belum berhasil dilogout. Periksa koneksi lalu coba lagi.',
@@ -786,7 +787,7 @@ Future<bool> _ensureCanCreateOutlet(BuildContext context, WidgetRef ref) async {
 
   if (outlet == null) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Data outlet belum siap. Coba lagi sebentar.'),
         backgroundColor: AppTheme.warning,
       ));
@@ -801,7 +802,7 @@ Future<bool> _ensureCanCreateOutlet(BuildContext context, WidgetRef ref) async {
     if (status.isPro) return true;
   } on SajiaPlanException catch (error) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      AppNotice.show(context, SnackBar(
         content: Text(error.message),
         backgroundColor: AppTheme.warning,
       ));
@@ -809,7 +810,7 @@ Future<bool> _ensureCanCreateOutlet(BuildContext context, WidgetRef ref) async {
     return false;
   } catch (_) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content:
             Text('Gagal verifikasi lisensi Pro. Cek internet lalu coba lagi.'),
         backgroundColor: AppTheme.warning,
@@ -819,7 +820,7 @@ Future<bool> _ensureCanCreateOutlet(BuildContext context, WidgetRef ref) async {
   }
 
   if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+    AppNotice.show(context, const SnackBar(
       content: Text('Tambah cabang butuh Sajia Pro. Upgrade dulu ya.'),
       backgroundColor: AppTheme.warning,
     ));
@@ -1118,7 +1119,7 @@ class _PlanActivationSheetState extends ConsumerState<_PlanActivationSheet> {
       ref.invalidate(currentOutletProvider);
 
       if (!mounted || !showFeedback) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      AppNotice.show(context, SnackBar(
         content: Text(status.isCloud
             ? 'Sajia Cloud aktif. Terima kasih!'
             : status.isPro
@@ -1590,14 +1591,14 @@ class _OutletFormSheetState extends ConsumerState<_OutletFormSheet> {
       } on SajiaPlanException catch (error) {
         if (!mounted) return;
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        AppNotice.show(context, SnackBar(
           content: Text(error.message),
           backgroundColor: AppTheme.warning,
         ));
       } catch (_) {
         if (!mounted) return;
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        AppNotice.show(context, const SnackBar(
           content: Text('Gagal membuat cabang. Cek internet lalu coba lagi.'),
           backgroundColor: AppTheme.warning,
         ));
@@ -2509,12 +2510,11 @@ class _ChangePINSheetState extends ConsumerState<_ChangePINSheet> {
     ));
 
     if (mounted) {
-      final messenger = ScaffoldMessenger.of(context);
-      Navigator.pop(context);
-      messenger.showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('PIN berhasil diubah'),
         backgroundColor: AppTheme.success,
       ));
+      Navigator.pop(context);
     }
   }
 
@@ -2931,7 +2931,7 @@ class _KitchenNotifTileState extends State<_KitchenNotifTile> {
       final allowed = await BluetoothSystem.requestNotificationPermission();
       if (!allowed) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        AppNotice.show(context, const SnackBar(
           content: Text('Izinkan notifikasi supaya order dapur bisa muncul'),
           backgroundColor: AppTheme.danger,
           duration: Duration(seconds: 2),
@@ -2946,7 +2946,7 @@ class _KitchenNotifTileState extends State<_KitchenNotifTile> {
     if (val && mounted) {
       await _selectKitchenDevice();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      AppNotice.show(context, const SnackBar(
         content: Text('Notifikasi dapur aktif'),
         backgroundColor: AppTheme.success,
         duration: Duration(seconds: 2),
