@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/brand.dart';
 import '../../core/onboarding_service.dart';
 import '../../core/theme.dart';
+import '../../domain/owner_intelligence/bep.dart';
+import '../../domain/owner_intelligence/owner_metrics.dart';
 import 'owner_operations_page.dart';
 import 'platform_admin_page.dart';
 
@@ -559,11 +562,20 @@ class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
     await client.rpc('ensure_owner_organization');
     final from = _reportPeriod.from ?? DateTime.utc(2000);
     final to = _reportPeriod.to ?? DateTime.now();
-    final response = await client.rpc('get_owner_dashboard', params: {
-      'p_from': from.toUtc().toIso8601String(),
-      'p_to': to.toUtc().toIso8601String(),
-    });
-    final outletResponse = await client.rpc('get_owner_outlets');
+    final responses = await Future.wait<dynamic>([
+      client.rpc('get_owner_dashboard', params: {
+        'p_from': from.toUtc().toIso8601String(),
+        'p_to': to.toUtc().toIso8601String(),
+      }),
+      client.rpc('get_owner_outlets'),
+      if (!_reportPeriod.isAllTime)
+        client.rpc('get_owner_dashboard', params: {
+          'p_from': _reportPeriod.previousFrom!.toUtc().toIso8601String(),
+          'p_to': _reportPeriod.previousTo!.toUtc().toIso8601String(),
+        }),
+    ]);
+    final response = responses[0];
+    final outletResponse = responses[1];
     return _OwnerDashboardData.fromJson(
       Map<String, dynamic>.from(response as Map),
       outlets: (outletResponse as List? ?? const [])
@@ -571,6 +583,9 @@ class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
                 Map<String, dynamic>.from(row as Map),
               ))
           .toList(),
+      previous: responses.length > 2
+          ? Map<String, dynamic>.from(responses[2] as Map)
+          : null,
     );
   }
 
@@ -773,6 +788,12 @@ class _OwnerReportPeriod {
     return _OwnerReportPeriod._(from: start, to: end);
   }
 
+  DateTime? get previousFrom => from == null
+      ? null
+      : DateTime(from!.year, from!.month - 1);
+
+  DateTime? get previousTo => from == null ? null : from!.subtract(const Duration(microseconds: 1));
+
   bool get isAllTime => from == null && to == null;
 
   String get label => isAllTime
@@ -965,6 +986,7 @@ class _OwnerDashboardData {
   final List<_OwnerOutletData> outlets;
   final List<PlatformAdminAccount> adminAccounts;
   final List<PlatformAdminAuditEntry> adminAudit;
+  final OwnerMetricSnapshot? previousMetrics;
 
   const _OwnerDashboardData({
     required this.revenue,
@@ -977,6 +999,7 @@ class _OwnerDashboardData {
     required this.outlets,
     required this.adminAccounts,
     required this.adminAudit,
+    this.previousMetrics,
   });
 
   factory _OwnerDashboardData.forPlatformAdmin({
@@ -994,11 +1017,13 @@ class _OwnerDashboardData {
         outlets: const [],
         adminAccounts: accounts,
         adminAudit: audit,
+        previousMetrics: null,
       );
 
   factory _OwnerDashboardData.fromJson(
     Map<String, dynamic> json, {
     required List<_OwnerOutletData> outlets,
+    Map<String, dynamic>? previous,
   }) {
     final rawBranches = (json['branches'] as List? ?? const [])
         .map((branch) =>
@@ -1015,11 +1040,23 @@ class _OwnerDashboardData {
       outlets: outlets,
       adminAccounts: const [],
       adminAudit: const [],
+      previousMetrics: previous == null ? null : _metricsFromJson(previous),
     );
   }
 
   double get grossProfit => revenue - cogs;
   double get netProfit => grossProfit - expenses;
+  OwnerMetricSnapshot get metrics => OwnerMetricSnapshot(
+        revenue: revenue,
+        cogs: cogs,
+        expenses: expenses,
+        transactions: transactions,
+      );
+
+  double get averageOrderValue => metrics.averageOrderValue;
+  OwnerMetricComparison? get comparison => previousMetrics == null
+      ? null
+      : OwnerMetricComparison(current: metrics, previous: previousMetrics!);
   double get margin => revenue == 0 ? 0 : netProfit / revenue * 100;
   int get cloudOutletCount => outlets.where((outlet) => outlet.isCloud).length;
   int get proOutletCount => outlets.where((outlet) => outlet.isPro).length;
@@ -1083,6 +1120,14 @@ class _OwnerOutletData {
 double _asDouble(dynamic value) => value is num
     ? value.toDouble()
     : double.tryParse(value?.toString() ?? '') ?? 0;
+
+OwnerMetricSnapshot _metricsFromJson(Map<String, dynamic> json) =>
+    OwnerMetricSnapshot(
+      revenue: _asDouble(json['revenue']),
+      cogs: _asDouble(json['cogs']),
+      expenses: _asDouble(json['expenses']),
+      transactions: _asDouble(json['transactions']).toInt(),
+    );
 
 class _OwnerDashboard extends StatelessWidget {
   final _OwnerDashboardData data;
@@ -1157,16 +1202,16 @@ class _OwnerDashboard extends StatelessWidget {
                           color: AppTheme.info,
                         ),
                         _MetricData(
-                          label: 'Laba kotor',
+                          label: 'AOV',
+                          value: _rupiah(data.averageOrderValue),
+                          icon: Icons.shopping_basket_outlined,
+                          color: AppTheme.warning,
+                        ),
+                        _MetricData(
+                          label: 'Estimasi laba kotor*',
                           value: _rupiah(data.grossProfit),
                           icon: Icons.trending_up_rounded,
                           color: AppTheme.success,
-                        ),
-                        _MetricData(
-                          label: 'Beban usaha',
-                          value: _rupiah(data.expenses),
-                          icon: Icons.remove_circle_outline_rounded,
-                          color: AppTheme.danger,
                         ),
                       ],
                     ),
@@ -1174,10 +1219,18 @@ class _OwnerDashboard extends StatelessWidget {
                     _MetricGrid(
                       metrics: [
                         _MetricData(
-                          label: 'Cabang terdaftar',
-                          value: '${data.outlets.length}',
-                          icon: Icons.storefront_outlined,
-                          color: AppTheme.primary,
+                          label: 'Beban tercatat',
+                          value: _rupiah(data.expenses),
+                          icon: Icons.remove_circle_outline_rounded,
+                          color: AppTheme.danger,
+                        ),
+                        _MetricData(
+                          label: 'Margin kotor',
+                          value: data.metrics.reliableGrossMarginPercent == null
+                              ? 'Belum tersedia'
+                              : '${data.metrics.reliableGrossMarginPercent!.toStringAsFixed(1)}%',
+                          icon: Icons.percent_rounded,
+                          color: AppTheme.success,
                         ),
                         _MetricData(
                           label: 'Cabang Cloud',
@@ -1199,6 +1252,24 @@ class _OwnerDashboard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '*Estimasi laba kotor memakai HPP yang tersedia. Margin kotor ditahan sampai coverage HPP transaksi dapat diverifikasi.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    _BepSimulationCard(
+                      actualRevenue: data.revenue,
+                      averageOrderValue: data.averageOrderValue,
+                      period: period,
+                    ),
+                    if (data.comparison != null) ...[
+                      const SizedBox(height: 16),
+                      _PeriodComparisonCard(comparison: data.comparison!),
+                    ],
                     const SizedBox(height: 30),
                     const Text('Status cabang & paket',
                         style: TextStyle(
@@ -1441,6 +1512,394 @@ class _OwnerPageShell extends StatelessWidget {
       );
 }
 
+class _BepSimulationCard extends StatefulWidget {
+  final double actualRevenue;
+  final double averageOrderValue;
+  final _OwnerReportPeriod period;
+
+  const _BepSimulationCard({
+    required this.actualRevenue,
+    required this.averageOrderValue,
+    required this.period,
+  });
+
+  @override
+  State<_BepSimulationCard> createState() => _BepSimulationCardState();
+}
+
+class _BepSimulationCardState extends State<_BepSimulationCard> {
+  late final TextEditingController _fixedCosts;
+  late final TextEditingController _sellingPrice;
+  late final TextEditingController _variableCost;
+  BepResult? _result;
+
+  @override
+  void initState() {
+    super.initState();
+    _fixedCosts = TextEditingController();
+    _sellingPrice = TextEditingController();
+    _variableCost = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _fixedCosts.dispose();
+    _sellingPrice.dispose();
+    _variableCost.dispose();
+    super.dispose();
+  }
+
+  double _number(String value) =>
+      double.tryParse(value.trim().replaceAll(',', '.')) ?? 0;
+
+  void _calculate() {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _result = BepResult.calculate(BepInputs(
+        fixedCosts: _number(_fixedCosts.text),
+        sellingPrice: _number(_sellingPrice.text),
+        variableCostPerUnit: _number(_variableCost.text),
+      ));
+    });
+  }
+
+  int? get _periodDays {
+    final from = widget.period.from;
+    final to = widget.period.to;
+    if (from == null || to == null) return null;
+    return to.difference(from).inDays + 1;
+  }
+
+  int? get _elapsedDays {
+    final from = widget.period.from;
+    final total = _periodDays;
+    if (from == null || total == null) return null;
+    final elapsed = DateTime.now().difference(from).inDays + 1;
+    return elapsed.clamp(0, total).toInt();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final result = _result;
+    final progress = result?.isValid == true &&
+            result?.bepRevenue != null &&
+            _periodDays != null &&
+            _elapsedDays != null
+        ? BepProgress(
+            actualRevenue: widget.actualRevenue,
+            bepRevenue: result!.bepRevenue!,
+            elapsedDays: _elapsedDays!,
+            totalDays: _periodDays!,
+          )
+        : null;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Simulasi BEP',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 5),
+            const Text(
+              'Hitung titik impas dari biaya tetap dan margin kontribusi. Ini simulasi lokal dan belum disimpan ke Cloud.',
+              style: TextStyle(color: AppTheme.textSecondary, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final stacked = constraints.maxWidth < 680;
+                final fields = [
+                  _BepInput(
+                    controller: _fixedCosts,
+                    label: 'Biaya tetap / bulan',
+                  ),
+                  _BepInput(
+                    controller: _sellingPrice,
+                    label: 'Harga jual / unit',
+                  ),
+                  _BepInput(
+                    controller: _variableCost,
+                    label: 'Biaya variabel / unit',
+                  ),
+                ];
+                if (stacked) {
+                  return Column(
+                    children: [
+                      for (final field in fields) ...[
+                        field,
+                        const SizedBox(height: 10),
+                      ],
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    for (var i = 0; i < fields.length; i++) ...[
+                      Expanded(child: fields[i]),
+                      if (i < fields.length - 1) const SizedBox(width: 10),
+                    ],
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _calculate,
+              icon: const Icon(Icons.calculate_outlined),
+              label: const Text('Hitung BEP'),
+            ),
+            if (result != null) ...[
+              const SizedBox(height: 16),
+              if (!result.isValid)
+                _BepStatus(
+                  icon: Icons.warning_amber_rounded,
+                  color: AppTheme.warning,
+                  message: result.invalidReason!,
+                )
+              else ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: _BepValue(
+                        label: 'BEP omzet',
+                        value: _rupiah(result.bepRevenue!),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _BepValue(
+                        label: 'BEP unit',
+                        value: result.bepUnits!.ceil().toString(),
+                      ),
+                    ),
+                  ],
+                ),
+                if (progress != null) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    'Progress ${_percent(progress.progressRatio)} • ${progress.daysRemaining} hari tersisa',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      minHeight: 9,
+                      value: progress.progressRatio,
+                      backgroundColor: AppTheme.primaryLight,
+                      color: progress.progressRatio >= 1
+                          ? AppTheme.success
+                          : AppTheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    progress.projectedBepGap > 0
+                        ? 'Target harian tersisa ${_rupiah(progress.requiredDailyRevenue)}. Proyeksi gap ${_rupiah(progress.projectedBepGap)}.'
+                        : 'BEP sudah tercapai atau proyeksi periode ini melewatinya.',
+                    style: const TextStyle(
+                      color: AppTheme.textSecondary,
+                      height: 1.4,
+                    ),
+                  ),
+                  if (progress.projectedBepGap > 0 &&
+                      widget.averageOrderValue > 0) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      'Padanan minimal: ${math.max(1, (progress.requiredDailyRevenue / widget.averageOrderValue).ceil())} transaksi tambahan/hari pada AOV saat ini.',
+                      style: const TextStyle(
+                        color: AppTheme.textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ] else ...[
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Pilih periode bulan untuk melihat progress dan target harian.',
+                    style: TextStyle(color: AppTheme.textSecondary),
+                  ),
+                ],
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _percent(double value) =>
+    '${(value * 100).clamp(0, 100).toStringAsFixed(0)}%';
+
+class _BepInput extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+
+  const _BepInput({required this.controller, required this.label});
+
+  @override
+  Widget build(BuildContext context) => TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+        ],
+        decoration: InputDecoration(
+          labelText: label,
+          prefixText: 'Rp ',
+        ),
+      );
+}
+
+class _BepValue extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _BepValue({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppTheme.primaryLight,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(color: AppTheme.textSecondary)),
+            const SizedBox(height: 4),
+            Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+          ],
+        ),
+      );
+}
+
+class _BepStatus extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String message;
+
+  const _BepStatus({
+    required this.icon,
+    required this.color,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 10),
+            Expanded(child: Text(message)),
+          ],
+        ),
+      );
+}
+
+class _PeriodComparisonCard extends StatelessWidget {
+  final OwnerMetricComparison comparison;
+
+  const _PeriodComparisonCard({required this.comparison});
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Perubahan dari periode sebelumnya',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 5),
+              const Text(
+                'Perbandingan memakai bulan sebelumnya dengan rentang outlet Cloud yang sama.',
+                style: TextStyle(color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _ChangePill(label: 'Omzet', change: comparison.revenue),
+                  _ChangePill(
+                    label: 'Transaksi',
+                    change: comparison.transactions,
+                  ),
+                  _ChangePill(
+                    label: 'AOV',
+                    change: comparison.averageOrderValue,
+                  ),
+                  _ChangePill(
+                    label: 'Beban tercatat',
+                    change: comparison.expenses,
+                    inverse: true,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+class _ChangePill extends StatelessWidget {
+  final String label;
+  final MetricChange change;
+  final bool inverse;
+
+  const _ChangePill({
+    required this.label,
+    required this.change,
+    this.inverse = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasBaseline = change.hasBaseline;
+    final positive = inverse ? change.isDecrease : change.isIncrease;
+    final color = !hasBaseline
+        ? AppTheme.textSecondary
+        : change.delta == 0
+            ? AppTheme.textSecondary
+            : positive
+                ? AppTheme.success
+                : AppTheme.danger;
+    final value = !hasBaseline
+        ? 'Belum ada pembanding'
+        : '${change.percent >= 0 ? '+' : ''}${change.percent.toStringAsFixed(1)}%';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(width: 8),
+          Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w800)),
+        ],
+      ),
+    );
+  }
+}
+
 class _ReportPeriodPicker extends StatelessWidget {
   final _OwnerReportPeriod period;
   final VoidCallback onAllTime;
@@ -1551,11 +2010,13 @@ class _MetricGrid extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
         builder: (context, constraints) {
           const spacing = 12.0;
-          final columns = constraints.maxWidth >= 840
-              ? 4
-              : constraints.maxWidth >= 480
-                  ? 2
-                  : 1;
+          final columns = constraints.maxWidth >= 1000
+              ? metrics.length.clamp(1, 5).toInt()
+              : constraints.maxWidth >= 840
+                  ? 4
+                  : constraints.maxWidth >= 480
+                      ? 2
+                      : 1;
           final width =
               (constraints.maxWidth - spacing * (columns - 1)) / columns;
           return Wrap(
@@ -1599,7 +2060,7 @@ class _FinanceBreakdownCard extends StatelessWidget {
               _FinanceLine(label: 'Beban usaha', value: -data.expenses),
               const Divider(height: 24),
               _FinanceLine(
-                label: 'Laba bersih',
+                label: 'Estimasi hasil setelah beban tercatat',
                 value: data.netProfit,
                 emphasized: true,
               ),
@@ -1721,7 +2182,7 @@ class _NetProfitCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('LABA BERSIH',
+                  Text('ESTIMASI HASIL',
                       style: TextStyle(
                           color: Colors.white.withValues(alpha: .75),
                           letterSpacing: 1,
@@ -1740,7 +2201,9 @@ class _NetProfitCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 7),
                   Text(
-                    'Margin ${data.margin.toStringAsFixed(1)}% bulan ini',
+                    data.metrics.hasReliableHpp
+                        ? 'Margin kotor ${data.metrics.grossMarginPercent.toStringAsFixed(1)}%'
+                        : 'HPP belum lengkap — margin ditahan',
                     style:
                         TextStyle(color: Colors.white.withValues(alpha: .85)),
                   ),
