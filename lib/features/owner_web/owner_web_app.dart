@@ -22,8 +22,26 @@ class OwnerWebApp extends StatelessWidget {
       );
 }
 
-class _OwnerPortal extends StatelessWidget {
+class _OwnerPortal extends StatefulWidget {
   const _OwnerPortal();
+
+  @override
+  State<_OwnerPortal> createState() => _OwnerPortalState();
+}
+
+class _OwnerPortalState extends State<_OwnerPortal> {
+  // OTP verification briefly creates a Supabase session. Keep the sign-in
+  // page mounted until the new dashboard password has been saved, otherwise
+  // the auth stream would open the dashboard before setup is complete.
+  bool _holdSession = false;
+
+  void _beginAuthFlow() {
+    if (mounted) setState(() => _holdSession = true);
+  }
+
+  void _endAuthFlow() {
+    if (mounted) setState(() => _holdSession = false);
+  }
 
   @override
   Widget build(BuildContext context) => StreamBuilder<AuthState>(
@@ -33,25 +51,48 @@ class _OwnerPortal extends StatelessWidget {
           Supabase.instance.client.auth.currentSession,
         ),
         builder: (context, snapshot) {
-          final session = snapshot.data?.session;
-          return session == null
-              ? const _OwnerSignInPage()
-              : _OwnerWorkspace(email: session.user.email ?? 'Owner');
+          final session = snapshot.data?.session ??
+              Supabase.instance.client.auth.currentSession;
+          if (session == null || _holdSession) {
+            return _OwnerSignInPage(
+              onAuthFlowStart: _beginAuthFlow,
+              onAuthFlowEnd: _endAuthFlow,
+              onAuthenticated: _endAuthFlow,
+            );
+          }
+          return _OwnerWorkspace(email: session.user.email ?? 'Owner');
         },
       );
 }
 
 class _OwnerSignInPage extends StatefulWidget {
-  const _OwnerSignInPage();
+  final VoidCallback onAuthFlowStart;
+  final VoidCallback onAuthFlowEnd;
+  final VoidCallback onAuthenticated;
+
+  const _OwnerSignInPage({
+    required this.onAuthFlowStart,
+    required this.onAuthFlowEnd,
+    required this.onAuthenticated,
+  });
 
   @override
   State<_OwnerSignInPage> createState() => _OwnerSignInPageState();
 }
 
+/// Password policy for the owner web portal. The app's email + OTP flow is
+/// intentionally unchanged; this policy applies only to dashboard passwords.
+bool isValidOwnerDashboardPassword(String password) =>
+    password.length >= 8 && RegExp(r'\d').hasMatch(password);
+
 class _OwnerSignInPageState extends State<_OwnerSignInPage> {
   final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _newPassword = TextEditingController();
+  final _confirmPassword = TextEditingController();
   final _otp = TextEditingController();
   bool _loading = false;
+  bool _passwordSetup = false;
   bool _codeSent = false;
   int _resendSeconds = 0;
   Timer? _resendTimer;
@@ -60,6 +101,9 @@ class _OwnerSignInPageState extends State<_OwnerSignInPage> {
   @override
   void dispose() {
     _email.dispose();
+    _password.dispose();
+    _newPassword.dispose();
+    _confirmPassword.dispose();
     _otp.dispose();
     _resendTimer?.cancel();
     super.dispose();
@@ -79,19 +123,71 @@ class _OwnerSignInPageState extends State<_OwnerSignInPage> {
     });
   }
 
-  Future<void> _sendCode() async {
-    final service = OnboardingService();
-    final email = service.normalizeEmail(_email.text);
+  String? _normalizedEmail() {
+    final email = OnboardingService().normalizeEmail(_email.text);
     if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
       setState(() => _error = 'Masukkan email owner yang valid.');
+      return null;
+    }
+    _email.text = email;
+    return email;
+  }
+
+  Future<void> _signInWithPassword() async {
+    final email = _normalizedEmail();
+    if (email == null) return;
+    if (_password.text.isEmpty) {
+      setState(() => _error = 'Masukkan password dashboard.');
       return;
     }
     setState(() {
       _loading = true;
       _error = null;
-      _email.text = email;
+    });
+    try {
+      await Supabase.instance.client.auth
+          .signInWithPassword(email: email, password: _password.text)
+          .timeout(const Duration(seconds: 25));
+    } on AuthException catch (error) {
+      if (!mounted) return;
+      final message = error.message.toLowerCase();
+      setState(() => _error = message.contains('invalid login') ||
+              message.contains('invalid credentials')
+          ? 'Email atau password salah. Kalau belum pernah membuat password, pilih “Buat/reset password via OTP”.'
+          : 'Login belum dapat dilakukan. Coba lagi atau periksa koneksi internet.');
+    } catch (error) {
+      if (!mounted) return;
+      final message = error.toString().toLowerCase();
+      setState(() => _error = message.contains('timeout') ||
+              message.contains('socket') ||
+              message.contains('network') ||
+              message.contains('connection')
+          ? 'Tidak dapat terhubung. Periksa internet lalu coba lagi.'
+          : 'Login belum dapat dilakukan. Coba lagi.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _sendPasswordSetupCode() async {
+    final email = _normalizedEmail();
+    if (email == null) return;
+    if (!isValidOwnerDashboardPassword(_newPassword.text)) {
+      setState(() => _error =
+          'Password minimal 8 karakter dan harus mengandung setidaknya 1 angka.');
+      return;
+    }
+    if (_newPassword.text != _confirmPassword.text) {
+      setState(() => _error = 'Konfirmasi password belum sama.');
+      return;
+    }
+    widget.onAuthFlowStart();
+    setState(() {
+      _loading = true;
+      _error = null;
       _otp.clear();
     });
+    final service = OnboardingService();
     final result = await service.sendOtp(email, shouldCreateUser: false);
     if (!mounted) return;
     setState(() => _loading = false);
@@ -110,18 +206,21 @@ class _OwnerSignInPageState extends State<_OwnerSignInPage> {
           _error = 'Tunggu sebentar sebelum meminta kode baru.';
         });
       case OtpResult.accountNotFound:
+        widget.onAuthFlowEnd();
         setState(() => _error =
             'Email ini belum terdaftar sebagai owner Sajia. Daftar melalui aplikasi terlebih dahulu.');
       case OtpResult.networkUnavailable:
+        widget.onAuthFlowEnd();
         setState(() =>
             _error = 'Tidak dapat terhubung. Periksa internet lalu coba lagi.');
       case OtpResult.failed:
+        widget.onAuthFlowEnd();
         setState(() => _error =
             'Kode OTP belum dapat dikirim. Coba lagi atau hubungi support.');
     }
   }
 
-  Future<void> _verifyCode() async {
+  Future<void> _verifyPasswordSetupCode() async {
     if (_otp.text.trim().length != 6) {
       setState(() => _error = 'Masukkan 6 digit kode OTP.');
       return;
@@ -135,26 +234,77 @@ class _OwnerSignInPageState extends State<_OwnerSignInPage> {
       _otp.text,
     );
     if (!mounted) return;
-    setState(() => _loading = false);
-    if (result == OtpVerifyResult.success) return;
-    setState(() {
-      _error = switch (result) {
-        OtpVerifyResult.expired =>
-          'Kode kedaluwarsa. Kirim kode baru lalu coba lagi.',
-        OtpVerifyResult.rateLimited =>
-          'Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.',
-        OtpVerifyResult.networkUnavailable =>
-          'Tidak dapat terhubung. Periksa internet lalu coba lagi.',
-        OtpVerifyResult.failed =>
-          'Verifikasi belum dapat dilakukan. Coba lagi.',
-        _ => 'Kode OTP tidak valid. Gunakan kode terbaru dari email.',
-      };
-    });
+    if (result != OtpVerifyResult.success) {
+      setState(() {
+        _loading = false;
+        _error = switch (result) {
+          OtpVerifyResult.expired =>
+            'Kode kedaluwarsa. Kirim kode baru lalu coba lagi.',
+          OtpVerifyResult.rateLimited =>
+            'Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.',
+          OtpVerifyResult.networkUnavailable =>
+            'Tidak dapat terhubung. Periksa internet lalu coba lagi.',
+          OtpVerifyResult.failed =>
+            'Verifikasi belum dapat dilakukan. Coba lagi.',
+          _ => 'Kode OTP tidak valid. Gunakan kode terbaru dari email.',
+        };
+      });
+      return;
+    }
+
+    try {
+      await Supabase.instance.client.auth
+          .updateUser(UserAttributes(password: _newPassword.text))
+          .timeout(const Duration(seconds: 25));
+      if (!mounted) return;
+      widget.onAuthenticated();
+    } on AuthException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message.toLowerCase().contains('password')
+          ? 'Password belum dapat disimpan. Pastikan memenuhi aturan lalu coba lagi.'
+          : 'Password belum dapat disimpan. Coba lagi.');
+    } catch (error) {
+      if (!mounted) return;
+      final message = error.toString().toLowerCase();
+      setState(() => _error = message.contains('timeout') ||
+              message.contains('socket') ||
+              message.contains('network') ||
+              message.contains('connection')
+          ? 'Tidak dapat terhubung. Periksa internet lalu coba lagi.'
+          : 'Password belum dapat disimpan. Coba lagi.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
-  void _changeEmail() {
+  Future<void> _cancelPasswordSetup() async {
     _resendTimer?.cancel();
     setState(() {
+      _loading = true;
+      _error = null;
+    });
+    // OTP verification creates a session. End it when setup is abandoned so
+    // a partially configured account cannot enter the owner workspace.
+    try {
+      if (Supabase.instance.client.auth.currentSession != null) {
+        await Supabase.instance.client.auth.signOut();
+      }
+    } catch (_) {
+      // Keep the session held if sign-out could not be completed. This avoids
+      // opening the workspace with an OTP-only session after an interrupted
+      // password setup.
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Belum dapat membatalkan sesi. Periksa koneksi lalu coba lagi.';
+      });
+      return;
+    }
+    if (!mounted) return;
+    widget.onAuthFlowEnd();
+    setState(() {
+      _loading = false;
+      _passwordSetup = false;
       _codeSent = false;
       _resendSeconds = 0;
       _otp.clear();
@@ -162,115 +312,205 @@ class _OwnerSignInPageState extends State<_OwnerSignInPage> {
     });
   }
 
+  void _openPasswordSetup() {
+    setState(() {
+      _passwordSetup = true;
+      _codeSent = false;
+      _error = null;
+      _password.clear();
+      _otp.clear();
+    });
+  }
+
+  void _backToPasswordLogin() {
+    _resendTimer?.cancel();
+    widget.onAuthFlowEnd();
+    setState(() {
+      _passwordSetup = false;
+      _codeSent = false;
+      _resendSeconds = 0;
+      _otp.clear();
+      _newPassword.clear();
+      _confirmPassword.clear();
+      _error = null;
+    });
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-        body: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(30),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const _BrandHeader(),
-                      const SizedBox(height: 28),
-                      const Text(
-                        'Masuk ke dashboard owner',
-                        style: TextStyle(
+  Widget build(BuildContext context) {
+    final setupOtp = _passwordSetup && _codeSent;
+    final title = _passwordSetup
+        ? (_codeSent ? 'Konfirmasi email & simpan password' : 'Buat password dashboard')
+        : 'Masuk ke dashboard owner';
+    return Scaffold(
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(30),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const _BrandHeader(),
+                    const SizedBox(height: 28),
+                    Text(title,
+                        style: const TextStyle(
                           fontSize: 21,
                           fontWeight: FontWeight.w800,
-                        ),
+                        )),
+                    const SizedBox(height: 6),
+                    Text(
+                      _passwordSetup
+                          ? 'OTP hanya untuk verifikasi awal. Password ini khusus dashboard; login aplikasi tetap email + OTP.'
+                          : 'Gunakan email owner yang sama seperti di aplikasi. Login berikutnya cukup email + password.',
+                      style: const TextStyle(color: AppTheme.textSecondary),
+                    ),
+                    const SizedBox(height: 22),
+                    TextField(
+                      controller: _email,
+                      enabled: !_codeSent && !_loading,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [AutofillHints.email],
+                      textInputAction: _passwordSetup
+                          ? TextInputAction.next
+                          : TextInputAction.next,
+                      onSubmitted: (_) => _passwordSetup
+                          ? _sendPasswordSetupCode()
+                          : _signInWithPassword(),
+                      decoration: const InputDecoration(
+                        labelText: 'Email owner',
+                        prefixIcon: Icon(Icons.alternate_email_rounded),
                       ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Pantau performa seluruh cabang dengan email owner yang sama seperti di aplikasi.',
-                        style: TextStyle(color: AppTheme.textSecondary),
-                      ),
-                      const SizedBox(height: 22),
+                    ),
+                    if (!_passwordSetup) ...[
+                      const SizedBox(height: 12),
                       TextField(
-                        controller: _email,
-                        enabled: !_codeSent && !_loading,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.email],
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _sendCode(),
+                        controller: _password,
+                        enabled: !_loading,
+                        obscureText: true,
+                        autofillHints: const [AutofillHints.password],
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _signInWithPassword(),
                         decoration: const InputDecoration(
-                          labelText: 'Email owner',
-                          prefixIcon: Icon(Icons.alternate_email_rounded),
+                          labelText: 'Password dashboard',
+                          prefixIcon: Icon(Icons.lock_outline_rounded),
                         ),
                       ),
-                      if (_codeSent) ...[
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _otp,
-                          autofocus: true,
-                          keyboardType: TextInputType.number,
-                          autofillHints: const [AutofillHints.oneTimeCode],
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(6),
-                          ],
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _verifyCode(),
-                          decoration: const InputDecoration(
-                            labelText: 'Kode OTP 6 digit',
-                            prefixIcon: Icon(Icons.password_rounded),
-                          ),
-                        ),
-                      ],
-                      if (_error != null) ...[
-                        const SizedBox(height: 12),
-                        Text(_error!,
-                            style: const TextStyle(
-                                color: AppTheme.danger, fontSize: 12)),
-                      ],
-                      const SizedBox(height: 22),
-                      ElevatedButton(
-                        onPressed: _loading
-                            ? null
-                            : (_codeSent ? _verifyCode : _sendCode),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text(
-                            _loading
-                                ? 'Memproses...'
-                                : (_codeSent
-                                    ? 'Verifikasi & masuk'
-                                    : 'Kirim kode OTP'),
-                          ),
-                        ),
-                      ),
-                      if (_codeSent) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            TextButton(
-                              onPressed: _loading || _resendSeconds > 0
-                                  ? null
-                                  : _sendCode,
-                              child: Text(_resendSeconds > 0
-                                  ? 'Kirim ulang ($_resendSeconds dtk)'
-                                  : 'Kirim ulang kode'),
-                            ),
-                            TextButton(
-                              onPressed: _loading ? null : _changeEmail,
-                              child: const Text('Ganti email'),
-                            ),
-                          ],
-                        ),
-                      ],
                     ],
-                  ),
+                    if (_passwordSetup && !_codeSent) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _newPassword,
+                        enabled: !_loading,
+                        obscureText: true,
+                        autofillHints: const [AutofillHints.newPassword],
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: 'Password baru',
+                          helperText: 'Minimal 8 karakter dan 1 angka',
+                          prefixIcon: Icon(Icons.lock_outline_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _confirmPassword,
+                        enabled: !_loading,
+                        obscureText: true,
+                        autofillHints: const [AutofillHints.newPassword],
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _sendPasswordSetupCode(),
+                        decoration: const InputDecoration(
+                          labelText: 'Ulangi password baru',
+                          prefixIcon: Icon(Icons.check_circle_outline_rounded),
+                        ),
+                      ),
+                    ],
+                    if (setupOtp) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _otp,
+                        autofocus: true,
+                        keyboardType: TextInputType.number,
+                        autofillHints: const [AutofillHints.oneTimeCode],
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(6),
+                        ],
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _verifyPasswordSetupCode(),
+                        decoration: const InputDecoration(
+                          labelText: 'Kode OTP 6 digit',
+                          prefixIcon: Icon(Icons.password_rounded),
+                        ),
+                      ),
+                    ],
+                    if (_error != null) ...[
+                      const SizedBox(height: 12),
+                      Text(_error!,
+                          style: const TextStyle(
+                              color: AppTheme.danger, fontSize: 12)),
+                    ],
+                    const SizedBox(height: 22),
+                    ElevatedButton(
+                      onPressed: _loading
+                          ? null
+                          : (_passwordSetup
+                              ? (_codeSent
+                                  ? _verifyPasswordSetupCode
+                                  : _sendPasswordSetupCode)
+                              : _signInWithPassword),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(_loading
+                            ? 'Memproses...'
+                            : (_passwordSetup
+                                ? (_codeSent
+                                    ? 'Verifikasi & simpan password'
+                                    : 'Kirim OTP untuk buat password')
+                                : 'Masuk dengan password')),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (!_passwordSetup)
+                      TextButton(
+                        onPressed: _loading ? null : _openPasswordSetup,
+                        child: const Text('Belum punya password? Buat/reset via OTP'),
+                      )
+                    else if (_codeSent)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          TextButton(
+                            onPressed: _loading || _resendSeconds > 0
+                                ? null
+                                : _sendPasswordSetupCode,
+                            child: Text(_resendSeconds > 0
+                                ? 'Kirim ulang ($_resendSeconds dtk)'
+                                : 'Kirim ulang kode'),
+                          ),
+                          TextButton(
+                            onPressed: _loading ? null : _cancelPasswordSetup,
+                            child: const Text('Batal'),
+                          ),
+                        ],
+                      )
+                    else
+                      TextButton(
+                        onPressed: _loading ? null : _backToPasswordLogin,
+                        child: const Text('Kembali ke login password'),
+                      ),
+                  ],
                 ),
               ),
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _OwnerWorkspace extends StatefulWidget {
