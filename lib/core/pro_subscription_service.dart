@@ -78,7 +78,7 @@ class SajiaPlanService {
 
     late final FunctionResponse response;
     try {
-      response = await _supabase.functions.invoke(
+      response = await _invokeOwnerFunction(
         'create-plan-checkout',
         body: {
           'outlet_id': outletId,
@@ -90,6 +90,8 @@ class SajiaPlanService {
             'integrity_token': integrityProof.token,
         },
       );
+    } on SajiaPlanException {
+      rethrow;
     } on FunctionException catch (error) {
       throw SajiaPlanException(_functionErrorMessage(error));
     } catch (error) {
@@ -190,10 +192,12 @@ class SajiaPlanService {
   Future<SajiaPlanStatus> getStatus(String outletId) async {
     late final FunctionResponse response;
     try {
-      response = await _supabase.functions.invoke(
+      response = await _invokeOwnerFunction(
         'get-plan-status',
         body: {'outlet_id': outletId},
       );
+    } on SajiaPlanException {
+      rethrow;
     } on FunctionException catch (error) {
       throw SajiaPlanException(_functionErrorMessage(error));
     } catch (error) {
@@ -222,7 +226,7 @@ class SajiaPlanService {
   }) async {
     late final FunctionResponse response;
     try {
-      response = await _supabase.functions.invoke(
+      response = await _invokeOwnerFunction(
         'create-owner-outlet',
         body: {
           'id': id,
@@ -231,6 +235,8 @@ class SajiaPlanService {
           'phone': phone,
         },
       );
+    } on SajiaPlanException {
+      rethrow;
     } on FunctionException catch (error) {
       throw SajiaPlanException(_functionErrorMessage(error));
     } catch (error) {
@@ -254,6 +260,73 @@ class SajiaPlanService {
       cloudExpiresAt:
           cloudExpiry == null ? null : DateTime.tryParse(cloudExpiry),
     );
+  }
+
+  /// Calls owner-only functions with the current user JWT. If the server
+  /// rejects that token as expired, refresh the Supabase session once and retry
+  /// the same request. Retrying only a 401 avoids replaying other failures.
+  Future<FunctionResponse> _invokeOwnerFunction(
+    String functionName, {
+    required Map<String, dynamic> body,
+  }) async {
+    final accessToken = _currentOwnerAccessToken();
+    try {
+      return await _invokeWithAccessToken(
+        functionName,
+        body: body,
+        accessToken: accessToken,
+      );
+    } on FunctionException catch (error) {
+      if (error.status != 401) rethrow;
+    }
+
+    final refreshedAccessToken = await _refreshOwnerAccessToken();
+    return _invokeWithAccessToken(
+      functionName,
+      body: body,
+      accessToken: refreshedAccessToken,
+    );
+  }
+
+  Future<FunctionResponse> _invokeWithAccessToken(
+    String functionName, {
+    required Map<String, dynamic> body,
+    required String accessToken,
+  }) {
+    return _supabase.functions.invoke(
+      functionName,
+      body: body,
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+  }
+
+  String _currentOwnerAccessToken() {
+    final accessToken = _supabase.auth.currentSession?.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      throw const SajiaPlanException(
+        'Sesi email owner belum aktif. Login email owner lagi lalu coba ulang.',
+      );
+    }
+    return accessToken;
+  }
+
+  Future<String> _refreshOwnerAccessToken() async {
+    try {
+      final refreshedSession = await _supabase.auth.refreshSession();
+      final accessToken = refreshedSession.session?.accessToken;
+      if (accessToken == null || accessToken.isEmpty) {
+        throw const SajiaPlanException(
+          'Sesi email owner sudah berakhir. Login email owner lagi lalu coba ulang.',
+        );
+      }
+      return accessToken;
+    } on SajiaPlanException {
+      rethrow;
+    } on AuthException {
+      throw const SajiaPlanException(
+        'Sesi email owner sudah berakhir. Login email owner lagi lalu coba ulang.',
+      );
+    }
   }
 
   Future<SajiaPlanStatus> refreshLocalPlan({
