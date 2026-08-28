@@ -23,7 +23,11 @@ supabase/migrations/20260707_server_owned_entitlements.sql
 supabase/migrations/20260808_sync_inventory_and_media_hardening.sql
 supabase/migrations/20260808120000_payment_and_owner_hardening.sql
 supabase/migrations/20260808130000_sync_relationship_tombstones.sql
+supabase/migrations/20260828120000_platform_entitlement_admin.sql
 ```
+
+Dashboard pengelolaan paket dan cara mengaktifkan admin pertama dijelaskan di
+[`docs/PLATFORM_ADMIN_DASHBOARD.md`](../docs/PLATFORM_ADMIN_DASHBOARD.md).
 
 ## 2. Set secrets Midtrans
 
