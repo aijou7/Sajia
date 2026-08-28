@@ -626,7 +626,7 @@ class _EntitlementDialogState extends State<_EntitlementDialog> {
                     style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 18),
                 DropdownButtonFormField<String>(
-                  value: _planCode,
+                  initialValue: _planCode,
                   decoration: const InputDecoration(labelText: 'Paket'),
                   items: const [
                     DropdownMenuItem(value: 'FREE', child: Text('Free')),
