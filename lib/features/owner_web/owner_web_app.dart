@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/brand.dart';
 import '../../core/onboarding_service.dart';
 import '../../core/theme.dart';
+import 'owner_operations_page.dart';
 import 'platform_admin_page.dart';
 
 class OwnerWebApp extends StatelessWidget {
@@ -524,6 +525,7 @@ class _OwnerWorkspace extends StatefulWidget {
 class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
   late Future<_OwnerDashboardData> _dashboard;
   _OwnerSection _selectedSection = _OwnerSection.dashboard;
+  _OwnerReportPeriod _reportPeriod = const _OwnerReportPeriod.allTime();
 
   @override
   void initState() {
@@ -555,9 +557,8 @@ class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
     }
 
     await client.rpc('ensure_owner_organization');
-    final now = DateTime.now();
-    final from = DateTime(now.year, now.month);
-    final to = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+    final from = _reportPeriod.from ?? DateTime.utc(2000);
+    final to = _reportPeriod.to ?? DateTime.now();
     final response = await client.rpc('get_owner_dashboard', params: {
       'p_from': from.toUtc().toIso8601String(),
       'p_to': to.toUtc().toIso8601String(),
@@ -574,6 +575,32 @@ class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
   }
 
   void _reload() => setState(() => _dashboard = _loadDashboard());
+
+  void _showAllTimeReport() {
+    if (_reportPeriod.isAllTime) return;
+    setState(() {
+      _reportPeriod = const _OwnerReportPeriod.allTime();
+      _dashboard = _loadDashboard();
+    });
+  }
+
+  Future<void> _pickReportMonth() async {
+    final today = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _reportPeriod.from ?? today,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(today.year + 1, 12),
+      helpText: 'Pilih bulan laporan',
+      cancelText: 'Batal',
+      confirmText: 'Tampilkan',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _reportPeriod = _OwnerReportPeriod.monthOf(picked);
+      _dashboard = _loadDashboard();
+    });
+  }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -629,12 +656,6 @@ class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
                         return _DashboardLoadError(onRetry: _reload);
                       }
                       final data = snapshot.data!;
-                      if (data.cloudRequired) {
-                        return _CloudEntitlementRequired(
-                          data: data,
-                          onRetry: _reload,
-                        );
-                      }
                       if (data.isPlatformAdmin) {
                         return PlatformAdminPage(
                           accounts: data.adminAccounts,
@@ -644,17 +665,45 @@ class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
                         );
                       }
                       return switch (_selectedSection) {
-                        _OwnerSection.dashboard => _OwnerDashboard(
-                            data: data,
-                            onRefresh: _reload,
-                          ),
-                        _OwnerSection.finance => _FinanceSummary(
-                            data: data,
-                            onRefresh: _reload,
-                          ),
+                        _OwnerSection.dashboard => data.cloudRequired
+                            ? _CloudEntitlementRequired(
+                                data: data,
+                                onRetry: _reload,
+                              )
+                            : _OwnerDashboard(
+                                data: data,
+                                onRefresh: _reload,
+                                period: _reportPeriod,
+                                onAllTime: _showAllTimeReport,
+                                onPickMonth: _pickReportMonth,
+                              ),
+                        _OwnerSection.finance => data.cloudRequired
+                            ? _CloudEntitlementRequired(
+                                data: data,
+                                onRetry: _reload,
+                              )
+                            : _FinanceSummary(
+                                data: data,
+                                onRefresh: _reload,
+                                period: _reportPeriod,
+                                onAllTime: _showAllTimeReport,
+                                onPickMonth: _pickReportMonth,
+                              ),
                         _OwnerSection.branches => _BranchList(
                             data: data,
                             onRefresh: _reload,
+                            period: _reportPeriod,
+                            onAllTime: _showAllTimeReport,
+                            onPickMonth: _pickReportMonth,
+                          ),
+                        _OwnerSection.operations => OwnerOperationsPage(
+                            outlets: data.outlets
+                                .map((outlet) => OwnerOutletOption(
+                                      id: outlet.id,
+                                      name: outlet.name,
+                                      isCloud: outlet.isCloud,
+                                    ))
+                                .toList(),
                           ),
                       };
                     },
@@ -689,20 +738,46 @@ class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
   }
 }
 
-enum _OwnerSection { dashboard, finance, branches }
+enum _OwnerSection { dashboard, finance, operations, branches }
 
 extension on _OwnerSection {
   String get label => switch (this) {
         _OwnerSection.dashboard => 'Dashboard',
         _OwnerSection.finance => 'Laporan keuangan',
+        _OwnerSection.operations => 'Data operasional',
         _OwnerSection.branches => 'Cabang',
       };
 
   IconData get icon => switch (this) {
         _OwnerSection.dashboard => Icons.dashboard_rounded,
         _OwnerSection.finance => Icons.account_balance_wallet_outlined,
+        _OwnerSection.operations => Icons.inventory_2_outlined,
         _OwnerSection.branches => Icons.storefront_outlined,
       };
+}
+
+class _OwnerReportPeriod {
+  final DateTime? from;
+  final DateTime? to;
+
+  const _OwnerReportPeriod.allTime()
+      : from = null,
+        to = null;
+
+  const _OwnerReportPeriod._({required this.from, required this.to});
+
+  factory _OwnerReportPeriod.monthOf(DateTime date) {
+    final start = DateTime(date.year, date.month);
+    final end = DateTime(date.year, date.month + 1)
+        .subtract(const Duration(microseconds: 1));
+    return _OwnerReportPeriod._(from: start, to: end);
+  }
+
+  bool get isAllTime => from == null && to == null;
+
+  String get label => isAllTime
+      ? 'Semua waktu'
+      : DateFormat('MMMM y', 'id_ID').format(from!);
 }
 
 class _OwnerNavigation extends StatelessWidget {
@@ -1012,7 +1087,17 @@ double _asDouble(dynamic value) => value is num
 class _OwnerDashboard extends StatelessWidget {
   final _OwnerDashboardData data;
   final VoidCallback onRefresh;
-  const _OwnerDashboard({required this.data, required this.onRefresh});
+  final _OwnerReportPeriod period;
+  final VoidCallback onAllTime;
+  final VoidCallback onPickMonth;
+
+  const _OwnerDashboard({
+    required this.data,
+    required this.onRefresh,
+    required this.period,
+    required this.onAllTime,
+    required this.onPickMonth,
+  });
 
   @override
   Widget build(BuildContext context) => Container(
@@ -1028,17 +1113,17 @@ class _OwnerDashboard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Ringkasan bisnis',
+                            const Text('Ringkasan bisnis',
                                 style: TextStyle(
                                     fontSize: 26, fontWeight: FontWeight.w800)),
-                            SizedBox(height: 5),
-                            Text('Periode bulan berjalan • cabang Cloud',
-                                style:
-                                    TextStyle(color: AppTheme.textSecondary)),
+                            const SizedBox(height: 5),
+                            Text('${period.label} • cabang Cloud',
+                                style: const TextStyle(
+                                    color: AppTheme.textSecondary)),
                           ],
                         ),
                       ),
@@ -1048,6 +1133,12 @@ class _OwnerDashboard extends StatelessWidget {
                         icon: const Icon(Icons.refresh_rounded),
                       ),
                     ]),
+                    const SizedBox(height: 16),
+                    _ReportPeriodPicker(
+                      period: period,
+                      onAllTime: onAllTime,
+                      onPickMonth: onPickMonth,
+                    ),
                     const SizedBox(height: 26),
                     _NetProfitCard(data: data),
                     const SizedBox(height: 16),
@@ -1171,8 +1262,17 @@ class _OwnerDashboard extends StatelessWidget {
 class _FinanceSummary extends StatelessWidget {
   final _OwnerDashboardData data;
   final VoidCallback onRefresh;
+  final _OwnerReportPeriod period;
+  final VoidCallback onAllTime;
+  final VoidCallback onPickMonth;
 
-  const _FinanceSummary({required this.data, required this.onRefresh});
+  const _FinanceSummary({
+    required this.data,
+    required this.onRefresh,
+    required this.period,
+    required this.onAllTime,
+    required this.onPickMonth,
+  });
 
   @override
   Widget build(BuildContext context) => _OwnerPageShell(
@@ -1181,8 +1281,14 @@ class _FinanceSummary extends StatelessWidget {
           children: [
             _PageHeader(
               title: 'Laporan keuangan',
-              subtitle: 'Ringkasan laba rugi bulan berjalan',
+              subtitle: 'Ringkasan laba rugi ${period.label.toLowerCase()}',
               onRefresh: onRefresh,
+            ),
+            const SizedBox(height: 16),
+            _ReportPeriodPicker(
+              period: period,
+              onAllTime: onAllTime,
+              onPickMonth: onPickMonth,
             ),
             const SizedBox(height: 26),
             _NetProfitCard(data: data),
@@ -1227,8 +1333,17 @@ class _FinanceSummary extends StatelessWidget {
 class _BranchList extends StatelessWidget {
   final _OwnerDashboardData data;
   final VoidCallback onRefresh;
+  final _OwnerReportPeriod period;
+  final VoidCallback onAllTime;
+  final VoidCallback onPickMonth;
 
-  const _BranchList({required this.data, required this.onRefresh});
+  const _BranchList({
+    required this.data,
+    required this.onRefresh,
+    required this.period,
+    required this.onAllTime,
+    required this.onPickMonth,
+  });
 
   @override
   Widget build(BuildContext context) => _OwnerPageShell(
@@ -1237,8 +1352,14 @@ class _BranchList extends StatelessWidget {
           children: [
             _PageHeader(
               title: 'Cabang',
-              subtitle: 'Status paket dan performa seluruh cabang',
+              subtitle: 'Status paket dan performa ${period.label.toLowerCase()}',
               onRefresh: onRefresh,
+            ),
+            const SizedBox(height: 16),
+            _ReportPeriodPicker(
+              period: period,
+              onAllTime: onAllTime,
+              onPickMonth: onPickMonth,
             ),
             const SizedBox(height: 26),
             _MetricGrid(
@@ -1279,7 +1400,7 @@ class _BranchList extends StatelessWidget {
             else
               _OutletStatusList(outlets: data.outlets),
             const SizedBox(height: 30),
-            const _SectionTitle('Performa bulan ini'),
+            _SectionTitle('Performa ${period.label.toLowerCase()}'),
             const SizedBox(height: 12),
             if (data.branches.isEmpty)
               const _EmptyPortalCard(
@@ -1317,6 +1438,40 @@ class _OwnerPageShell extends StatelessWidget {
             );
           },
         ),
+      );
+}
+
+class _ReportPeriodPicker extends StatelessWidget {
+  final _OwnerReportPeriod period;
+  final VoidCallback onAllTime;
+  final VoidCallback onPickMonth;
+
+  const _ReportPeriodPicker({
+    required this.period,
+    required this.onAllTime,
+    required this.onPickMonth,
+  });
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Text('Periode:',
+              style: TextStyle(
+                  color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
+          ChoiceChip(
+            label: const Text('Semua waktu'),
+            selected: period.isAllTime,
+            onSelected: (_) => onAllTime(),
+          ),
+          OutlinedButton.icon(
+            onPressed: onPickMonth,
+            icon: const Icon(Icons.calendar_month_outlined, size: 18),
+            label: Text(period.isAllTime ? 'Pilih bulan' : period.label),
+          ),
+        ],
       );
 }
 
