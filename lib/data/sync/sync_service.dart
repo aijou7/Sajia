@@ -51,6 +51,13 @@ class SyncService {
     _periodicSync?.cancel();
   }
 
+  /// Starts a sync attempt without making the current UI wait for the full
+  /// push/pull cycle. Local writes remain durable and the existing periodic
+  /// and reconnect triggers provide retries when the device is offline.
+  void requestSync() {
+    unawaited(syncAll());
+  }
+
   Future<void> syncAll() async {
     if (!isEnabled) return;
     if (_isSyncing) return;

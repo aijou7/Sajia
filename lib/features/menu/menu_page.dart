@@ -1,11 +1,13 @@
+import 'dart:io';
+
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
-import 'package:drift/drift.dart' show Value;
-import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
+
 import '../../core/numeric_input_formatter.dart';
 import '../../core/providers.dart';
 import '../../core/app_notice.dart';
@@ -441,7 +443,7 @@ class _ProductTile extends ConsumerWidget {
       }
     }
 
-    await ref.read(syncServiceProvider).syncAll();
+    ref.read(syncServiceProvider).requestSync();
     if (!context.mounted) return;
     AppNotice.show(context,
       SnackBar(
@@ -525,7 +527,7 @@ class _StockAdjustmentSheetState extends ConsumerState<StockAdjustmentSheet> {
         'stock': value,
       },
     );
-    await ref.read(syncServiceProvider).syncAll();
+    ref.read(syncServiceProvider).requestSync();
     if (mounted) Navigator.pop(context);
   }
 
@@ -702,6 +704,7 @@ class _CategoryTab extends ConsumerWidget {
                       isSynced: const Value(false),
                     ));
                   }
+                  ref.read(syncServiceProvider).requestSync();
                 }
               : (_, __) {},
           itemBuilder: (_, i) {
@@ -803,7 +806,7 @@ class _CategoryTab extends ConsumerWidget {
     if (confirmed != true || !context.mounted) return;
 
     await ref.read(databaseProvider).productDao.deleteCategory(category.id);
-    await ref.read(syncServiceProvider).syncAll();
+    ref.read(syncServiceProvider).requestSync();
     if (!context.mounted) return;
     AppNotice.show(context,
       SnackBar(
@@ -1055,7 +1058,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
         }
       });
 
-      await ref.read(syncServiceProvider).syncAll();
+      ref.read(syncServiceProvider).requestSync();
 
       if (mounted) Navigator.pop(context);
     } catch (_) {
@@ -2002,6 +2005,8 @@ class _CategoryFormSheetState extends ConsumerState<CategoryFormSheet> {
       updatedAt: Value(DateTime.now()),
       isSynced: const Value(false),
     ));
+
+    ref.read(syncServiceProvider).requestSync();
 
     if (mounted) Navigator.pop(context);
   }
