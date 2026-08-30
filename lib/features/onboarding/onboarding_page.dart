@@ -14,6 +14,7 @@ import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../core/onboarding_service.dart';
+import '../../core/pin_numpad_layout.dart';
 import '../../data/local/app_database.dart';
 
 enum _Step { welcome, email, otp, outlet, pin }
@@ -1091,16 +1092,16 @@ class _Numpad extends StatelessWidget {
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
     return LayoutBuilder(
       builder: (context, constraints) {
-        final buttonSize = (constraints.maxWidth / 3 - 18).clamp(54.0, 72.0);
+        final buttonSize = pinNumpadButtonSize(constraints.maxWidth);
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           padding: EdgeInsets.zero,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
-            mainAxisSpacing: 10,
+            mainAxisSpacing: 8,
             crossAxisSpacing: 12,
-            childAspectRatio: 1,
+            mainAxisExtent: buttonSize,
           ),
           itemCount: keys.length,
           itemBuilder: (context, index) {
@@ -1122,7 +1123,7 @@ class _Numpad extends StatelessWidget {
                       height: buttonSize,
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(36),
+                        borderRadius: BorderRadius.circular(buttonSize / 2),
                         border: Border.all(color: const Color(0xFFE5E7EB)),
                         boxShadow: [
                           BoxShadow(

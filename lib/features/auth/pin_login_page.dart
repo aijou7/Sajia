@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/providers.dart';
 import '../../core/brand.dart';
 import '../../core/onboarding_service.dart';
+import '../../core/pin_numpad_layout.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
@@ -553,28 +554,34 @@ class _Numpad extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 14,
-        childAspectRatio: 74 / 70,
-      ),
-      itemCount: keys.length,
-      itemBuilder: (context, index) {
-        final key = keys[index];
-        if (key.isEmpty) return const SizedBox.shrink();
-
-        final isDelete = key == 'del';
-        return Center(
-          child: _NumpadButton(
-            label: key,
-            isDelete: isDelete,
-            onTap: isDelete ? onDelete : () => onDigit(key),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final buttonSize = pinNumpadButtonSize(constraints.maxWidth);
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 12,
+            mainAxisExtent: buttonSize,
           ),
+          itemCount: keys.length,
+          itemBuilder: (context, index) {
+            final key = keys[index];
+            if (key.isEmpty) return const SizedBox.shrink();
+
+            final isDelete = key == 'del';
+            return Center(
+              child: _NumpadButton(
+                label: key,
+                size: buttonSize,
+                isDelete: isDelete,
+                onTap: isDelete ? onDelete : () => onDigit(key),
+              ),
+            );
+          },
         );
       },
     );
@@ -583,11 +590,13 @@ class _Numpad extends StatelessWidget {
 
 class _NumpadButton extends StatefulWidget {
   final String label;
+  final double size;
   final bool isDelete;
   final VoidCallback onTap;
 
   const _NumpadButton({
     required this.label,
+    required this.size,
     required this.isDelete,
     required this.onTap,
   });
@@ -611,9 +620,8 @@ class _NumpadButtonState extends State<_NumpadButton> {
         duration: const Duration(milliseconds: 110),
         curve: Curves.easeOut,
         child: Container(
-          width: 74,
-          height: 70,
-          margin: const EdgeInsets.symmetric(horizontal: 8),
+          width: widget.size,
+          height: widget.size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: widget.isDelete
