@@ -6,6 +6,7 @@ import 'package:drift/drift.dart' show InsertMode, OrderingTerm, Value;
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/legacy_outlet.dart';
 import '../local/app_database.dart';
 import 'product_image_uploader.dart';
 
@@ -774,6 +775,11 @@ class SyncService {
     final rows = await _db.select(_db.outlets).get();
     final ownerEmail = _supabase.auth.currentUser?.email;
     for (final outlet in rows) {
+      // Older builds created this local setup placeholder. It is not an
+      // actual branch and must never be recreated in Cloud by a stale device.
+      if (isLegacyPlaceholderOutlet(id: outlet.id, name: outlet.name)) {
+        continue;
+      }
       try {
         // License fields are server-owned. Never push local license_key,
         // license_expiry, or cloud_expiry from the APK because a modified app

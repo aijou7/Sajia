@@ -63,8 +63,8 @@ jobs:
       - name: Run tests
         run: flutter test
 
-      - name: Build direct-download ARM64 APK
-        run: flutter build apk --release --target-platform android-arm64
+      - name: Build direct-download universal APK
+        run: flutter build apk --release --target-platform android-arm,android-arm64
 
       - name: Verify and package APK
         id: package
@@ -73,8 +73,8 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           source_apk="build/app/outputs/flutter-apk/app-release.apk"
-          versioned_apk="Sajia-v${version}-arm64.apk"
-          latest_apk="Sajia-latest-arm64.apk"
+          versioned_apk="Sajia-v${version}.apk"
+          latest_apk="Sajia-latest.apk"
 
           cp "$source_apk" "$versioned_apk"
           cp "$source_apk" "$latest_apk"
@@ -83,7 +83,10 @@ jobs:
           apksigner_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           aapt_path="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           "$apksigner_path" verify --verbose --print-certs "$versioned_apk"
-          "$aapt_path" dump badging "$versioned_apk" | head -n 3
+          native_code="$("$aapt_path" dump badging "$versioned_apk" | sed -n "s/^native-code: //p")"
+          echo "native-code: $native_code"
+          [[ "$native_code" == *"'armeabi-v7a'"* ]]
+          [[ "$native_code" == *"'arm64-v8a'"* ]]
 
           echo "versioned_apk=$versioned_apk" >> "$GITHUB_OUTPUT"
           echo "latest_apk=$latest_apk" >> "$GITHUB_OUTPUT"

@@ -54,8 +54,8 @@ android {
 
     defaultConfig {
         applicationId = "id.aksaldev.sajia"
-        // Modern Android only. This drops old Android support and helps keep
-        // native/runtime compatibility tighter for the public APK.
+        // Android 8.0 (API 26) and newer. The public release contains both
+        // 32-bit ARM and 64-bit ARM native libraries for older tablets.
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

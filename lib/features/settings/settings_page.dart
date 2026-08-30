@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart' show OrderingTerm, Value;
 import '../../core/backup_service.dart';
 import '../../core/app_distribution.dart';
+import '../../core/legacy_outlet.dart';
 import '../settings/printer_settings.dart';
 import '../../core/bluetooth_system.dart';
 import '../../core/notification_service.dart';
@@ -1286,12 +1287,8 @@ class _PlanPoint extends StatelessWidget {
   }
 }
 
-const _placeholderOutletId = 'default-outlet';
-const _placeholderOutletName = 'Nama Kafe Saya';
-
 bool _isPlaceholderOutlet(Outlet outlet) {
-  return outlet.id == _placeholderOutletId &&
-      outlet.name.trim().toLowerCase() == _placeholderOutletName.toLowerCase();
+  return isLegacyPlaceholderOutlet(id: outlet.id, name: outlet.name);
 }
 
 Future<List<Outlet>> _loadAccessibleOutlets(WidgetRef ref) async {
