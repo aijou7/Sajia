@@ -63,8 +63,8 @@ jobs:
       - name: Run tests
         run: flutter test
 
-      - name: Build direct-download universal APK
-        run: flutter build apk --release --target-platform android-arm,android-arm64
+      - name: Build direct-download APKs for 32-bit and 64-bit Android
+        run: flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64
 
       - name: Verify and package APK
         id: package
@@ -72,33 +72,50 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          source_apk="build/app/outputs/flutter-apk/app-release.apk"
-          versioned_apk="Sajia-v${version}.apk"
-          latest_apk="Sajia-latest.apk"
+          source_v7a="build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk"
+          source_v8a="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          versioned_v7a="Sajia-v${version}-v7a.apk"
+          latest_v7a="Sajia-latest-v7a.apk"
+          versioned_v8a="Sajia-v${version}-v8a.apk"
+          latest_v8a="Sajia-latest-v8a.apk"
 
-          cp "$source_apk" "$versioned_apk"
-          cp "$source_apk" "$latest_apk"
-          sha256sum "$versioned_apk" > "${versioned_apk}.sha256"
+          cp "$source_v7a" "$versioned_v7a"
+          cp "$source_v7a" "$latest_v7a"
+          cp "$source_v8a" "$versioned_v8a"
+          cp "$source_v8a" "$latest_v8a"
+          sha256sum "$versioned_v7a" > "${versioned_v7a}.sha256"
+          sha256sum "$versioned_v8a" > "${versioned_v8a}.sha256"
 
           apksigner_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           aapt_path="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
-          "$apksigner_path" verify --verbose --print-certs "$versioned_apk"
-          native_code="$("$aapt_path" dump badging "$versioned_apk" | sed -n "s/^native-code: //p")"
-          echo "native-code: $native_code"
-          [[ "$native_code" == *"'armeabi-v7a'"* ]]
-          [[ "$native_code" == *"'arm64-v8a'"* ]]
+          "$apksigner_path" verify --verbose --print-certs "$versioned_v7a"
+          "$apksigner_path" verify --verbose --print-certs "$versioned_v8a"
+          v7a_native_code="$("$aapt_path" dump badging "$versioned_v7a" | sed -n "s/^native-code: //p")"
+          v8a_native_code="$("$aapt_path" dump badging "$versioned_v8a" | sed -n "s/^native-code: //p")"
+          echo "v7a native-code: $v7a_native_code"
+          echo "v8a native-code: $v8a_native_code"
+          [[ "$v7a_native_code" == *"'armeabi-v7a'"* ]]
+          [[ "$v7a_native_code" != *"'arm64-v8a'"* ]]
+          [[ "$v8a_native_code" == *"'arm64-v8a'"* ]]
+          [[ "$v8a_native_code" != *"'armeabi-v7a'"* ]]
 
-          echo "versioned_apk=$versioned_apk" >> "$GITHUB_OUTPUT"
-          echo "latest_apk=$latest_apk" >> "$GITHUB_OUTPUT"
-          echo "checksum=${versioned_apk}.sha256" >> "$GITHUB_OUTPUT"
+          echo "versioned_v7a=$versioned_v7a" >> "$GITHUB_OUTPUT"
+          echo "latest_v7a=$latest_v7a" >> "$GITHUB_OUTPUT"
+          echo "checksum_v7a=${versioned_v7a}.sha256" >> "$GITHUB_OUTPUT"
+          echo "versioned_v8a=$versioned_v8a" >> "$GITHUB_OUTPUT"
+          echo "latest_v8a=$latest_v8a" >> "$GITHUB_OUTPUT"
+          echo "checksum_v8a=${versioned_v8a}.sha256" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSIONED_APK: ${{ steps.package.outputs.versioned_apk }}
-          LATEST_APK: ${{ steps.package.outputs.latest_apk }}
-          CHECKSUM: ${{ steps.package.outputs.checksum }}
+          VERSIONED_V7A: ${{ steps.package.outputs.versioned_v7a }}
+          LATEST_V7A: ${{ steps.package.outputs.latest_v7a }}
+          CHECKSUM_V7A: ${{ steps.package.outputs.checksum_v7a }}
+          VERSIONED_V8A: ${{ steps.package.outputs.versioned_v8a }}
+          LATEST_V8A: ${{ steps.package.outputs.latest_v8a }}
+          CHECKSUM_V8A: ${{ steps.package.outputs.checksum_v8a }}
         run: |
           set -euo pipefail
           notes_file="RELEASE_NOTES_V${GITHUB_REF_NAME#v}.md"
@@ -109,7 +126,8 @@ jobs:
 
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" \
-              "$VERSIONED_APK" "$LATEST_APK" "$CHECKSUM" \
+              "$VERSIONED_V7A" "$LATEST_V7A" "$CHECKSUM_V7A" \
+              "$VERSIONED_V8A" "$LATEST_V8A" "$CHECKSUM_V8A" \
               --clobber
             gh release edit "$GITHUB_REF_NAME" \
               --title "Sajia ${GITHUB_REF_NAME}" \
@@ -117,7 +135,8 @@ jobs:
               --latest
           else
             gh release create "$GITHUB_REF_NAME" \
-              "$VERSIONED_APK" "$LATEST_APK" "$CHECKSUM" \
+              "$VERSIONED_V7A" "$LATEST_V7A" "$CHECKSUM_V7A" \
+              "$VERSIONED_V8A" "$LATEST_V8A" "$CHECKSUM_V8A" \
               --title "Sajia ${GITHUB_REF_NAME}" \
               --notes-file "$notes_file" \
               --latest
