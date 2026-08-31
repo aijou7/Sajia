@@ -309,15 +309,34 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
     final width = MediaQuery.of(context).size.width;
     final maxWidth = width > 600 ? 420.0 : 380.0;
 
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
 
     return Scaffold(
+      backgroundColor: AppTheme.surface,
       body: Container(
-        decoration: const BoxDecoration(gradient: AppTheme.brandGradient),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFFAFBFA), Color(0xFFF1F5F4)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
         child: Stack(
           children: [
-            const _LoginGlow(top: -90, right: -80, size: 240, opacity: 0.18),
-            const _LoginGlow(bottom: 90, left: -110, size: 260, opacity: 0.12),
+            const _LoginGlow(
+              top: -90,
+              right: -80,
+              size: 240,
+              opacity: 0.10,
+              color: AppTheme.action,
+            ),
+            const _LoginGlow(
+              bottom: 90,
+              left: -110,
+              size: 260,
+              opacity: 0.07,
+              color: AppBrand.accent,
+            ),
             SafeArea(
               child: Center(
                 child: SingleChildScrollView(
@@ -356,8 +375,8 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
                           Text(
                             'PIN tersimpan aman di akun bisnis dan berlaku di perangkat yang dipulihkan.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.58),
+                            style: const TextStyle(
+                              color: AppTheme.textSecondary,
                               fontSize: 11,
                               height: 1.4,
                             ),
@@ -401,23 +420,17 @@ class _LoginPanel extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 24, 22, 18),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 34,
-            offset: const Offset(0, 20),
-          ),
-        ],
+        border: Border.all(color: AppTheme.subtleBorder),
+        boxShadow: AppTheme.softShadow,
       ),
       child: Column(
         children: [
           Text(
             isLoading ? 'Memeriksa PIN...' : 'Masukkan PIN',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.86),
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
@@ -448,10 +461,12 @@ class _LoginPanel extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: filled
-                        ? (isError ? AppTheme.danger : AppTheme.accent)
-                        : Colors.white.withValues(alpha: 0.14),
+                        ? (isError ? AppTheme.danger : AppTheme.action)
+                        : AppTheme.neutralSoft,
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.42),
+                      color: filled
+                          ? Colors.transparent
+                          : AppTheme.borderColor,
                     ),
                   ),
                 );
@@ -465,7 +480,7 @@ class _LoginPanel extends StatelessWidget {
             child: Text(
               errorMessage ?? '',
               style: const TextStyle(
-                color: Color(0xFFFFC4C4),
+                color: AppTheme.danger,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -485,6 +500,7 @@ class _LoginGlow extends StatelessWidget {
   final double? left;
   final double size;
   final double opacity;
+  final Color color;
 
   const _LoginGlow({
     this.top,
@@ -493,6 +509,7 @@ class _LoginGlow extends StatelessWidget {
     this.left,
     required this.size,
     required this.opacity,
+    required this.color,
   });
 
   @override
@@ -509,8 +526,8 @@ class _LoginGlow extends StatelessWidget {
           shape: BoxShape.circle,
           gradient: RadialGradient(
             colors: [
-              Colors.white.withValues(alpha: opacity),
-              Colors.white.withValues(alpha: 0),
+              color.withValues(alpha: opacity),
+              color.withValues(alpha: 0),
             ],
           ),
         ),
@@ -537,9 +554,9 @@ class _SajiaLogo extends StatelessWidget {
         gap: 16,
         nameFontSize: 34,
         descriptorFontSize: 10,
-        textColor: Colors.white,
-        descriptorColor: Color(0xB8FFFFFF),
-        markBackgroundColor: Color(0x29FFFFFF),
+        textColor: AppTheme.textPrimary,
+        descriptorColor: AppTheme.textSecondary,
+        markBackgroundColor: Colors.white,
       ),
     );
   }
@@ -625,24 +642,31 @@ class _NumpadButtonState extends State<_NumpadButton> {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: widget.isDelete
-                ? Colors.white.withValues(alpha: 0.07)
-                : Colors.white.withValues(alpha: 0.14),
+                ? AppTheme.neutralSoft
+                : Colors.white,
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.18),
-              width: 0.7,
+              color: AppTheme.borderColor,
+              width: 1,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
           child: Center(
             child: widget.isDelete
                 ? Icon(
                     Icons.backspace_outlined,
-                    color: Colors.white.withValues(alpha: 0.72),
+                    color: AppTheme.textSecondary,
                     size: 22,
                   )
                 : Text(
                     widget.label,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: AppTheme.textPrimary,
                       fontSize: 25,
                       fontWeight: FontWeight.w500,
                     ),
