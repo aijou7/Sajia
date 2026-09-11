@@ -7,7 +7,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/local/app_database.dart';
 import '../data/sync/sync_service.dart';
 import '../domain/entities/entities.dart';
-import '../domain/scheduled_promotion.dart';
 import 'onboarding_service.dart';
 
 // Infrastructure

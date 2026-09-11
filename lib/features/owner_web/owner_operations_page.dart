@@ -832,7 +832,7 @@ class _OwnerPromotionItem {
       _OwnerPromotionItem(
         id: json['id']?.toString() ?? '',
         productId: json['product_id']?.toString() ?? '',
-        promoPrice: _parseNumber(json['promo_price']?.toString()) ?? 0,
+        promoPrice: _parseNumber(json['promo_price']?.toString() ?? '') ?? 0,
       );
 }
 
@@ -2236,8 +2236,10 @@ class _PromotionEditorState extends State<_PromotionEditor> {
         });
         return;
       }
+      // [regularPrice] can only be non-null when this local lookup succeeded.
+      final selectedProduct = product!;
       items.add(_OwnerPromotionItemDraft(
-        productId: product.id,
+        productId: selectedProduct.id,
         promoPrice: promoPrice,
       ));
     }
@@ -2597,7 +2599,7 @@ String _timeOfDayLabel(TimeOfDay time) =>
     '${time.hour.toString().padLeft(2, '0')}.${time.minute.toString().padLeft(2, '0')}';
 
 Set<int> _weekdaysFromJson(dynamic raw) {
-  final values = raw is Iterable
+  final Iterable<dynamic> values = raw is Iterable
       ? raw
       : raw is String
           ? raw
