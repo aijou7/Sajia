@@ -2600,7 +2600,7 @@ String _timeOfDayLabel(TimeOfDay time) =>
 
 Set<int> _weekdaysFromJson(dynamic raw) {
   final Iterable<dynamic> values = raw is Iterable
-      ? raw
+      ? raw.cast<dynamic>()
       : raw is String
           ? raw
               .replaceAll(RegExp(r'[\[\]{}]'), '')
