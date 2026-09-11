@@ -618,6 +618,17 @@ class _CartItemTile extends ConsumerWidget {
                     Text(item.variantSummary!,
                         style: const TextStyle(
                             fontSize: 11, color: AppTheme.textSecondary)),
+                  if (item.promotionName != null)
+                    Text(
+                      '${item.promotionName} · Harga promo aktif',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.warning,
+                      ),
+                    ),
                   if (item.notes != null)
                     Text('Catatan: ${item.notes}',
                         style: const TextStyle(

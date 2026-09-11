@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/local/app_database.dart';
 import '../data/sync/sync_service.dart';
 import '../domain/entities/entities.dart';
+import '../domain/scheduled_promotion.dart';
 import 'onboarding_service.dart';
 
 // Infrastructure
@@ -119,6 +120,24 @@ final allProductsProvider = StreamProvider.autoDispose((ref) {
   return db.productDao.watchProducts(outletId);
 });
 
+/// Owner-created Happy Hour schedules cached locally by [SyncService].
+final scheduledPromotionsProvider = StreamProvider.autoDispose((ref) {
+  final db = ref.watch(databaseProvider);
+  final outletId = ref.watch(currentOutletIdProvider);
+  return db.promotionDao.watchPromotions(outletId);
+});
+
+/// Refreshes menu labels when a Happy Hour window starts or ends, even if the
+/// promotion data itself did not change. Carts keep the price snapshot from
+/// when an item was added; only newly added items use the new current window.
+final promotionClockProvider = StreamProvider.autoDispose((ref) async* {
+  yield DateTime.now();
+  yield* Stream<DateTime>.periodic(
+    const Duration(seconds: 30),
+    (_) => DateTime.now(),
+  );
+});
+
 final lowStockProvider = FutureProvider.autoDispose((ref) {
   final db = ref.watch(databaseProvider);
   final outletId = ref.watch(currentOutletIdProvider);
@@ -169,8 +188,10 @@ class CartNotifier extends WritableNotifier<Cart> {
   void addItem(CartItem item) {
     final existingIndex = state.items.indexWhere(
       (i) =>
-          i.productId == item.productId &&
-          i.variantSummary == item.variantSummary,
+        i.productId == item.productId &&
+          i.variantSummary == item.variantSummary &&
+          i.promotionId == item.promotionId &&
+          i.discount == item.discount,
     );
     if (existingIndex >= 0) {
       final updated = List<CartItem>.from(state.items);

@@ -298,6 +298,7 @@ class SyncService {
     await _pullCategories();
     await _pullProducts();
     await _pullProductVariants();
+    await _pullScheduledPromotions(outletIds);
     // A remote delete can leave the source row temporarily visible if the
     // tombstone write succeeded but deleting the source table is being
     // retried. Apply tombstones once more after all recovery pulls so such a
@@ -711,6 +712,53 @@ class SyncService {
     } catch (e) {
       _markRecoveryPullFailed();
       debugPrint('[SyncService] pull categories failed: $e');
+    }
+  }
+
+  /// Pull owner-managed price schedules into the local cache.
+  ///
+  /// This is recovery data rather than transaction data: a cashier can keep
+  /// selling at the last synced price while offline, and no checkout waits on
+  /// this request. A failed pull deliberately leaves the previous cache in
+  /// place instead of clearing a valid active promo.
+  Future<void> _pullScheduledPromotions(List<String> outletIds) async {
+    for (final outletId in outletIds) {
+      try {
+        final promotions = await _supabase
+            .from('scheduled_promotions')
+            .select()
+            .eq('outlet_id', outletId)
+            .order('priority', ascending: false)
+            .order('updated_at', ascending: false);
+        final promotionRows = (promotions as List? ?? const [])
+            .map(_asMap)
+            .where((row) => row['id'] != null)
+            .toList(growable: false);
+        final promotionIds = promotionRows
+            .map((row) => row['id'].toString())
+            .toList(growable: false);
+        final List<Map<String, dynamic>> items;
+        if (promotionIds.isEmpty) {
+          items = const [];
+        } else {
+          final itemResponse = await _supabase
+              .from('scheduled_promotion_items')
+              .select()
+              .inFilter('promotion_id', promotionIds);
+          items = (itemResponse as List? ?? const [])
+              .map(_asMap)
+              .toList(growable: false);
+        }
+        await _db.promotionDao.replacePromotionsForOutlet(
+          outletId: outletId,
+          promotions: promotionRows,
+          items: items,
+        );
+      } catch (e) {
+        // The schema migration is intentionally additive. Older servers must
+        // not prevent menu/account recovery while the feature is rolled out.
+        debugPrint('[SyncService] pull scheduled promotions failed: $e');
+      }
     }
   }
 

@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/numeric_input_formatter.dart';
 import '../../core/theme.dart';
 
 class OwnerOutletOption {
@@ -85,6 +86,45 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
         Future.value(const <dynamic>[]),
     ]);
 
+    // The promo migration is additive. Keep the existing operational
+    // dashboard usable during a staged rollout if an older Cloud project does
+    // not have the two new tables yet.
+    var promotionRows = const <Map<String, dynamic>>[];
+    var promotionItems = const <Map<String, dynamic>>[];
+    try {
+      promotionRows = ((await client
+                  .from('scheduled_promotions')
+                  .select()
+                  .eq('outlet_id', outlet.id)
+                  .order('priority', ascending: false)
+                  .order('updated_at', ascending: false)) as List)
+              .map((row) => Map<String, dynamic>.from(row as Map))
+              .toList(growable: false);
+      final promotionIds = promotionRows
+          .map((row) => row['id']?.toString())
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toList(growable: false);
+      if (promotionIds.isNotEmpty) {
+        promotionItems = ((await client
+                    .from('scheduled_promotion_items')
+                    .select()
+                    .inFilter('promotion_id', promotionIds)) as List)
+                .map((row) => Map<String, dynamic>.from(row as Map))
+                .toList(growable: false);
+      }
+    } catch (_) {
+      // The editor will simply remain empty until the migration is applied.
+    }
+    final promotionItemsByPromotion = <String, List<_OwnerPromotionItem>>{};
+    for (final item in promotionItems) {
+      final promotionId = item['promotion_id']?.toString();
+      if (promotionId == null || promotionId.isEmpty) continue;
+      promotionItemsByPromotion
+          .putIfAbsent(promotionId, () => [])
+          .add(_OwnerPromotionItem.fromJson(item));
+    }
+
     return _OperationsData(
       categories: (responses[0] as List)
           .map((row) => _OwnerCategory.fromJson(Map<String, dynamic>.from(row as Map)))
@@ -97,6 +137,14 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
           .toList(),
       expenses: (responses[3] as List)
           .map((row) => _OwnerExpense.fromJson(Map<String, dynamic>.from(row as Map)))
+          .toList(),
+      promotions: promotionRows
+          .map(
+            (row) => _OwnerScheduledPromotion.fromJson(
+              row,
+              promotionItemsByPromotion[row['id']?.toString()] ?? const [],
+            ),
+          )
           .toList(),
     );
   }
@@ -259,6 +307,46 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
     _reload();
   }
 
+  Future<void> _savePromotion({
+    required _OwnerScheduledPromotion? promotion,
+    required String name,
+    required TimeOfDay startTime,
+    required TimeOfDay endTime,
+    required Set<int> activeWeekdays,
+    required bool isActive,
+    required List<_OwnerPromotionItemDraft> items,
+  }) async {
+    final outletId = _outletId;
+    if (outletId == null) return;
+    await Supabase.instance.client.rpc(
+      'upsert_scheduled_promotion',
+      params: {
+        'p_id': promotion?.id ?? const Uuid().v4(),
+        'p_outlet_id': outletId,
+        'p_name': name.trim(),
+        'p_start_time': _timeOfDaySql(startTime),
+        'p_end_time': _timeOfDaySql(endTime),
+        'p_active_days': activeWeekdays.toList()..sort(),
+        'p_is_active': isActive,
+        'p_items': items
+            .map((item) => {
+                  'product_id': item.productId,
+                  'promo_price': item.promoPrice,
+                })
+            .toList(growable: false),
+      },
+    );
+    _reload();
+  }
+
+  Future<void> _deletePromotion(_OwnerScheduledPromotion promotion) async {
+    await Supabase.instance.client.rpc(
+      'delete_scheduled_promotion',
+      params: {'p_id': promotion.id},
+    );
+    _reload();
+  }
+
   @override
   Widget build(BuildContext context) => _OperationsPageShell(
         child: widget.outlets.isEmpty
@@ -386,6 +474,15 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
                                 message:
                                     'Aktifkan paket Cloud untuk cabang ini agar pengeluaran dan laporan keuangan tersinkron.',
                               ),
+                        _OperationsTab.promotions => _PromotionDataPanel(
+                            promotions: data.promotions,
+                            products: data.products,
+                            onAdd: () => _openPromotionEditor(context, data),
+                            onEdit: (promotion) =>
+                                _openPromotionEditor(context, data, promotion: promotion),
+                            onDelete: (promotion) =>
+                                _confirmDeletePromotion(context, promotion),
+                          ),
                       },
                     ],
                   );
@@ -456,21 +553,78 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
       builder: (_) => _ExpenseEditor(expense: expense, onSave: _saveExpense),
     );
   }
+
+  Future<void> _openPromotionEditor(
+    BuildContext context,
+    _OperationsData data, {
+    _OwnerScheduledPromotion? promotion,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _PromotionEditor(
+        promotion: promotion,
+        products: data.products,
+        onSave: _savePromotion,
+      ),
+    );
+  }
+
+  Future<void> _confirmDeletePromotion(
+    BuildContext context,
+    _OwnerScheduledPromotion promotion,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Hapus promo?'),
+        content: Text(
+          '“${promotion.name}” akan dihapus dan tidak lagi dipakai oleh kasir setelah sinkronisasi berikutnya.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _deletePromotion(promotion);
+    } on PostgrestException {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Promo belum dapat dihapus. Coba lagi.')),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Promo belum dapat dihapus. Periksa koneksi.')),
+      );
+    }
+  }
 }
 
-enum _OperationsTab { menu, tables, expenses }
+enum _OperationsTab { menu, tables, expenses, promotions }
 
 extension on _OperationsTab {
   String get label => switch (this) {
         _OperationsTab.menu => 'Menu',
         _OperationsTab.tables => 'Meja',
         _OperationsTab.expenses => 'Pengeluaran',
+        _OperationsTab.promotions => 'Promo',
       };
 
   IconData get icon => switch (this) {
         _OperationsTab.menu => Icons.restaurant_menu_rounded,
         _OperationsTab.tables => Icons.table_restaurant_outlined,
         _OperationsTab.expenses => Icons.receipt_long_outlined,
+        _OperationsTab.promotions => Icons.schedule_rounded,
       };
 }
 
@@ -502,19 +656,22 @@ class _OperationsData {
   final List<_OwnerProduct> products;
   final List<_OwnerTable> tables;
   final List<_OwnerExpense> expenses;
+  final List<_OwnerScheduledPromotion> promotions;
 
   const _OperationsData({
     required this.categories,
     required this.products,
     required this.tables,
     required this.expenses,
+    required this.promotions,
   });
 
   const _OperationsData.empty()
       : categories = const [],
         products = const [],
         tables = const [],
-        expenses = const [];
+        expenses = const [],
+        promotions = const [];
 }
 
 class _OwnerCategory {
@@ -624,6 +781,69 @@ class _OwnerExpense {
         occurredAt: DateTime.tryParse(json['occurred_at']?.toString() ?? '') ??
             DateTime.now(),
       );
+}
+
+class _OwnerScheduledPromotion {
+  const _OwnerScheduledPromotion({
+    required this.id,
+    required this.name,
+    required this.startTime,
+    required this.endTime,
+    required this.activeWeekdays,
+    required this.isActive,
+    required this.items,
+  });
+
+  final String id;
+  final String name;
+  final TimeOfDay startTime;
+  final TimeOfDay endTime;
+  final Set<int> activeWeekdays;
+  final bool isActive;
+  final List<_OwnerPromotionItem> items;
+
+  factory _OwnerScheduledPromotion.fromJson(
+    Map<String, dynamic> json,
+    List<_OwnerPromotionItem> items,
+  ) =>
+      _OwnerScheduledPromotion(
+        id: json['id']?.toString() ?? '',
+        name: json['name']?.toString() ?? 'Promo',
+        startTime: _timeOfDayFromSql(json['start_time']?.toString()),
+        endTime: _timeOfDayFromSql(json['end_time']?.toString()),
+        activeWeekdays: _weekdaysFromJson(json['active_days']),
+        isActive: json['is_active'] != false,
+        items: List.unmodifiable(items),
+      );
+}
+
+class _OwnerPromotionItem {
+  const _OwnerPromotionItem({
+    required this.id,
+    required this.productId,
+    required this.promoPrice,
+  });
+
+  final String id;
+  final String productId;
+  final double promoPrice;
+
+  factory _OwnerPromotionItem.fromJson(Map<String, dynamic> json) =>
+      _OwnerPromotionItem(
+        id: json['id']?.toString() ?? '',
+        productId: json['product_id']?.toString() ?? '',
+        promoPrice: _parseNumber(json['promo_price']?.toString()) ?? 0,
+      );
+}
+
+class _OwnerPromotionItemDraft {
+  const _OwnerPromotionItemDraft({
+    required this.productId,
+    required this.promoPrice,
+  });
+
+  final String productId;
+  final double promoPrice;
 }
 
 class _MenuDataPanel extends StatelessWidget {
@@ -888,6 +1108,134 @@ class _ExpenseDataPanel extends StatelessWidget {
             ),
         ],
       );
+}
+
+class _PromotionDataPanel extends StatelessWidget {
+  const _PromotionDataPanel({
+    required this.promotions,
+    required this.products,
+    required this.onAdd,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final List<_OwnerScheduledPromotion> promotions;
+  final List<_OwnerProduct> products;
+  final VoidCallback onAdd;
+  final ValueChanged<_OwnerScheduledPromotion> onEdit;
+  final ValueChanged<_OwnerScheduledPromotion> onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final productNames = {for (final product in products) product.id: product.name};
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _PanelHeader(
+          title: 'Promo terjadwal',
+          subtitle:
+              'Atur Happy Hour. Harga promo berlaku otomatis di kasir pada jam yang dipilih.',
+          actionLabel: 'Buat promo',
+          actionIcon: Icons.add_alarm_rounded,
+          onAction: products.isEmpty ? () {} : onAdd,
+        ),
+        if (products.isEmpty) ...[
+          const SizedBox(height: 12),
+          const _OwnerOperationsEmpty(
+            icon: Icons.restaurant_menu_outlined,
+            title: 'Tambahkan menu dulu',
+            message: 'Promo dibuat untuk menu yang sudah tersedia.',
+          ),
+        ] else ...[
+          const SizedBox(height: 12),
+          Card(
+            color: const Color(0xFFFFFBEB),
+            child: const Padding(
+              padding: EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded, color: AppTheme.warning),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Kasir memakai satu promo saja per menu. Bila jadwal bertabrakan, promo yang terakhir disimpan yang dipakai. Harga item yang sudah masuk keranjang tetap terkunci.',
+                      style: TextStyle(fontSize: 12, height: 1.35),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (promotions.isEmpty)
+            const _OwnerOperationsEmpty(
+              icon: Icons.schedule_outlined,
+              title: 'Belum ada promo aktif',
+              message: 'Contoh: Happy Hour 08.00–11.00 untuk Kopi Susu.',
+            )
+          else
+            Card(
+              child: Column(
+                children: [
+                  for (var index = 0; index < promotions.length; index++) ...[
+                    ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 8,
+                      ),
+                      leading: CircleAvatar(
+                        backgroundColor: AppTheme.warning.withValues(alpha: .12),
+                        child: const Icon(Icons.local_offer_outlined,
+                            color: AppTheme.warning),
+                      ),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(promotions[index].name,
+                                style: const TextStyle(fontWeight: FontWeight.w800)),
+                          ),
+                          _StatusPill(
+                            label: promotions[index].isActive ? 'Aktif' : 'Nonaktif',
+                            active: promotions[index].isActive,
+                          ),
+                        ],
+                      ),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '${_weekdayLabel(promotions[index].activeWeekdays)} · '
+                          '${_timeOfDayLabel(promotions[index].startTime)}–${_timeOfDayLabel(promotions[index].endTime)}\n'
+                          '${_promotionProductsLabel(promotions[index], productNames)}',
+                        ),
+                      ),
+                      isThreeLine: true,
+                      trailing: Wrap(
+                        children: [
+                          IconButton(
+                            tooltip: 'Ubah promo',
+                            onPressed: () => onEdit(promotions[index]),
+                            icon: const Icon(Icons.edit_outlined),
+                          ),
+                          IconButton(
+                            tooltip: 'Hapus promo',
+                            onPressed: () => onDelete(promotions[index]),
+                            icon: const Icon(Icons.delete_outline,
+                                color: AppTheme.danger),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (index < promotions.length - 1)
+                      const Divider(height: 1, indent: 72),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ],
+    );
+  }
 }
 
 class _PanelHeader extends StatelessWidget {
@@ -1762,6 +2110,351 @@ class _ExpenseEditorState extends State<_ExpenseEditor> {
       );
 }
 
+class _PromotionEditor extends StatefulWidget {
+  const _PromotionEditor({
+    required this.promotion,
+    required this.products,
+    required this.onSave,
+  });
+
+  final _OwnerScheduledPromotion? promotion;
+  final List<_OwnerProduct> products;
+  final Future<void> Function({
+    required _OwnerScheduledPromotion? promotion,
+    required String name,
+    required TimeOfDay startTime,
+    required TimeOfDay endTime,
+    required Set<int> activeWeekdays,
+    required bool isActive,
+    required List<_OwnerPromotionItemDraft> items,
+  }) onSave;
+
+  @override
+  State<_PromotionEditor> createState() => _PromotionEditorState();
+}
+
+class _PromotionEditorState extends State<_PromotionEditor> {
+  late final TextEditingController _name;
+  final Map<String, TextEditingController> _promoPrices = {};
+  late TimeOfDay _startTime;
+  late TimeOfDay _endTime;
+  late Set<int> _activeWeekdays;
+  late bool _isActive;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.promotion?.name ?? 'Happy Hour');
+    _startTime = widget.promotion?.startTime ?? const TimeOfDay(hour: 8, minute: 0);
+    _endTime = widget.promotion?.endTime ?? const TimeOfDay(hour: 11, minute: 0);
+    _activeWeekdays = Set<int>.from(
+      widget.promotion?.activeWeekdays ?? const {1, 2, 3, 4, 5, 6, 7},
+    );
+    _isActive = widget.promotion?.isActive ?? true;
+    for (final item in widget.promotion?.items ?? const <_OwnerPromotionItem>[]) {
+      _promoPrices[item.productId] = TextEditingController(
+        text: _numberLabel(item.promoPrice.toString()),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    for (final controller in _promoPrices.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  int get _startMinutes => _startTime.hour * 60 + _startTime.minute;
+  int get _endMinutes => _endTime.hour * 60 + _endTime.minute;
+
+  Future<void> _pickTime({required bool start}) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: start ? _startTime : _endTime,
+      helpText: start ? 'Jam mulai promo' : 'Jam selesai promo',
+      cancelText: 'Batal',
+      confirmText: 'Pilih',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (start) {
+        _startTime = picked;
+      } else {
+        _endTime = picked;
+      }
+    });
+  }
+
+  void _toggleProduct(_OwnerProduct product, bool selected) {
+    setState(() {
+      if (selected) {
+        _promoPrices.putIfAbsent(
+          product.id,
+          () => TextEditingController(text: _numberLabel(product.price)),
+        );
+      } else {
+        _promoPrices.remove(product.id)?.dispose();
+      }
+    });
+  }
+
+  Future<void> _submit() async {
+    final name = _name.text.trim();
+    if (name.isEmpty) {
+      setState(() => _error = 'Nama promo wajib diisi.');
+      return;
+    }
+    if (_activeWeekdays.isEmpty) {
+      setState(() => _error = 'Pilih minimal satu hari promo.');
+      return;
+    }
+    if (_endMinutes <= _startMinutes) {
+      setState(() => _error = 'Jam selesai harus setelah jam mulai.');
+      return;
+    }
+    if (_promoPrices.isEmpty) {
+      setState(() => _error = 'Pilih minimal satu menu untuk promo ini.');
+      return;
+    }
+
+    final productsById = {for (final product in widget.products) product.id: product};
+    final items = <_OwnerPromotionItemDraft>[];
+    for (final entry in _promoPrices.entries) {
+      final product = productsById[entry.key];
+      final promoPrice = _parseNumber(entry.value.text);
+      final regularPrice = product == null ? null : _parseNumber(product.price);
+      if (promoPrice == null || regularPrice == null || promoPrice >= regularPrice) {
+        setState(() {
+          _error = product == null
+              ? 'Salah satu menu promo sudah tidak tersedia. Tutup lalu buka ulang data.'
+              : 'Harga promo ${product.name} harus lebih rendah dari harga normal.';
+        });
+        return;
+      }
+      items.add(_OwnerPromotionItemDraft(
+        productId: product.id,
+        promoPrice: promoPrice,
+      ));
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.onSave(
+        promotion: widget.promotion,
+        name: name,
+        startTime: _startTime,
+        endTime: _endTime,
+        activeWeekdays: _activeWeekdays,
+        isActive: _isActive,
+        items: items,
+      );
+      if (mounted) Navigator.of(context).pop();
+    } on PostgrestException {
+      if (mounted) {
+        setState(() => _error =
+            'Promo belum dapat disimpan. Pastikan harga promo lebih rendah dari harga menu.');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Promo belum dapat disimpan. Periksa koneksi.');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(widget.promotion == null ? 'Buat promo terjadwal' : 'Ubah promo'),
+        content: SizedBox(
+          width: 580,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _name,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Nama promo',
+                    hintText: 'Contoh: Happy Hour Pagi',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text('Waktu berlaku',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _saving ? null : () => _pickTime(start: true),
+                      icon: const Icon(Icons.play_arrow_rounded),
+                      label: Text('Mulai ${_timeOfDayLabel(_startTime)}'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _saving ? null : () => _pickTime(start: false),
+                      icon: const Icon(Icons.stop_rounded),
+                      label: Text('Selesai ${_timeOfDayLabel(_endTime)}'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text('Hari berlaku',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final day in _promotionWeekdays)
+                      FilterChip(
+                        label: Text(day.shortLabel),
+                        selected: _activeWeekdays.contains(day.weekday),
+                        onSelected: _saving
+                            ? null
+                            : (selected) => setState(() {
+                                  if (selected) {
+                                    _activeWeekdays.add(day.weekday);
+                                  } else {
+                                    _activeWeekdays.remove(day.weekday);
+                                  }
+                                }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  value: _isActive,
+                  onChanged: _saving ? null : (value) => setState(() => _isActive = value),
+                  title: const Text('Promo aktif'),
+                  subtitle: const Text('Promo nonaktif tersimpan, tetapi tidak dipakai kasir.'),
+                ),
+                const SizedBox(height: 8),
+                const Text('Menu dan harga promo',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                const Text(
+                  'Harga promo berlaku untuk harga dasar menu. Tambahan varian tetap ditambahkan seperti biasa.',
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                for (final product in widget.products)
+                  _PromotionProductRow(
+                    product: product,
+                    controller: _promoPrices[product.id],
+                    enabled: !_saving,
+                    onSelected: (selected) => _toggleProduct(product, selected),
+                  ),
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(_error!,
+                        style: const TextStyle(color: AppTheme.danger)),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : () => Navigator.of(context).pop(),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: _saving ? null : _submit,
+            child: Text(_saving ? 'Menyimpan...' : 'Simpan promo'),
+          ),
+        ],
+      );
+}
+
+class _PromotionProductRow extends StatelessWidget {
+  const _PromotionProductRow({
+    required this.product,
+    required this.controller,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  final _OwnerProduct product;
+  final TextEditingController? controller;
+  final bool enabled;
+  final ValueChanged<bool> onSelected;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.fromLTRB(8, 4, 10, 8),
+        decoration: BoxDecoration(
+          color: controller == null ? AppTheme.surface : const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.subtleBorder),
+        ),
+        child: Column(
+          children: [
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: controller != null,
+              onChanged: enabled ? (value) => onSelected(value ?? false) : null,
+              title: Text(product.name,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+              subtitle: Text('Harga normal ${_rupiah(product.price)}',
+                  style: const TextStyle(fontSize: 11)),
+            ),
+            if (controller != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 4, right: 4, bottom: 2),
+                child: TextField(
+                  controller: controller,
+                  enabled: enabled,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: const [
+                    NormalizedNumberInputFormatter(allowDecimal: true),
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'Harga promo',
+                    prefixText: 'Rp ',
+                    isDense: true,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+}
+
+class _PromotionWeekday {
+  const _PromotionWeekday(this.weekday, this.shortLabel, this.label);
+  final int weekday;
+  final String shortLabel;
+  final String label;
+}
+
+const _promotionWeekdays = <_PromotionWeekday>[
+  _PromotionWeekday(1, 'Sen', 'Senin'),
+  _PromotionWeekday(2, 'Sel', 'Selasa'),
+  _PromotionWeekday(3, 'Rab', 'Rabu'),
+  _PromotionWeekday(4, 'Kam', 'Kamis'),
+  _PromotionWeekday(5, 'Jum', 'Jumat'),
+  _PromotionWeekday(6, 'Sab', 'Sabtu'),
+  _PromotionWeekday(7, 'Min', 'Minggu'),
+];
+
 class _OperationsPageShell extends StatelessWidget {
   final Widget child;
   const _OperationsPageShell({required this.child});
@@ -1886,3 +2579,59 @@ String _tableStatusLabel(String status) => switch (status) {
       'cleaning' => 'Dibersihkan',
       _ => 'Tersedia',
     };
+
+TimeOfDay _timeOfDayFromSql(String? raw) {
+  final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(raw?.trim() ?? '');
+  final hour = int.tryParse(match?.group(1) ?? '');
+  final minute = int.tryParse(match?.group(2) ?? '');
+  if (hour == null || minute == null || hour > 23 || minute > 59) {
+    return const TimeOfDay(hour: 0, minute: 0);
+  }
+  return TimeOfDay(hour: hour, minute: minute);
+}
+
+String _timeOfDaySql(TimeOfDay time) =>
+    '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:00';
+
+String _timeOfDayLabel(TimeOfDay time) =>
+    '${time.hour.toString().padLeft(2, '0')}.${time.minute.toString().padLeft(2, '0')}';
+
+Set<int> _weekdaysFromJson(dynamic raw) {
+  final values = raw is Iterable
+      ? raw
+      : raw is String
+          ? raw
+              .replaceAll(RegExp(r'[\[\]{}]'), '')
+              .split(',')
+              .where((value) => value.trim().isNotEmpty)
+          : const <dynamic>[];
+  final days = values
+      .map((value) => int.tryParse(value.toString()))
+      .whereType<int>()
+      .where((value) => value >= 1 && value <= 7)
+      .toSet();
+  return days.isEmpty ? const {1, 2, 3, 4, 5, 6, 7} : days;
+}
+
+String _weekdayLabel(Set<int> days) {
+  if (days.length == 7) return 'Setiap hari';
+  return _promotionWeekdays
+      .where((weekday) => days.contains(weekday.weekday))
+      .map((weekday) => weekday.shortLabel)
+      .join(', ');
+}
+
+String _promotionProductsLabel(
+  _OwnerScheduledPromotion promotion,
+  Map<String, String> productNames,
+) {
+  if (promotion.items.isEmpty) return 'Tidak ada menu';
+  final labels = promotion.items
+      .map((item) {
+        final name = productNames[item.productId] ?? 'Menu dihapus';
+        return '$name ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(item.promoPrice)}';
+      })
+      .toList(growable: false);
+  if (labels.length <= 2) return labels.join(' · ');
+  return '${labels.take(2).join(' · ')} +${labels.length - 2} menu';
+}

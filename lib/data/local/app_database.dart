@@ -10,6 +10,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 import '../../core/database_encryption_service.dart';
 import 'tables/app_tables.dart';
 import 'daos/product_dao.dart';
+import 'daos/promotion_dao.dart';
 import 'daos/order_dao.dart';
 import 'daos/session_dao.dart';
 import 'daos/sync_dao.dart';
@@ -47,12 +48,19 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
+
+  /// Scheduled promos are cache-only records sourced from the owner portal.
+  /// They intentionally stay outside Drift's generated schema because the
+  /// cashier never writes them; this keeps the rollout additive for existing
+  /// encrypted databases while retaining an offline-readable cache.
+  late final PromotionDao promotionDao = PromotionDao(this);
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) async {
           await m.createAll();
+          await _createPromotionCacheTables();
           await _insertDefaults();
         },
         onUpgrade: (m, from, to) async {
@@ -70,6 +78,9 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(orderItems, orderItems.categoryId);
             await m.addColumn(orderItems, orderItems.categoryName);
           }
+          if (from < 6) {
+            await _createPromotionCacheTables();
+          }
         },
         beforeOpen: (details) async {
           // Enable foreign keys
@@ -78,6 +89,44 @@ class AppDatabase extends _$AppDatabase {
           await customStatement('PRAGMA journal_mode = WAL');
         },
       );
+
+  Future<void> _createPromotionCacheTables() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS scheduled_promotions (
+        id TEXT PRIMARY KEY,
+        outlet_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        active_days TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        priority INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS scheduled_promotion_items (
+        id TEXT PRIMARY KEY,
+        promotion_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        promo_price TEXT NOT NULL,
+        FOREIGN KEY (promotion_id) REFERENCES scheduled_promotions(id)
+          ON DELETE CASCADE
+      )
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_scheduled_promotions_outlet
+      ON scheduled_promotions(outlet_id, is_active, priority, updated_at)
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_scheduled_promotion_items_promotion
+      ON scheduled_promotion_items(promotion_id)
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_scheduled_promotion_items_product
+      ON scheduled_promotion_items(product_id)
+    ''');
+  }
 
   /// Seed data default saat pertama install
   Future<void> _insertDefaults() async {
@@ -107,6 +156,7 @@ class AppDatabase extends _$AppDatabase {
     if (removedOutletIds.isEmpty) return;
 
     await transaction(() async {
+      await promotionDao.deleteForOutletIds(removedOutletIds);
       final removedOrders = await (select(orders)
             ..where((order) => order.outletId.isIn(removedOutletIds)))
           .get();

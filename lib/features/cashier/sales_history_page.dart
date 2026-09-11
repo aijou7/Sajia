@@ -373,25 +373,40 @@ class _OrderDetail extends ConsumerWidget {
           const Divider(height: 1),
           const SizedBox(height: 10),
           // Items
-          ...items.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  children: [
-                    Text('${item.quantity}x ',
-                        style: const TextStyle(
-                            color: AppTheme.primary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12)),
-                    Expanded(
-                      child: Text(item.productName,
-                          style: const TextStyle(fontSize: 12)),
+          ...items.map((item) {
+            final itemDiscount = double.tryParse(item.discount) ?? 0;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${item.quantity}x ',
+                      style: const TextStyle(
+                          color: AppTheme.primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12)),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(item.productName,
+                            style: const TextStyle(fontSize: 12)),
+                        if (itemDiscount > 0)
+                          const Text('Harga promo',
+                              style: TextStyle(
+                                  color: AppTheme.warning,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700)),
+                      ],
                     ),
-                    Text(item.subtotal,
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w500)),
-                  ],
-                ),
-              )),
+                  ),
+                  Text(item.subtotal,
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w500)),
+                ],
+              ),
+            );
+          }),
           const SizedBox(height: 8),
           const Divider(height: 1),
           const SizedBox(height: 8),
@@ -504,7 +519,10 @@ class _OrderDetail extends ConsumerWidget {
                   name: item.productName,
                   variantSummary: item.variantSummary,
                   quantity: double.tryParse(item.quantity) ?? 0,
-                  unitPrice: double.tryParse(item.unitPrice) ?? 0,
+                  unitPrice: ((double.tryParse(item.unitPrice) ?? 0) -
+                          (double.tryParse(item.discount) ?? 0))
+                      .clamp(0.0, double.infinity)
+                      .toDouble(),
                   subtotal: double.tryParse(item.subtotal) ?? 0,
                 ))
             .toList(),

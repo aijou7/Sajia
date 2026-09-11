@@ -279,7 +279,12 @@ class _PaymentSheetState extends ConsumerState<PaymentSheet> {
                   name: i.productName,
                   variantSummary: i.variantSummary,
                   quantity: i.quantity,
-                  unitPrice: i.unitPrice,
+                  // The order item retains the normal unit price plus its
+                  // per-item promotion discount. The receipt must show the
+                  // final paid price so it always matches the line subtotal.
+                  unitPrice: (i.unitPrice - i.discount)
+                      .clamp(0.0, double.infinity)
+                      .toDouble(),
                   subtotal: i.subtotal,
                 ))
             .toList(),

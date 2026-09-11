@@ -11,6 +11,7 @@ import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
 import '../../domain/entities/entities.dart';
 import '../../domain/product_variant_options.dart';
+import '../../domain/scheduled_promotion.dart';
 import '../shared/polish_widgets.dart';
 import '../shared/product_image.dart';
 import 'cart_panel.dart';
@@ -207,16 +208,28 @@ class _CashierPageState extends ConsumerState<CashierPage> {
       }
     }
 
+    final promotion = resolveScheduledPromotion(
+      promotions:
+          ref.read(scheduledPromotionsProvider).value ?? const <ScheduledPromotion>[],
+      productId: product.id,
+      basePrice: price,
+      localNow: DateTime.now(),
+    );
+    final promotionDiscount = promotion?.discountForBasePrice(price) ?? 0;
+
     ref.read(cartProvider.notifier).addItem(CartItem(
           productId: product.id,
           productName: product.name,
           unitPrice: price + variantPriceDelta,
+          discount: promotionDiscount,
           unitCogs: double.tryParse(product.cogs) ?? 0,
           variantSummary: variantSummary,
           trackStock: product.trackStock,
           availableStock: product.trackStock ? availableStock : null,
           categoryId: category?.id,
           categoryName: category?.name,
+          promotionId: promotion?.promotion.id,
+          promotionName: promotion?.promotion.name,
         ));
     HapticFeedback.selectionClick();
   }
@@ -909,6 +922,9 @@ class _MenuGrid extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final productsAsync = ref.watch(availableProductsProvider);
+    final promotions = ref.watch(scheduledPromotionsProvider).value ??
+        const <ScheduledPromotion>[];
+    final now = ref.watch(promotionClockProvider).value ?? DateTime.now();
     final w = MediaQuery.of(context).size.width;
     final cols = w > 900
         ? 4
@@ -949,8 +965,21 @@ class _MenuGrid extends ConsumerWidget {
             childAspectRatio: 0.82,
           ),
           itemCount: filtered.length,
-          itemBuilder: (_, i) =>
-              _MenuCard(product: filtered[i], onTap: () => onAdd(filtered[i])),
+          itemBuilder: (_, i) {
+            final product = filtered[i];
+            final regularPrice = double.tryParse(product.price) ?? 0;
+            final promotion = resolveScheduledPromotion(
+              promotions: promotions,
+              productId: product.id,
+              basePrice: regularPrice,
+              localNow: now,
+            );
+            return _MenuCard(
+              product: product,
+              promotion: promotion,
+              onTap: () => onAdd(product),
+            );
+          },
         );
       },
       loading: () => GridView.builder(
@@ -975,9 +1004,14 @@ class _MenuGrid extends ConsumerWidget {
 // ── MENU CARD ─────────────────────────────────────────────────
 class _MenuCard extends StatefulWidget {
   final Product product;
+  final ScheduledPromotionMatch? promotion;
   final VoidCallback onTap;
 
-  const _MenuCard({required this.product, required this.onTap});
+  const _MenuCard({
+    required this.product,
+    required this.promotion,
+    required this.onTap,
+  });
 
   @override
   State<_MenuCard> createState() => _MenuCardState();
@@ -989,6 +1023,7 @@ class _MenuCardState extends State<_MenuCard> {
   @override
   Widget build(BuildContext context) {
     final price = double.tryParse(widget.product.price) ?? 0;
+    final promoPrice = widget.promotion?.item.promoPrice;
     final stock = double.tryParse(widget.product.stock) ?? 0;
     final isOutOfStock = widget.product.trackStock && stock <= 0;
 
@@ -1063,6 +1098,30 @@ class _MenuCardState extends State<_MenuCard> {
                               ),
                             ),
                           ),
+                        if (promoPrice != null)
+                          Positioned(
+                            left: 8,
+                            bottom: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.warning,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Text(
+                                'PROMO',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: .3,
+                                ),
+                              ),
+                            ),
+                          ),
                         Positioned(
                           right: 8,
                           top: 8,
@@ -1113,27 +1172,53 @@ class _MenuCardState extends State<_MenuCard> {
                             ),
                           ),
                           const Spacer(),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  price.toRupiah,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppTheme.primary,
-                                  ),
-                                ),
-                              ),
-                              const Icon(
-                                Icons.touch_app_rounded,
-                                color: Color(0xFFB9C4D2),
-                                size: AppTheme.iconCompact,
-                              ),
-                            ],
-                          ),
+                          Row(children: [
+                            Expanded(
+                              child: promoPrice == null
+                                  ? Text(
+                                      price.toRupiah,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppTheme.primary,
+                                      ),
+                                    )
+                                  : Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          price.toRupiah,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            color: AppTheme.textSecondary,
+                                            decoration:
+                                                TextDecoration.lineThrough,
+                                          ),
+                                        ),
+                                        Text(
+                                          promoPrice.toRupiah,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w900,
+                                            color: AppTheme.warning,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                            const Icon(
+                              Icons.touch_app_rounded,
+                              color: Color(0xFFB9C4D2),
+                              size: AppTheme.iconCompact,
+                            ),
+                          ]),
                         ],
                       ),
                     ),

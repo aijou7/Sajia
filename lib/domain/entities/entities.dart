@@ -13,6 +13,8 @@ class CartItem extends Equatable {
   final double? availableStock;
   final String? categoryId;
   final String? categoryName;
+  final String? promotionId;
+  final String? promotionName;
 
   const CartItem({
     required this.productId,
@@ -27,6 +29,8 @@ class CartItem extends Equatable {
     this.availableStock,
     this.categoryId,
     this.categoryName,
+    this.promotionId,
+    this.promotionName,
   });
 
   double get subtotal => (unitPrice - discount) * quantity;
@@ -45,6 +49,8 @@ class CartItem extends Equatable {
         availableStock: availableStock,
         categoryId: categoryId,
         categoryName: categoryName,
+        promotionId: promotionId,
+        promotionName: promotionName,
       );
 
   @override
@@ -61,6 +67,8 @@ class CartItem extends Equatable {
         availableStock,
         categoryId,
         categoryName,
+        promotionId,
+        promotionName,
       ];
 }
 

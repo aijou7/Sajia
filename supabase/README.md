@@ -24,6 +24,9 @@ supabase/migrations/20260808_sync_inventory_and_media_hardening.sql
 supabase/migrations/20260808120000_payment_and_owner_hardening.sql
 supabase/migrations/20260808130000_sync_relationship_tombstones.sql
 supabase/migrations/20260828120000_platform_entitlement_admin.sql
+supabase/migrations/20260829110000_owner_stock_adjustment_cas.sql
+supabase/migrations/20260830120000_remove_legacy_placeholder_outlet.sql
+supabase/migrations/20260912090000_scheduled_promotions.sql
 ```
 
 Dashboard pengelolaan paket dan cara mengaktifkan admin pertama dijelaskan di
