@@ -4,6 +4,9 @@ verify_jwt = false
 [functions.get-plan-status]
 verify_jwt = false
 
+[functions.get-plan-order-status]
+verify_jwt = false
+
 [functions.create-owner-outlet]
 verify_jwt = false
 

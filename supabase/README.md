@@ -43,8 +43,9 @@ supabase secrets set \
   MIDTRANS_IS_PRODUCTION=false \
   SAJIA_PRO_LIFETIME_PRICE=149000 \
   SAJIA_CLOUD_MONTHLY_PRICE=10000 \
-  SAJIA_PAYMENT_SUCCESS_URL=https://sajia-owner.pages.dev/payment/success \
-  SAJIA_PAYMENT_FAILURE_URL=https://sajia-owner.pages.dev/payment/failed
+  SAJIA_PAYMENT_WEB_ORIGINS=https://www.aijoutek.pro,https://aijoutek.pro \
+  SAJIA_PAYMENT_SUCCESS_URL=https://www.aijoutek.pro/sajia/payment/success \
+  SAJIA_PAYMENT_FAILURE_URL=https://www.aijoutek.pro/sajia/payment/failed
 ```
 
 Saat production, ganti `MIDTRANS_SERVER_KEY` ke production key dan set
@@ -70,12 +71,18 @@ supabase secrets set \
 `PLAY_INTEGRITY_ENFORCE_PAYMENT=true` tanpa Dart define atau credential Google
 yang benar akan menolak seluruh checkout secara fail-closed. Untuk APK sandbox
 yang belum didistribusikan melalui Google Play, biarkan flag tersebut `false`.
+Checkout web tidak memiliki bukti Play Integrity dan hanya diterima jika header
+`Origin` cocok persis dengan salah satu nilai `SAJIA_PAYMENT_WEB_ORIGINS`.
+Ini hanya pemisah channel; otorisasi tetap menggunakan JWT owner dan pemeriksaan
+kepemilikan outlet di server. Jangan masukkan wildcard atau origin yang tidak
+dikendalikan Aijou.
 
 ## 3. Deploy functions
 
 ```bash
 supabase functions deploy midtrans-webhook --no-verify-jwt
 supabase functions deploy get-plan-status --no-verify-jwt
+supabase functions deploy get-plan-order-status --no-verify-jwt
 supabase functions deploy create-owner-outlet --no-verify-jwt
 supabase functions deploy create-plan-checkout --no-verify-jwt
 ```
@@ -83,7 +90,7 @@ supabase functions deploy create-plan-checkout --no-verify-jwt
 Deploy webhook lebih dulu dan checkout terakhir supaya tidak ada jendela waktu
 di mana pembayaran dapat dibuat tetapi callback belum tersedia.
 
-Keempat function di atas tetap memverifikasi sesi/signature sendiri. Jangan
+Semua function di atas tetap memverifikasi sesi/signature sendiri. Jangan
 deploy ulang function legacy `create-pro-checkout`, `get-pro-status`, atau
 `xendit-webhook`; hapus deployment lama dan callback Xendit sebelum production.
 

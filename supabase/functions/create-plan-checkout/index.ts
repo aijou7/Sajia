@@ -21,6 +21,16 @@ const json = (body: Record<string, unknown>, status = 200) =>
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
+const isAllowedWebCheckoutOrigin = (req: Request) => {
+  const origin = req.headers.get("origin")?.trim();
+  if (!origin) return false;
+  const allowedOrigins = String(Deno.env.get("SAJIA_PAYMENT_WEB_ORIGINS") || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return allowedOrigins.includes(origin);
+};
+
 const plans = {
   PRO_LIFETIME: {
     envKey: "SAJIA_PRO_LIFETIME_PRICE",
@@ -115,26 +125,32 @@ const handler = async (req: Request) => {
   if ("response" in auth) return auth.response;
   const ownerEmail = auth.email;
 
-  const expectedIntegrityHash = await checkoutIntegrityHash({
-    outletId,
-    planCode,
-  });
-  const integrity = await verifyPlayIntegrity({
-    integrityToken: typeof payload.integrity_token === "string"
-      ? payload.integrity_token
-      : undefined,
-    providedRequestHash: typeof payload.integrity_request_hash === "string"
-      ? payload.integrity_request_hash
-      : undefined,
-    expectedRequestHash: expectedIntegrityHash,
-    enforceEnv: "PLAY_INTEGRITY_ENFORCE_PAYMENT",
-  }).catch((error) => ({
-    ok: false,
-    enforced: true,
-    error: `Verifikasi Play Integrity gagal: ${errorMessage(error)}`,
-  }));
-  if (!integrity.ok) {
-    return json({ error: integrity.error || "Aplikasi tidak lolos verifikasi" }, 403);
+  // The authenticated first-party website cannot produce an Android Play
+  // Integrity proof. Its exact origin must be explicitly configured. Origin is
+  // only a channel gate; owner JWT validation and server-side outlet ownership
+  // remain the authorization boundary below.
+  if (!isAllowedWebCheckoutOrigin(req)) {
+    const expectedIntegrityHash = await checkoutIntegrityHash({
+      outletId,
+      planCode,
+    });
+    const integrity = await verifyPlayIntegrity({
+      integrityToken: typeof payload.integrity_token === "string"
+        ? payload.integrity_token
+        : undefined,
+      providedRequestHash: typeof payload.integrity_request_hash === "string"
+        ? payload.integrity_request_hash
+        : undefined,
+      expectedRequestHash: expectedIntegrityHash,
+      enforceEnv: "PLAY_INTEGRITY_ENFORCE_PAYMENT",
+    }).catch((error) => ({
+      ok: false,
+      enforced: true,
+      error: `Verifikasi Play Integrity gagal: ${errorMessage(error)}`,
+    }));
+    if (!integrity.ok) {
+      return json({ error: integrity.error || "Aplikasi tidak lolos verifikasi" }, 403);
+    }
   }
 
   const amount = Number(Deno.env.get(plan.envKey) || plan.defaultPrice);
@@ -185,14 +201,16 @@ const handler = async (req: Request) => {
   }
 
   const successUrl =
-    Deno.env.get("SAJIA_PAYMENT_SUCCESS_URL") || "https://sajia-owner.pages.dev/payment/success";
+    Deno.env.get("SAJIA_PAYMENT_SUCCESS_URL") ||
+    "https://www.aijoutek.pro/sajia/payment/success";
   const failureUrl =
-    Deno.env.get("SAJIA_PAYMENT_FAILURE_URL") || "https://sajia-owner.pages.dev/payment/failed";
+    Deno.env.get("SAJIA_PAYMENT_FAILURE_URL") ||
+    "https://www.aijoutek.pro/sajia/payment/failed";
   const recentSince = new Date(Date.now() - 15 * 60 * 1000).toISOString();
   const ownerOutletIds = (ownerOutlets || []).map((ownedOutlet) => String(ownedOutlet.id));
   let pendingQuery = supabase
     .from("plan_orders")
-    .select("checkout_url, amount, currency, created_at")
+    .select("id, provider_order_id, checkout_url, amount, currency, created_at")
     .eq("plan_code", planCode)
     .eq("payment_provider", "MIDTRANS")
     .eq("provider_environment", midtrans.environment)
@@ -210,6 +228,8 @@ const handler = async (req: Request) => {
     return json({
       checkout_url: recentPending.checkout_url,
       success_url: successUrl,
+      order_id: recentPending.id,
+      order_reference: recentPending.provider_order_id,
       amount: Number(recentPending.amount),
       currency: recentPending.currency || "IDR",
       provider: "MIDTRANS",
@@ -330,6 +350,8 @@ const handler = async (req: Request) => {
   return json({
     checkout_url: snap.redirect_url,
     success_url: successUrl,
+    order_id: paymentOrderId,
+    order_reference: externalId,
     amount,
     currency: "IDR",
     provider: "MIDTRANS",
