@@ -2599,14 +2599,17 @@ String _timeOfDayLabel(TimeOfDay time) =>
     '${time.hour.toString().padLeft(2, '0')}.${time.minute.toString().padLeft(2, '0')}';
 
 Set<int> _weekdaysFromJson(dynamic raw) {
-  final Iterable<dynamic> values = raw is Iterable
-      ? raw.cast<dynamic>()
-      : raw is String
-          ? raw
-              .replaceAll(RegExp(r'[\[\]{}]'), '')
-              .split(',')
-              .where((value) => value.trim().isNotEmpty)
-          : const <dynamic>[];
+  final Iterable<dynamic> values;
+  if (raw is Iterable) {
+    values = raw.cast<dynamic>();
+  } else if (raw is String) {
+    values = raw
+        .replaceAll(RegExp(r'[\[\]{}]'), '')
+        .split(',')
+        .where((value) => value.trim().isNotEmpty);
+  } else {
+    values = const <dynamic>[];
+  }
   final days = values
       .map((value) => int.tryParse(value.toString()))
       .whereType<int>()
