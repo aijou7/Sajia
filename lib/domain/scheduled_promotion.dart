@@ -40,7 +40,8 @@ class ScheduledPromotion {
       final start = _dateOnly(startDate);
       final end = _dateOnly(endDate);
       final today = _dateOnly(localNow);
-      if (start == null || end == null || end.isBefore(start)) return false;
+      if (start == null || end == null || today == null) return false;
+      if (end.isBefore(start)) return false;
       if (today.isBefore(start) || today.isAfter(end)) return false;
     } else if (!activeWeekdays.contains(localNow.weekday)) {
       return false;
