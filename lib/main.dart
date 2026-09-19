@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,9 +9,11 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/providers.dart';
 import 'core/brand.dart';
+import 'core/app_update_service.dart';
 import 'core/onboarding_service.dart';
 import 'core/router.dart';
 import 'core/theme.dart';
+import 'features/shared/app_update_dialog.dart';
 import 'features/shared/startup_splash.dart';
 
 const _supabaseUrl = String.fromEnvironment(
@@ -148,6 +152,7 @@ class _SajiaAppState extends ConsumerState<SajiaApp> {
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startSync();
+      unawaited(_checkForUpdate());
     });
   }
 
@@ -155,6 +160,19 @@ class _SajiaAppState extends ConsumerState<SajiaApp> {
     if (widget.startSyncOnLaunch) {
       ref.read(syncServiceProvider).start();
     }
+  }
+
+  Future<void> _checkForUpdate() async {
+    final info = await AppUpdateService.instance.checkForUpdate();
+    if (!mounted || info == null) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !info.isMandatory,
+      builder: (_) => AppUpdateDialog(
+        info: info,
+        service: AppUpdateService.instance,
+      ),
+    );
   }
 
   @override

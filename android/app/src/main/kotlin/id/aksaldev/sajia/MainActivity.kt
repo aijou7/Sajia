@@ -3,7 +3,10 @@ package id.aksaldev.sajia
 import android.bluetooth.BluetoothAdapter
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import androidx.core.content.FileProvider
 import com.google.android.play.core.integrity.IntegrityManagerFactory
 import com.google.android.play.core.integrity.StandardIntegrityManager
 import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIntegrityTokenRequest
@@ -11,6 +14,7 @@ import com.google.android.play.core.integrity.StandardIntegrityManager.StandardI
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val channelName = "sajia/system"
@@ -51,6 +55,20 @@ class MainActivity : FlutterActivity() {
                         )
                     } else {
                         requestPlayIntegrityToken(requestHash, result)
+                    }
+                }
+                "preferredAbi" -> result.success(preferredAbi())
+                "canRequestPackageInstalls" -> result.success(canRequestPackageInstalls())
+                "openInstallPermissionSettings" -> {
+                    openInstallPermissionSettings()
+                    result.success(null)
+                }
+                "installApk" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrBlank()) {
+                        result.error("UPDATE_APK_PATH_MISSING", "File APK update kosong", null)
+                    } else {
+                        installApk(path, result)
                     }
                 }
                 else -> result.notImplemented()
@@ -137,6 +155,58 @@ class MainActivity : FlutterActivity() {
             startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
         } catch (_: ActivityNotFoundException) {
             startActivity(Intent(Settings.ACTION_SETTINGS))
+        }
+    }
+
+    private fun preferredAbi(): String {
+        val supported = Build.SUPPORTED_ABIS.toList()
+        return when {
+            supported.contains("arm64-v8a") -> "v8a"
+            supported.contains("armeabi-v7a") -> "v7a"
+            else -> "unsupported"
+        }
+    }
+
+    private fun canRequestPackageInstalls(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            packageManager.canRequestPackageInstalls()
+    }
+
+    private fun openInstallPermissionSettings() {
+        try {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+        }
+    }
+
+    private fun installApk(path: String, result: MethodChannel.Result) {
+        val file = File(path)
+        if (!file.exists() || !file.isFile) {
+            result.error("UPDATE_APK_NOT_FOUND", "File APK update tidak ditemukan", null)
+            return
+        }
+        try {
+            val authority = "$packageName.fileprovider"
+            val uri = FileProvider.getUriForFile(this, authority, file)
+            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            @Suppress("DEPRECATION")
+            startActivity(intent)
+            result.success(null)
+        } catch (exception: Exception) {
+            result.error(
+                "UPDATE_INSTALL_FAILED",
+                exception.localizedMessage ?: "Installer Android tidak dapat dibuka",
+                null
+            )
         }
     }
 }

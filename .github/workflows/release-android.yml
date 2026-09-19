@@ -86,6 +86,19 @@ jobs:
           sha256sum "$versioned_v7a" > "${versioned_v7a}.sha256"
           sha256sum "$versioned_v8a" > "${versioned_v8a}.sha256"
 
+          sha_v7a="$(cut -d ' ' -f1 "${versioned_v7a}.sha256")"
+          sha_v8a="$(cut -d ' ' -f1 "${versioned_v8a}.sha256")"
+          jq -n \
+            --arg latest_version "$version" \
+            --arg minimum_version "1.0.0" \
+            --arg release_notes_url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}" \
+            --arg v7a_url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${versioned_v7a}" \
+            --arg v7a_sha256 "$sha_v7a" \
+            --arg v8a_url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${versioned_v8a}" \
+            --arg v8a_sha256 "$sha_v8a" \
+            '{app_name:"Sajia", latest_version:$latest_version, minimum_version:$minimum_version, release_notes_url:$release_notes_url, android:{variants:{v7a:{url:$v7a_url, sha256:$v7a_sha256}, v8a:{url:$v8a_url, sha256:$v8a_sha256}}}}' \
+            > Sajia-update.json
+
           apksigner_path="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           aapt_path="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           "$apksigner_path" verify --verbose --print-certs "$versioned_v7a"
@@ -127,7 +140,7 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" \
               "$VERSIONED_V7A" "$LATEST_V7A" "$CHECKSUM_V7A" \
-              "$VERSIONED_V8A" "$LATEST_V8A" "$CHECKSUM_V8A" \
+              "$VERSIONED_V8A" "$LATEST_V8A" "$CHECKSUM_V8A" Sajia-update.json \
               --clobber
             gh release edit "$GITHUB_REF_NAME" \
               --title "Sajia ${GITHUB_REF_NAME}" \
@@ -136,7 +149,7 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" \
               "$VERSIONED_V7A" "$LATEST_V7A" "$CHECKSUM_V7A" \
-              "$VERSIONED_V8A" "$LATEST_V8A" "$CHECKSUM_V8A" \
+              "$VERSIONED_V8A" "$LATEST_V8A" "$CHECKSUM_V8A" Sajia-update.json \
               --title "Sajia ${GITHUB_REF_NAME}" \
               --notes-file "$notes_file" \
               --latest
