@@ -27,6 +27,7 @@ supabase/migrations/20260828120000_platform_entitlement_admin.sql
 supabase/migrations/20260829110000_owner_stock_adjustment_cas.sql
 supabase/migrations/20260830120000_remove_legacy_placeholder_outlet.sql
 supabase/migrations/20260912090000_scheduled_promotions.sql
+supabase/migrations/20260920090000_scheduled_promotion_date_ranges.sql
 ```
 
 Dashboard pengelolaan paket dan cara mengaktifkan admin pertama dijelaskan di

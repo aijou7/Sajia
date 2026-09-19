@@ -48,7 +48,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   /// Scheduled promos are cache-only records sourced from the owner portal.
   /// They intentionally stay outside Drift's generated schema because the
@@ -81,6 +81,17 @@ class AppDatabase extends _$AppDatabase {
           if (from < 6) {
             await _createPromotionCacheTables();
           }
+          if (from >= 6 && from < 7) {
+            await customStatement(
+              "ALTER TABLE scheduled_promotions ADD COLUMN schedule_mode TEXT NOT NULL DEFAULT 'WEEKLY'",
+            );
+            await customStatement(
+              'ALTER TABLE scheduled_promotions ADD COLUMN start_date TEXT',
+            );
+            await customStatement(
+              'ALTER TABLE scheduled_promotions ADD COLUMN end_date TEXT',
+            );
+          }
         },
         beforeOpen: (details) async {
           // Enable foreign keys
@@ -99,6 +110,9 @@ class AppDatabase extends _$AppDatabase {
         start_time TEXT NOT NULL,
         end_time TEXT NOT NULL,
         active_days TEXT NOT NULL,
+        schedule_mode TEXT NOT NULL DEFAULT 'WEEKLY',
+        start_date TEXT,
+        end_date TEXT,
         is_active INTEGER NOT NULL DEFAULT 1,
         priority INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL

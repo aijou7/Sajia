@@ -33,6 +33,9 @@ class PromotionDao extends DatabaseAccessor<AppDatabase> {
         promotion.start_time AS promotion_start_time,
         promotion.end_time AS promotion_end_time,
         promotion.active_days AS promotion_active_days,
+        promotion.schedule_mode AS promotion_schedule_mode,
+        promotion.start_date AS promotion_start_date,
+        promotion.end_date AS promotion_end_date,
         promotion.is_active AS promotion_is_active,
         promotion.priority AS promotion_priority,
         promotion.updated_at AS promotion_updated_at,
@@ -77,8 +80,9 @@ class PromotionDao extends DatabaseAccessor<AppDatabase> {
           '''
           INSERT INTO scheduled_promotions (
             id, outlet_id, name, start_time, end_time, active_days,
+            schedule_mode, start_date, end_date,
             is_active, priority, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ''',
           [
             id,
@@ -87,6 +91,9 @@ class PromotionDao extends DatabaseAccessor<AppDatabase> {
             _normaliseTime(promotion['start_time']?.toString()),
             _normaliseTime(promotion['end_time']?.toString()),
             _encodeWeekdays(promotion['active_days']),
+            _normaliseScheduleMode(promotion['schedule_mode']?.toString()),
+            _normaliseDate(promotion['start_date']?.toString()),
+            _normaliseDate(promotion['end_date']?.toString()),
             promotion['is_active'] == false ? 0 : 1,
             _asInt(promotion['priority']),
             promotion['updated_at']?.toString() ??
@@ -160,6 +167,11 @@ class PromotionDao extends DatabaseAccessor<AppDatabase> {
           startTime: _normaliseTime(row.read<String>('promotion_start_time')),
           endTime: _normaliseTime(row.read<String>('promotion_end_time')),
           activeWeekdays: _decodeWeekdays(row.read<String>('promotion_active_days')),
+          scheduleMode: _normaliseScheduleMode(
+            row.readNullable<String>('promotion_schedule_mode'),
+          ),
+          startDate: _parseDate(row.readNullable<String>('promotion_start_date')),
+          endDate: _parseDate(row.readNullable<String>('promotion_end_date')),
           isActive: row.read<int>('promotion_is_active') != 0,
           priority: row.read<int>('promotion_priority'),
           updatedAt: DateTime.tryParse(row.read<String>('promotion_updated_at'))
@@ -188,6 +200,9 @@ class _PromotionBuilder {
     required this.startTime,
     required this.endTime,
     required this.activeWeekdays,
+    required this.scheduleMode,
+    required this.startDate,
+    required this.endDate,
     required this.isActive,
     required this.priority,
     required this.updatedAt,
@@ -199,6 +214,9 @@ class _PromotionBuilder {
   final String startTime;
   final String endTime;
   final Set<int> activeWeekdays;
+  final String scheduleMode;
+  final DateTime? startDate;
+  final DateTime? endDate;
   final bool isActive;
   final int priority;
   final DateTime updatedAt;
@@ -211,6 +229,9 @@ class _PromotionBuilder {
         startTime: startTime,
         endTime: endTime,
         activeWeekdays: activeWeekdays,
+        scheduleMode: scheduleMode,
+        startDate: startDate,
+        endDate: endDate,
         isActive: isActive,
         priority: priority,
         updatedAt: updatedAt,
@@ -226,6 +247,23 @@ String _normaliseTime(String? value) {
   final minute = int.tryParse(match.group(2)!) ?? 0;
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return '00:00';
   return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+}
+
+String _normaliseScheduleMode(String? value) =>
+    value?.trim().toUpperCase() == 'DATE_RANGE' ? 'DATE_RANGE' : 'WEEKLY';
+
+String? _normaliseDate(String? value) {
+  final parsed = _parseDate(value);
+  if (parsed == null) return null;
+  return '${parsed.year.toString().padLeft(4, '0')}-'
+      '${parsed.month.toString().padLeft(2, '0')}-'
+      '${parsed.day.toString().padLeft(2, '0')}';
+}
+
+DateTime? _parseDate(String? value) {
+  if (value == null || value.trim().isEmpty) return null;
+  final parsed = DateTime.tryParse(value.trim());
+  return parsed == null ? null : DateTime(parsed.year, parsed.month, parsed.day);
 }
 
 String _encodeWeekdays(dynamic raw) {

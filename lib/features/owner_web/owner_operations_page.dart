@@ -313,6 +313,9 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
     required TimeOfDay startTime,
     required TimeOfDay endTime,
     required Set<int> activeWeekdays,
+    required String scheduleMode,
+    required DateTime? startDate,
+    required DateTime? endDate,
     required bool isActive,
     required List<_OwnerPromotionItemDraft> items,
   }) async {
@@ -327,6 +330,9 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
         'p_start_time': _timeOfDaySql(startTime),
         'p_end_time': _timeOfDaySql(endTime),
         'p_active_days': activeWeekdays.toList()..sort(),
+        'p_schedule_mode': scheduleMode,
+        'p_start_date': _dateOnlySql(startDate),
+        'p_end_date': _dateOnlySql(endDate),
         'p_is_active': isActive,
         'p_items': items
             .map((item) => {
@@ -790,6 +796,9 @@ class _OwnerScheduledPromotion {
     required this.startTime,
     required this.endTime,
     required this.activeWeekdays,
+    required this.scheduleMode,
+    required this.startDate,
+    required this.endDate,
     required this.isActive,
     required this.items,
   });
@@ -799,6 +808,9 @@ class _OwnerScheduledPromotion {
   final TimeOfDay startTime;
   final TimeOfDay endTime;
   final Set<int> activeWeekdays;
+  final String scheduleMode;
+  final DateTime? startDate;
+  final DateTime? endDate;
   final bool isActive;
   final List<_OwnerPromotionItem> items;
 
@@ -812,6 +824,11 @@ class _OwnerScheduledPromotion {
         startTime: _timeOfDayFromSql(json['start_time']?.toString()),
         endTime: _timeOfDayFromSql(json['end_time']?.toString()),
         activeWeekdays: _weekdaysFromJson(json['active_days']),
+        scheduleMode: json['schedule_mode']?.toString().toUpperCase() == 'DATE_RANGE'
+            ? 'DATE_RANGE'
+            : 'WEEKLY',
+        startDate: _dateOnlyFromSql(json['start_date']?.toString()),
+        endDate: _dateOnlyFromSql(json['end_date']?.toString()),
         isActive: json['is_active'] != false,
         items: List.unmodifiable(items),
       );
@@ -1204,7 +1221,7 @@ class _PromotionDataPanel extends StatelessWidget {
                       subtitle: Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          '${_weekdayLabel(promotions[index].activeWeekdays)} · '
+                          '${_promotionScheduleLabel(promotions[index])} · '
                           '${_timeOfDayLabel(promotions[index].startTime)}–${_timeOfDayLabel(promotions[index].endTime)}\n'
                           '${_promotionProductsLabel(promotions[index], productNames)}',
                         ),
@@ -2125,6 +2142,9 @@ class _PromotionEditor extends StatefulWidget {
     required TimeOfDay startTime,
     required TimeOfDay endTime,
     required Set<int> activeWeekdays,
+    required String scheduleMode,
+    required DateTime? startDate,
+    required DateTime? endDate,
     required bool isActive,
     required List<_OwnerPromotionItemDraft> items,
   }) onSave;
@@ -2139,6 +2159,9 @@ class _PromotionEditorState extends State<_PromotionEditor> {
   late TimeOfDay _startTime;
   late TimeOfDay _endTime;
   late Set<int> _activeWeekdays;
+  late String _scheduleMode;
+  late DateTime? _startDate;
+  late DateTime? _endDate;
   late bool _isActive;
   bool _saving = false;
   String? _error;
@@ -2152,6 +2175,9 @@ class _PromotionEditorState extends State<_PromotionEditor> {
     _activeWeekdays = Set<int>.from(
       widget.promotion?.activeWeekdays ?? const {1, 2, 3, 4, 5, 6, 7},
     );
+    _scheduleMode = widget.promotion?.scheduleMode ?? 'WEEKLY';
+    _startDate = widget.promotion?.startDate;
+    _endDate = widget.promotion?.endDate;
     _isActive = widget.promotion?.isActive ?? true;
     for (final item in widget.promotion?.items ?? const <_OwnerPromotionItem>[]) {
       _promoPrices[item.productId] = TextEditingController(
@@ -2190,6 +2216,32 @@ class _PromotionEditorState extends State<_PromotionEditor> {
     });
   }
 
+  Future<void> _pickDate({required bool start}) async {
+    final now = DateTime.now();
+    final initial = start ? (_startDate ?? now) : (_endDate ?? _startDate ?? now);
+    final firstDate = DateTime(now.year - 1);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(firstDate) ? firstDate : initial,
+      firstDate: firstDate,
+      lastDate: DateTime(now.year + 5),
+      helpText: start ? 'Tanggal mulai promo' : 'Tanggal selesai promo',
+      cancelText: 'Batal',
+      confirmText: 'Pilih',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (start) {
+        _startDate = DateTime(picked.year, picked.month, picked.day);
+        if (_endDate != null && _endDate!.isBefore(_startDate!)) {
+          _endDate = _startDate;
+        }
+      } else {
+        _endDate = DateTime(picked.year, picked.month, picked.day);
+      }
+    });
+  }
+
   void _toggleProduct(_OwnerProduct product, bool selected) {
     setState(() {
       if (selected) {
@@ -2209,8 +2261,13 @@ class _PromotionEditorState extends State<_PromotionEditor> {
       setState(() => _error = 'Nama promo wajib diisi.');
       return;
     }
-    if (_activeWeekdays.isEmpty) {
+    if (_scheduleMode == 'WEEKLY' && _activeWeekdays.isEmpty) {
       setState(() => _error = 'Pilih minimal satu hari promo.');
+      return;
+    }
+    if (_scheduleMode == 'DATE_RANGE' &&
+        (_startDate == null || _endDate == null || _endDate!.isBefore(_startDate!))) {
+      setState(() => _error = 'Pilih rentang tanggal promo yang valid.');
       return;
     }
     if (_endMinutes <= _startMinutes) {
@@ -2255,6 +2312,9 @@ class _PromotionEditorState extends State<_PromotionEditor> {
         startTime: _startTime,
         endTime: _endTime,
         activeWeekdays: _activeWeekdays,
+        scheduleMode: _scheduleMode,
+        startDate: _startDate,
+        endDate: _endDate,
         isActive: _isActive,
         items: items,
       );
@@ -2293,7 +2353,40 @@ class _PromotionEditorState extends State<_PromotionEditor> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text('Waktu berlaku',
+                const Text('Jenis jadwal',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: _scheduleMode,
+                  decoration: const InputDecoration(
+                    labelText: 'Berlaku sebagai',
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'WEEKLY',
+                      child: Text('Berulang setiap minggu'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'DATE_RANGE',
+                      child: Text('Periode tanggal tertentu'),
+                    ),
+                  ],
+                  onChanged: _saving
+                      ? null
+                      : (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _scheduleMode = value;
+                            if (value == 'WEEKLY') {
+                              _startDate = null;
+                              _endDate = null;
+                            }
+                          });
+                        },
+                ),
+                const SizedBox(height: 16),
+                const Text('Jam berlaku',
                     style: TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 Wrap(
@@ -2313,29 +2406,56 @@ class _PromotionEditorState extends State<_PromotionEditor> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                const Text('Hari berlaku',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final day in _promotionWeekdays)
-                      FilterChip(
-                        label: Text(day.shortLabel),
-                        selected: _activeWeekdays.contains(day.weekday),
-                        onSelected: _saving
-                            ? null
-                            : (selected) => setState(() {
-                                  if (selected) {
-                                    _activeWeekdays.add(day.weekday);
-                                  } else {
-                                    _activeWeekdays.remove(day.weekday);
-                                  }
-                                }),
+                if (_scheduleMode == 'WEEKLY') ...[
+                  const Text('Hari berlaku',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final day in _promotionWeekdays)
+                        FilterChip(
+                          label: Text(day.shortLabel),
+                          selected: _activeWeekdays.contains(day.weekday),
+                          onSelected: _saving
+                              ? null
+                              : (selected) => setState(() {
+                                    if (selected) {
+                                      _activeWeekdays.add(day.weekday);
+                                    } else {
+                                      _activeWeekdays.remove(day.weekday);
+                                    }
+                                  }),
+                        ),
+                    ],
+                  ),
+                ] else ...[
+                  const Text('Periode promo',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Promo aktif setiap hari dalam rentang ini, lalu otomatis berhenti.',
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _saving ? null : () => _pickDate(start: true),
+                        icon: const Icon(Icons.event_outlined),
+                        label: Text('Mulai ${_dateLabel(_startDate)}'),
                       ),
-                  ],
-                ),
+                      OutlinedButton.icon(
+                        onPressed: _saving ? null : () => _pickDate(start: false),
+                        icon: const Icon(Icons.event_available_outlined),
+                        label: Text('Selesai ${_dateLabel(_endDate)}'),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 12),
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
@@ -2595,6 +2715,22 @@ TimeOfDay _timeOfDayFromSql(String? raw) {
 String _timeOfDaySql(TimeOfDay time) =>
     '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:00';
 
+String? _dateOnlySql(DateTime? date) => date == null
+    ? null
+    : '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+
+DateTime? _dateOnlyFromSql(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  final parsed = DateTime.tryParse(raw.trim());
+  return parsed == null ? null : DateTime(parsed.year, parsed.month, parsed.day);
+}
+
+String _dateLabel(DateTime? date) => date == null
+    ? 'Pilih tanggal'
+    : DateFormat('d MMM yyyy', 'id_ID').format(date);
+
 String _timeOfDayLabel(TimeOfDay time) =>
     '${time.hour.toString().padLeft(2, '0')}.${time.minute.toString().padLeft(2, '0')}';
 
@@ -2624,6 +2760,15 @@ String _weekdayLabel(Set<int> days) {
       .where((weekday) => days.contains(weekday.weekday))
       .map((weekday) => weekday.shortLabel)
       .join(', ');
+}
+
+String _promotionScheduleLabel(_OwnerScheduledPromotion promotion) {
+  if (promotion.scheduleMode == 'DATE_RANGE' &&
+      promotion.startDate != null &&
+      promotion.endDate != null) {
+    return '${_dateLabel(promotion.startDate)}–${_dateLabel(promotion.endDate)}';
+  }
+  return _weekdayLabel(promotion.activeWeekdays);
 }
 
 String _promotionProductsLabel(

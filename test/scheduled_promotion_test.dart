@@ -8,6 +8,9 @@ ScheduledPromotion _promotion({
   required DateTime updatedAt,
   int priority = 0,
   Set<int> weekdays = const {1, 2, 3, 4, 5, 6, 7},
+  String scheduleMode = 'WEEKLY',
+  DateTime? startDate,
+  DateTime? endDate,
   bool active = true,
   double promoPrice = 15000,
 }) =>
@@ -18,6 +21,9 @@ ScheduledPromotion _promotion({
       startTime: '08:00',
       endTime: '11:00',
       activeWeekdays: weekdays,
+      scheduleMode: scheduleMode,
+      startDate: startDate,
+      endDate: endDate,
       isActive: active,
       priority: priority,
       updatedAt: updatedAt,
@@ -107,6 +113,45 @@ void main() {
       expect(match?.promotion.id, 'priority');
       expect(match?.discountForBasePrice(20000), 6000);
     });
+
+    test('date-range promo runs every day through the inclusive end date', () {
+      final promo = _promotion(
+        id: 'ten-days',
+        updatedAt: DateTime(2026),
+        scheduleMode: 'DATE_RANGE',
+        startDate: DateTime(2026, 9, 20),
+        endDate: DateTime(2026, 9, 29),
+        weekdays: const {},
+      );
+
+      expect(
+        resolveScheduledPromotion(
+          promotions: [promo],
+          productId: 'kopi-susu',
+          basePrice: 20000,
+          localNow: DateTime(2026, 9, 20, 9),
+        ),
+        isNotNull,
+      );
+      expect(
+        resolveScheduledPromotion(
+          promotions: [promo],
+          productId: 'kopi-susu',
+          basePrice: 20000,
+          localNow: DateTime(2026, 9, 29, 10, 59),
+        ),
+        isNotNull,
+      );
+      expect(
+        resolveScheduledPromotion(
+          promotions: [promo],
+          productId: 'kopi-susu',
+          basePrice: 20000,
+          localNow: DateTime(2026, 9, 30, 9),
+        ),
+        isNull,
+      );
+    });
   });
 
   test('promotion cache replaces an outlet atomically', () async {
@@ -122,6 +167,7 @@ void main() {
           'start_time': '08:00:00',
           'end_time': '11:00:00',
           'active_days': [1, 2, 3, 4, 5],
+          'schedule_mode': 'WEEKLY',
           'is_active': true,
           'priority': 0,
           'updated_at': '2026-09-12T00:00:00Z',

@@ -1,5 +1,6 @@
 /// A price override that applies to selected menu items at a recurring local
-/// day and time. Weekdays use [DateTime.weekday]: Monday is 1, Sunday is 7.
+/// day/time or within a bounded local date range. Weekdays use
+/// [DateTime.weekday]: Monday is 1, Sunday is 7.
 class ScheduledPromotion {
   const ScheduledPromotion({
     required this.id,
@@ -8,6 +9,9 @@ class ScheduledPromotion {
     required this.startTime,
     required this.endTime,
     required this.activeWeekdays,
+    required this.scheduleMode,
+    required this.startDate,
+    required this.endDate,
     required this.isActive,
     required this.priority,
     required this.updatedAt,
@@ -20,6 +24,9 @@ class ScheduledPromotion {
   final String startTime;
   final String endTime;
   final Set<int> activeWeekdays;
+  final String scheduleMode;
+  final DateTime? startDate;
+  final DateTime? endDate;
   final bool isActive;
   final int priority;
   final DateTime updatedAt;
@@ -28,7 +35,16 @@ class ScheduledPromotion {
   /// A schedule uses the local time on the cashier device. The editor only
   /// allows same-day windows, so [endTime] is always later than [startTime].
   bool isActiveAt(DateTime localNow) {
-    if (!isActive || !activeWeekdays.contains(localNow.weekday)) return false;
+    if (!isActive) return false;
+    if (scheduleMode == 'DATE_RANGE') {
+      final start = _dateOnly(startDate);
+      final end = _dateOnly(endDate);
+      final today = _dateOnly(localNow);
+      if (start == null || end == null || end.isBefore(start)) return false;
+      if (today.isBefore(start) || today.isAfter(end)) return false;
+    } else if (!activeWeekdays.contains(localNow.weekday)) {
+      return false;
+    }
     final startMinutes = _minutesSinceMidnight(startTime);
     final endMinutes = _minutesSinceMidnight(endTime);
     if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) {
@@ -45,6 +61,10 @@ class ScheduledPromotion {
     return null;
   }
 }
+
+DateTime? _dateOnly(DateTime? value) => value == null
+    ? null
+    : DateTime(value.year, value.month, value.day);
 
 class ScheduledPromotionItem {
   const ScheduledPromotionItem({
