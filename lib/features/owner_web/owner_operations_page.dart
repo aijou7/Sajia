@@ -2357,7 +2357,8 @@ class _PromotionEditorState extends State<_PromotionEditor> {
                     style: TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: _scheduleMode,
+                  key: ValueKey(_scheduleMode),
+                  initialValue: _scheduleMode,
                   decoration: const InputDecoration(
                     labelText: 'Berlaku sebagai',
                     isDense: true,
