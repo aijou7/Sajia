@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 import 'package:drift/drift.dart' show OrderingTerm, Value;
 import '../../core/backup_service.dart';
+import '../../core/app_update_service.dart';
 import '../../core/app_distribution.dart';
 import '../../core/legacy_outlet.dart';
 import '../settings/printer_settings.dart';
@@ -22,6 +23,7 @@ import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
 import '../shared/polish_widgets.dart';
+import '../shared/app_update_dialog.dart';
 import 'pro_checkout_page.dart';
 
 const _ownerDashboardUrl = String.fromEnvironment(
@@ -75,6 +77,7 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   late final Future<PackageInfo> _packageInfo;
   bool _backupBusy = false;
+  bool _checkingAppUpdate = false;
 
   @override
   void initState() {
@@ -83,6 +86,32 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _cleanupPlaceholderOutlet();
     });
+  }
+
+  Future<void> _checkForAppUpdate() async {
+    if (_checkingAppUpdate) return;
+    setState(() => _checkingAppUpdate = true);
+    try {
+      final info = await AppUpdateService.instance.checkForUpdate(force: true);
+      if (!mounted) return;
+      if (info == null) {
+        AppNotice.show(context, const SnackBar(
+          content: Text('Sajia sudah versi terbaru, atau update belum bisa dicek.'),
+          backgroundColor: AppTheme.success,
+        ));
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: !info.isMandatory,
+        builder: (_) => AppUpdateDialog(
+          info: info,
+          service: AppUpdateService.instance,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _checkingAppUpdate = false);
+    }
   }
 
   Future<void> _cleanupPlaceholderOutlet() async {
@@ -419,6 +448,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   ),
                 );
               },
+            ),
+            _SettingsDivider(),
+            _SettingsTile(
+              icon: Icons.system_update_alt_rounded,
+              title: 'Pembaruan aplikasi',
+              subtitle: _checkingAppUpdate
+                  ? 'Sedang memeriksa versi terbaru…'
+                  : 'Cek dan download versi Sajia terbaru',
+              onTap: _checkingAppUpdate ? null : _checkForAppUpdate,
+              trailing: _checkingAppUpdate
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(
+                      Icons.chevron_right,
+                      color: Color(0xFFD1D5DB),
+                    ),
             ),
             if (canManageOperations) ...[
               _SettingsDivider(),
