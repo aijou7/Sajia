@@ -74,15 +74,25 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           source_v7a="build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk"
           source_v8a="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
-          versioned_v7a="Sajia-v${version}-v7a.apk"
-          latest_v7a="Sajia-latest-v7a.apk"
-          versioned_v8a="Sajia-v${version}-v8a.apk"
-          latest_v8a="Sajia-latest-v8a.apk"
+          # Human-readable names: product, bitness, and version are visible
+          # without needing to decode the ABI shorthand.
+          versioned_v7a="Sajia-32bit-v${version}.apk"
+          latest_v7a="Sajia-32bit-latest.apk"
+          legacy_versioned_v7a="Sajia-v${version}-v7a.apk"
+          legacy_latest_v7a="Sajia-latest-v7a.apk"
+          versioned_v8a="Sajia-64bit-v${version}.apk"
+          latest_v8a="Sajia-64bit-latest.apk"
+          legacy_versioned_v8a="Sajia-v${version}-v8a.apk"
+          legacy_latest_v8a="Sajia-latest-v8a.apk"
 
           cp "$source_v7a" "$versioned_v7a"
           cp "$source_v7a" "$latest_v7a"
+          cp "$source_v7a" "$legacy_versioned_v7a"
+          cp "$source_v7a" "$legacy_latest_v7a"
           cp "$source_v8a" "$versioned_v8a"
           cp "$source_v8a" "$latest_v8a"
+          cp "$source_v8a" "$legacy_versioned_v8a"
+          cp "$source_v8a" "$legacy_latest_v8a"
           sha256sum "$versioned_v7a" > "${versioned_v7a}.sha256"
           sha256sum "$versioned_v8a" > "${versioned_v8a}.sha256"
 
@@ -115,9 +125,13 @@ jobs:
           echo "versioned_v7a=$versioned_v7a" >> "$GITHUB_OUTPUT"
           echo "latest_v7a=$latest_v7a" >> "$GITHUB_OUTPUT"
           echo "checksum_v7a=${versioned_v7a}.sha256" >> "$GITHUB_OUTPUT"
+          echo "legacy_versioned_v7a=$legacy_versioned_v7a" >> "$GITHUB_OUTPUT"
+          echo "legacy_latest_v7a=$legacy_latest_v7a" >> "$GITHUB_OUTPUT"
           echo "versioned_v8a=$versioned_v8a" >> "$GITHUB_OUTPUT"
           echo "latest_v8a=$latest_v8a" >> "$GITHUB_OUTPUT"
           echo "checksum_v8a=${versioned_v8a}.sha256" >> "$GITHUB_OUTPUT"
+          echo "legacy_versioned_v8a=$legacy_versioned_v8a" >> "$GITHUB_OUTPUT"
+          echo "legacy_latest_v8a=$legacy_latest_v8a" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
         shell: bash
@@ -126,9 +140,13 @@ jobs:
           VERSIONED_V7A: ${{ steps.package.outputs.versioned_v7a }}
           LATEST_V7A: ${{ steps.package.outputs.latest_v7a }}
           CHECKSUM_V7A: ${{ steps.package.outputs.checksum_v7a }}
+          LEGACY_VERSIONED_V7A: ${{ steps.package.outputs.legacy_versioned_v7a }}
+          LEGACY_LATEST_V7A: ${{ steps.package.outputs.legacy_latest_v7a }}
           VERSIONED_V8A: ${{ steps.package.outputs.versioned_v8a }}
           LATEST_V8A: ${{ steps.package.outputs.latest_v8a }}
           CHECKSUM_V8A: ${{ steps.package.outputs.checksum_v8a }}
+          LEGACY_VERSIONED_V8A: ${{ steps.package.outputs.legacy_versioned_v8a }}
+          LEGACY_LATEST_V8A: ${{ steps.package.outputs.legacy_latest_v8a }}
         run: |
           set -euo pipefail
           notes_file="RELEASE_NOTES_V${GITHUB_REF_NAME#v}.md"
@@ -140,7 +158,9 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" \
               "$VERSIONED_V7A" "$LATEST_V7A" "$CHECKSUM_V7A" \
-              "$VERSIONED_V8A" "$LATEST_V8A" "$CHECKSUM_V8A" Sajia-update.json \
+              "$LEGACY_VERSIONED_V7A" "$LEGACY_LATEST_V7A" \
+              "$VERSIONED_V8A" "$LATEST_V8A" "$CHECKSUM_V8A" \
+              "$LEGACY_VERSIONED_V8A" "$LEGACY_LATEST_V8A" Sajia-update.json \
               --clobber
             gh release edit "$GITHUB_REF_NAME" \
               --title "Sajia ${GITHUB_REF_NAME}" \
@@ -149,7 +169,9 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" \
               "$VERSIONED_V7A" "$LATEST_V7A" "$CHECKSUM_V7A" \
-              "$VERSIONED_V8A" "$LATEST_V8A" "$CHECKSUM_V8A" Sajia-update.json \
+              "$LEGACY_VERSIONED_V7A" "$LEGACY_LATEST_V7A" \
+              "$VERSIONED_V8A" "$LATEST_V8A" "$CHECKSUM_V8A" \
+              "$LEGACY_VERSIONED_V8A" "$LEGACY_LATEST_V8A" Sajia-update.json \
               --title "Sajia ${GITHUB_REF_NAME}" \
               --notes-file "$notes_file" \
               --latest
