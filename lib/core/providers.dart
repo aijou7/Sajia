@@ -40,6 +40,14 @@ final syncServiceProvider = Provider<SyncService>((ref) {
   return service;
 });
 
+/// Background cloud-sync state for the small status indicator in the shell.
+/// The stream is read-only; local writes and the sync worker remain the source
+/// of truth for business data.
+final syncStatusProvider = StreamProvider.autoDispose<SyncStatus>((ref) {
+  final service = ref.watch(syncServiceProvider);
+  return service.statusStream;
+});
+
 // Onboarding
 final isSetupDoneProvider = FutureProvider<bool>((ref) async {
   return OnboardingService().isSetupDone();

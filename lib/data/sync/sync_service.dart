@@ -10,6 +10,35 @@ import '../../core/legacy_outlet.dart';
 import '../local/app_database.dart';
 import 'product_image_uploader.dart';
 
+enum SyncPhase {
+  idle,
+  syncing,
+  synced,
+  offline,
+  failed,
+}
+
+/// Small, UI-safe snapshot of the background sync worker.
+///
+/// The snapshot intentionally contains no remote payloads. It only exposes
+/// enough state for the cashier to understand whether local changes are
+/// already durable, waiting for a connection, or need attention.
+class SyncStatus {
+  final SyncPhase phase;
+  final int pendingCount;
+  final DateTime? lastSyncedAt;
+  final String? errorMessage;
+
+  const SyncStatus({
+    this.phase = SyncPhase.idle,
+    this.pendingCount = 0,
+    this.lastSyncedAt,
+    this.errorMessage,
+  });
+
+  bool get hasPending => pendingCount > 0;
+}
+
 class SyncService {
   static const isEnabled = bool.fromEnvironment(
     'ENABLE_CLOUD_SYNC',
@@ -21,6 +50,10 @@ class SyncService {
   StreamSubscription? _connectivitySub;
   Timer? _periodicSync;
   bool _isSyncing = false;
+  bool _started = false;
+  SyncStatus _status = const SyncStatus();
+  final StreamController<SyncStatus> _statusController =
+      StreamController<SyncStatus>.broadcast();
   final Set<String>? Function()? _operationalOutletScope;
   bool _strictRecoveryPull = false;
   bool _recoveryPullFailed = false;
@@ -31,13 +64,26 @@ class SyncService {
     Set<String>? Function()? operationalOutletScope,
   }) : _operationalOutletScope = operationalOutletScope;
 
+  SyncStatus get status => _status;
+
+  Stream<SyncStatus> get statusStream async* {
+    yield _status;
+    yield* _statusController.stream;
+  }
+
   void start() {
+    if (_started) return;
+    _started = true;
     if (!isEnabled) {
       debugPrint('[SyncService] Cloud sync disabled by build config');
       return;
     }
     _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
-      if (_hasConnection(results)) syncAll();
+      if (_hasConnection(results)) {
+        unawaited(syncAll());
+      } else {
+        unawaited(_publishStatus(SyncPhase.offline));
+      }
     });
     _periodicSync ??= Timer.periodic(
       const Duration(minutes: 1),
@@ -49,6 +95,7 @@ class SyncService {
   void dispose() {
     _connectivitySub?.cancel();
     _periodicSync?.cancel();
+    _statusController.close();
   }
 
   /// Starts a sync attempt without making the current UI wait for the full
@@ -62,10 +109,17 @@ class SyncService {
     if (!isEnabled) return;
     if (_isSyncing) return;
     _isSyncing = true;
+    await _publishStatus(SyncPhase.syncing);
     try {
       final connected = await _isConnected();
-      if (!connected) return;
-      if (_supabase.auth.currentUser?.email == null) return;
+      if (!connected) {
+        await _publishStatus(SyncPhase.offline);
+        return;
+      }
+      if (_supabase.auth.currentUser?.email == null) {
+        await _publishStatus(SyncPhase.idle);
+        return;
+      }
 
       // Resolve tenant ownership before pushing anything. A device can be
       // reused for another verified owner; stale local PINs/outlets must never
@@ -90,17 +144,50 @@ class SyncService {
         debugPrint(
           '[SyncService] Recovery data synced; operational Cloud sync skipped',
         );
+        await _publishStatus(SyncPhase.synced, lastSyncedAt: DateTime.now());
         return;
       }
       await _pushOperationalData(scopedCloudOutletIds);
       await _pullOperationalData(
         outletIds.where(scopedCloudOutletIds.contains).toList(),
       );
+      await _publishStatus(SyncPhase.synced, lastSyncedAt: DateTime.now());
     } catch (e) {
       debugPrint('[SyncService] syncAll error: $e');
+      await _publishStatus(
+        SyncPhase.failed,
+        errorMessage: _syncErrorMessage(e),
+      );
     } finally {
       _isSyncing = false;
     }
+  }
+
+  Future<void> _publishStatus(
+    SyncPhase phase, {
+    DateTime? lastSyncedAt,
+    String? errorMessage,
+  }) async {
+    var pendingCount = _status.pendingCount;
+    try {
+      pendingCount = await _db.syncDao.getPendingCount();
+    } catch (_) {
+      // Status must never interfere with the actual sync worker.
+    }
+    final next = SyncStatus(
+      phase: phase,
+      pendingCount: pendingCount,
+      lastSyncedAt: lastSyncedAt ?? _status.lastSyncedAt,
+      errorMessage: errorMessage,
+    );
+    _status = next;
+    if (!_statusController.isClosed) _statusController.add(next);
+  }
+
+  String _syncErrorMessage(Object error) {
+    final message = error.toString().replaceFirst('Exception: ', '').trim();
+    if (message.isEmpty) return 'Sinkronisasi gagal.';
+    return message.length > 140 ? '${message.substring(0, 140)}…' : message;
   }
 
   Future<bool> pullAllForLogin(String outletId) async {

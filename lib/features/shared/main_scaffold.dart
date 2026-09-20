@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../data/sync/sync_service.dart';
 import '../cashier/cashier_page.dart';
 import '../orders/tables_page.dart';
 import '../menu/menu_page.dart';
@@ -64,6 +65,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
+    final syncStatus = ref.watch(syncStatusProvider).valueOrNull;
     final canViewHistory = user?.canViewSalesHistory == true;
     final canViewReports = user?.canViewFinancialReports == true;
     final canManageSettings = user?.canManageOperations == true;
@@ -84,12 +86,25 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     final moreSelected = visibleIndex >= 4;
 
     return Scaffold(
-      body: IndexedStack(
-        index: visibleIndex,
-        children: List<Widget>.generate(
-          _pages.length,
-          (index) => _pages[index] ?? const SizedBox.shrink(),
-        ),
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: visibleIndex,
+            children: List<Widget>.generate(
+              _pages.length,
+              (index) => _pages[index] ?? const SizedBox.shrink(),
+            ),
+          ),
+          if (syncStatus != null && syncStatus.phase != SyncPhase.idle)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + 8,
+              right: 12,
+              child: _SyncStatusIndicator(
+                status: syncStatus,
+                onTap: () => _showSyncStatus(context, syncStatus),
+              ),
+            ),
+        ],
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -150,6 +165,137 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       ),
     );
   }
+
+  Future<void> _showSyncStatus(
+    BuildContext context,
+    SyncStatus snapshot,
+  ) async {
+    final service = ref.read(syncServiceProvider);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(_syncIcon(snapshot.phase), color: _syncColor(snapshot.phase)),
+            const SizedBox(width: 10),
+            const Expanded(child: Text('Status sinkronisasi')),
+          ],
+        ),
+        content: Text(_syncDescription(snapshot)),
+        actions: [
+          if (snapshot.phase == SyncPhase.offline ||
+              snapshot.phase == SyncPhase.failed ||
+              snapshot.hasPending)
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                service.requestSync();
+              },
+              child: const Text('Coba lagi'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Tutup'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SyncStatusIndicator extends StatelessWidget {
+  const _SyncStatusIndicator({required this.status, required this.onTap});
+
+  final SyncStatus status;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _syncColor(status.phase);
+    final isSyncing = status.phase == SyncPhase.syncing;
+    final label = status.hasPending
+        ? (status.pendingCount > 99 ? '99+' : status.pendingCount.toString())
+        : null;
+    return Semantics(
+      button: true,
+      label: _syncDescription(status),
+      child: Material(
+        color: Colors.white,
+        elevation: 3,
+        shadowColor: Colors.black.withValues(alpha: 0.12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(999),
+          side: BorderSide(color: color.withValues(alpha: 0.25)),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(999),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isSyncing)
+                  SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: color,
+                    ),
+                  )
+                else
+                  Icon(_syncIcon(status.phase), size: 17, color: color),
+                if (label != null) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+IconData _syncIcon(SyncPhase phase) => switch (phase) {
+      SyncPhase.syncing => Icons.cloud_upload_outlined,
+      SyncPhase.synced => Icons.cloud_done_outlined,
+      SyncPhase.offline => Icons.cloud_off_outlined,
+      SyncPhase.failed => Icons.sync_problem_rounded,
+      SyncPhase.idle => Icons.cloud_outlined,
+    };
+
+Color _syncColor(SyncPhase phase) => switch (phase) {
+      SyncPhase.syncing => AppTheme.action,
+      SyncPhase.synced => AppTheme.success,
+      SyncPhase.offline => AppTheme.warning,
+      SyncPhase.failed => AppTheme.danger,
+      SyncPhase.idle => AppTheme.textSecondary,
+    };
+
+String _syncDescription(SyncStatus status) {
+  final pending = status.pendingCount;
+  final pendingText = pending == 0
+      ? 'Tidak ada data yang menunggu.'
+      : '$pending perubahan menunggu dikirim.';
+  return switch (status.phase) {
+    SyncPhase.syncing => 'Menyinkronkan data… $pendingText',
+    SyncPhase.synced =>
+      'Data lokal aman. Sinkronisasi terakhir berhasil. $pendingText',
+    SyncPhase.offline => 'Perangkat sedang offline. $pendingText',
+    SyncPhase.failed =>
+      'Sinkronisasi belum berhasil. ${status.errorMessage ?? 'Coba lagi saat koneksi stabil.'} $pendingText',
+    SyncPhase.idle => 'Sinkronisasi belum berjalan.',
+  };
 }
 
 class _NavItem extends StatelessWidget {
