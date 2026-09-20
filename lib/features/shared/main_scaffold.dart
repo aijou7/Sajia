@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../core/app_notice.dart';
 import '../../data/sync/sync_service.dart';
 import '../cashier/cashier_page.dart';
 import '../orders/tables_page.dart';
@@ -24,6 +26,7 @@ class MainScaffold extends ConsumerStatefulWidget {
 class _MainScaffoldState extends ConsumerState<MainScaffold> {
   late int _currentIndex;
   late final List<Widget?> _pages;
+  DateTime? _lastBackPress;
 
   Widget _pageForIndex(int index) => switch (index) {
         0 => const CashierPage(),
@@ -85,85 +88,114 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     _pages[visibleIndex] ??= _pageForIndex(visibleIndex);
     final moreSelected = visibleIndex >= 4;
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          IndexedStack(
-            index: visibleIndex,
-            children: List<Widget>.generate(
-              _pages.length,
-              (index) => _pages[index] ?? const SizedBox.shrink(),
-            ),
-          ),
-          if (syncStatus != null && syncStatus.phase != SyncPhase.idle)
-            Positioned(
-              top: MediaQuery.paddingOf(context).top + 8,
-              right: 12,
-              child: _SyncStatusIndicator(
-                status: syncStatus,
-                onTap: () => _showSyncStatus(context, syncStatus),
+    return PopScope<void>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleBackPressed();
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            IndexedStack(
+              index: visibleIndex,
+              children: List<Widget>.generate(
+                _pages.length,
+                (index) => _pages[index] ?? const SizedBox.shrink(),
               ),
             ),
-        ],
-      ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: const Border(
-              top: BorderSide(color: AppTheme.subtleBorder, width: 0.5)),
-          boxShadow: [
-            BoxShadow(
-              color: AppTheme.primaryDeep.withValues(alpha: 0.08),
-              blurRadius: 24,
-              offset: const Offset(0, -8),
-            ),
+            if (syncStatus != null && syncStatus.phase != SyncPhase.idle)
+              Positioned(
+                top: MediaQuery.paddingOf(context).top + 8,
+                right: 12,
+                child: _SyncStatusIndicator(
+                  status: syncStatus,
+                  onTap: () => _showSyncStatus(context, syncStatus),
+                ),
+              ),
           ],
         ),
-        child: SafeArea(
-          child: SizedBox(
-            height: 64,
-            child: Row(children: [
-              _NavItem(
-                icon: Icons.point_of_sale_outlined,
-                activeIcon: Icons.point_of_sale_rounded,
-                label: 'Kasir',
-                selected: visibleIndex == 0,
-                onTap: () => _goTo(0),
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: const Border(
+                top: BorderSide(color: AppTheme.subtleBorder, width: 0.5)),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primaryDeep.withValues(alpha: 0.08),
+                blurRadius: 24,
+                offset: const Offset(0, -8),
               ),
-              _NavItem(
-                icon: Icons.table_bar_outlined,
-                activeIcon: Icons.table_bar_rounded,
-                label: 'Meja',
-                selected: visibleIndex == 1,
-                onTap: () => _goTo(1),
-              ),
-              _NavItem(
-                icon: Icons.menu_book_outlined,
-                activeIcon: Icons.menu_book_rounded,
-                label: 'Menu',
-                selected: visibleIndex == 2,
-                onTap: () => _goTo(2),
-              ),
-              if (canViewHistory)
+            ],
+          ),
+          child: SafeArea(
+            child: SizedBox(
+              height: 64,
+              child: Row(children: [
                 _NavItem(
-                  icon: Icons.history_outlined,
-                  activeIcon: Icons.history_rounded,
-                  label: 'Riwayat',
-                  selected: visibleIndex == 3,
-                  onTap: () => _goTo(3),
+                  icon: Icons.point_of_sale_outlined,
+                  activeIcon: Icons.point_of_sale_rounded,
+                  label: 'Kasir',
+                  selected: visibleIndex == 0,
+                  onTap: () => _goTo(0),
                 ),
-              _NavItem(
-                icon: Icons.grid_view_outlined,
-                activeIcon: Icons.grid_view_rounded,
-                label: 'Lainnya',
-                selected: moreSelected,
-                onTap: () => _goTo(7),
-              ),
-            ]),
+                _NavItem(
+                  icon: Icons.table_bar_outlined,
+                  activeIcon: Icons.table_bar_rounded,
+                  label: 'Meja',
+                  selected: visibleIndex == 1,
+                  onTap: () => _goTo(1),
+                ),
+                _NavItem(
+                  icon: Icons.menu_book_outlined,
+                  activeIcon: Icons.menu_book_rounded,
+                  label: 'Menu',
+                  selected: visibleIndex == 2,
+                  onTap: () => _goTo(2),
+                ),
+                if (canViewHistory)
+                  _NavItem(
+                    icon: Icons.history_outlined,
+                    activeIcon: Icons.history_rounded,
+                    label: 'Riwayat',
+                    selected: visibleIndex == 3,
+                    onTap: () => _goTo(3),
+                  ),
+                _NavItem(
+                  icon: Icons.grid_view_outlined,
+                  activeIcon: Icons.grid_view_rounded,
+                  label: 'Lainnya',
+                  selected: moreSelected,
+                  onTap: () => _goTo(7),
+                ),
+              ]),
+            ),
           ),
         ),
       ),
     );
+  }
+
+  void _handleBackPressed() {
+    if (_currentIndex != 0) {
+      _goTo(0);
+      return;
+    }
+
+    final now = DateTime.now();
+    final previous = _lastBackPress;
+    if (previous == null ||
+        now.difference(previous) > const Duration(seconds: 2)) {
+      _lastBackPress = now;
+      AppNotice.show(
+        context,
+        const SnackBar(
+          duration: Duration(seconds: 2),
+          content: Text('Tekan kembali sekali lagi untuk keluar dari Sajia.'),
+        ),
+      );
+      return;
+    }
+    SystemNavigator.pop();
   }
 
   Future<void> _showSyncStatus(
