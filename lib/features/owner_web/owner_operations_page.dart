@@ -321,27 +321,47 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
   }) async {
     final outletId = _outletId;
     if (outletId == null) return;
-    await Supabase.instance.client.rpc(
-      'upsert_scheduled_promotion',
-      params: {
-        'p_id': promotion?.id ?? const Uuid().v4(),
-        'p_outlet_id': outletId,
-        'p_name': name.trim(),
-        'p_start_time': _timeOfDaySql(startTime),
-        'p_end_time': _timeOfDaySql(endTime),
-        'p_active_days': activeWeekdays.toList()..sort(),
-        'p_schedule_mode': scheduleMode,
-        'p_start_date': _dateOnlySql(startDate),
-        'p_end_date': _dateOnlySql(endDate),
-        'p_is_active': isActive,
-        'p_items': items
-            .map((item) => {
-                  'product_id': item.productId,
-                  'promo_price': item.promoPrice,
-                })
-            .toList(growable: false),
-      },
-    );
+    final client = Supabase.instance.client;
+    final id = promotion?.id ?? const Uuid().v4();
+    final itemPayload = items
+        .map((item) => {
+              'product_id': item.productId,
+              'promo_price': item.promoPrice,
+            })
+        .toList(growable: false);
+    final sharedParams = {
+      'p_id': id,
+      'p_outlet_id': outletId,
+      'p_name': name.trim(),
+      'p_start_time': _timeOfDaySql(startTime),
+      'p_end_time': _timeOfDaySql(endTime),
+      'p_active_days': activeWeekdays.toList()..sort(),
+      'p_is_active': isActive,
+      'p_items': itemPayload,
+    };
+
+    try {
+      await client.rpc(
+        'upsert_scheduled_promotion',
+        params: {
+          ...sharedParams,
+          'p_schedule_mode': scheduleMode,
+          'p_start_date': _dateOnlySql(startDate),
+          'p_end_date': _dateOnlySql(endDate),
+        },
+      );
+    } on PostgrestException catch (error) {
+      // Older projects may still expose the original 8-argument RPC. Keep
+      // weekly promos usable while the additive date-range migration rolls
+      // out; date-range promos still need the new overload.
+      if (scheduleMode != 'WEEKLY' || !_isMissingPromotionScheduleRpc(error)) {
+        rethrow;
+      }
+      await client.rpc(
+        'upsert_scheduled_promotion',
+        params: sharedParams,
+      );
+    }
     _reload();
   }
 
@@ -2319,10 +2339,12 @@ class _PromotionEditorState extends State<_PromotionEditor> {
         items: items,
       );
       if (mounted) Navigator.of(context).pop();
-    } on PostgrestException {
+    } on PostgrestException catch (error) {
       if (mounted) {
-        setState(() => _error =
-            'Promo belum dapat disimpan. Pastikan harga promo lebih rendah dari harga menu.');
+        setState(() => _error = _promotionSaveError(
+              error,
+              scheduleMode: _scheduleMode,
+            ));
       }
     } catch (_) {
       if (mounted) {
@@ -2665,6 +2687,31 @@ double? _parseNumber(String input) {
   final value = double.tryParse(input.trim().replaceAll(',', '.'));
   if (value == null || !value.isFinite || value < 0) return null;
   return value;
+}
+
+bool _isMissingPromotionScheduleRpc(PostgrestException error) {
+  final code = error.code?.toUpperCase() ?? '';
+  final message = error.message.toLowerCase();
+  return code == 'PGRST202' && message.contains('upsert_scheduled_promotion');
+}
+
+String _promotionSaveError(
+  PostgrestException error, {
+  required String scheduleMode,
+}) {
+  final code = error.code?.toUpperCase() ?? '';
+  final details = '${error.message} ${error.details ?? ''}'.toLowerCase();
+  if (scheduleMode == 'DATE_RANGE' &&
+      (code == 'PGRST202' || details.contains('upsert_scheduled_promotion'))) {
+    return 'Promo tanggal belum aktif di Cloud. Jalankan migration promo terbaru di Supabase lalu coba lagi.';
+  }
+  if (details.contains('promotion_price_not_lower')) {
+    return 'Harga promo harus lebih rendah dari harga normal menu.';
+  }
+  if (details.contains('promotion_product_invalid')) {
+    return 'Data harga salah satu menu belum valid. Buka ulang data menu lalu coba lagi.';
+  }
+  return 'Promo belum dapat disimpan. Periksa koneksi atau coba lagi.';
 }
 
 String? _validNumber(String input, {bool allowZero = true}) {
