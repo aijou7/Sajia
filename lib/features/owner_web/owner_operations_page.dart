@@ -2684,7 +2684,36 @@ String? _emptyToNull(String? value) {
 }
 
 double? _parseNumber(String input) {
-  final value = double.tryParse(input.trim().replaceAll(',', '.'));
+  var normalized = input.trim().replaceAll(RegExp(r'\s+'), '');
+  if (normalized.isEmpty || normalized.startsWith('-')) return null;
+  normalized = normalized.replaceFirst(RegExp(r'^[Rr][Pp]'), '');
+  normalized = normalized.replaceAll(RegExp(r'[^0-9,.]'), '');
+  if (normalized.isEmpty) return null;
+
+  final lastDot = normalized.lastIndexOf('.');
+  final lastComma = normalized.lastIndexOf(',');
+  if (lastDot >= 0 && lastComma >= 0) {
+    // The last separator is the decimal separator; the other one is a
+    // thousands separator (for example 1.234,56 or 1,234.56).
+    final decimalSeparator = lastDot > lastComma ? '.' : ',';
+    final groupingSeparator = decimalSeparator == '.' ? ',' : '.';
+    normalized = normalized.replaceAll(groupingSeparator, '');
+    normalized = normalized.replaceFirst(decimalSeparator, '.');
+  } else if (lastDot >= 0 || lastComma >= 0) {
+    final separator = lastDot >= 0 ? '.' : ',';
+    final parts = normalized.split(separator);
+    final hasGroupedThousands = parts.length > 2 ||
+        (parts.length == 2 &&
+            parts[1].length == 3 &&
+            parts[0].isNotEmpty);
+    if (hasGroupedThousands) {
+      normalized = parts.join();
+    } else {
+      normalized = normalized.replaceFirst(separator, '.');
+    }
+  }
+
+  final value = double.tryParse(normalized);
   if (value == null || !value.isFinite || value < 0) return null;
   return value;
 }
