@@ -65,7 +65,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
-    final syncStatus = ref.watch(syncStatusProvider).valueOrNull;
+    final syncStatus = ref.watch(syncStatusProvider).value;
     final canViewHistory = user?.canViewSalesHistory == true;
     final canViewReports = user?.canViewFinancialReports == true;
     final canManageSettings = user?.canManageOperations == true;
