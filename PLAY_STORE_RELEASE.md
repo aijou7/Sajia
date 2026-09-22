@@ -1,4 +1,4 @@
-# Sajia Google Play Release Checklist
+# Kasata Google Play Release Checklist
 
 ## Package
 
@@ -75,7 +75,7 @@ APK lokal/debug.
 
 Database lokal `pos_fnb.db` sekarang dibuka dengan SQLite3MultipleCiphers melalui `sqlite3mc`.
 Key dibuat otomatis dan disimpan di secure storage perangkat. Kalau user clear app data /
-ganti perangkat, key lokal hilang; restore data harus lewat backup terenkripsi Sajia.
+ganti perangkat, key lokal hilang; restore data harus lewat backup terenkripsi Kasata.
 
 ## Console assets yang perlu disiapkan
 

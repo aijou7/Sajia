@@ -1,4 +1,4 @@
-# Sajia Cloud, Multi Cabang, dan Midtrans Payments
+# Kasata Cloud, Multi Cabang, dan Midtrans Payments
 
 Folder ini menampung migration Supabase dan Edge Functions untuk:
 

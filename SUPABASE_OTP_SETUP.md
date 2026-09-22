@@ -1,4 +1,4 @@
-# Setup Supabase Email OTP untuk Sajia
+# Setup Supabase Email OTP untuk Kasata
 
 Aplikasi memakai `signInWithOtp()` untuk dua alur:
 
@@ -10,7 +10,7 @@ Agar keduanya mengirim kode angka, buka Supabase Dashboard > Authentication > Em
 ## Confirm signup
 
 ```html
-<h2>Kode verifikasi pendaftaran Sajia</h2>
+<h2>Kode verifikasi pendaftaran Kasata</h2>
 <p>Masukkan kode berikut ke aplikasi:</p>
 <h1 style="font-size:32px;letter-spacing:8px">{{ .Token }}</h1>
 <p>Kode ini hanya berlaku sekali. Jangan berikan kepada siapa pun.</p>
@@ -19,7 +19,7 @@ Agar keduanya mengirim kode angka, buka Supabase Dashboard > Authentication > Em
 ## Magic Link
 
 ```html
-<h2>Kode login Sajia</h2>
+<h2>Kode login Kasata</h2>
 <p>Masukkan kode berikut ke aplikasi:</p>
 <h1 style="font-size:32px;letter-spacing:8px">{{ .Token }}</h1>
 <p>Kode ini hanya berlaku sekali. Jangan berikan kepada siapa pun.</p>

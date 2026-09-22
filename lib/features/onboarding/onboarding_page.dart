@@ -145,7 +145,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
             'Batas pengiriman tercapai. Coba lagi dalam ${retry.inSeconds.clamp(1, 3600)} detik.');
       case OtpResult.accountNotFound:
         setState(() => _emailError =
-            'Email ini belum memiliki akun Sajia. Pilih Daftar bisnis baru.');
+            'Email ini belum memiliki akun Kasata. Pilih Daftar bisnis baru.');
       case OtpResult.networkUnavailable:
         setState(() => _emailError =
             'Tidak dapat terhubung. Periksa internet lalu coba lagi.');
@@ -259,7 +259,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
         setState(() {
           _isLoading = false;
           _emailError =
-              'Email terverifikasi, tetapi belum terhubung ke outlet Sajia. Kembali lalu pilih Daftar bisnis baru.';
+              'Email terverifikasi, tetapi belum terhubung ke outlet Kasata. Kembali lalu pilih Daftar bisnis baru.';
         });
         return;
       }
@@ -287,7 +287,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
         setState(() {
           _isLoading = false;
           _emailError =
-              'Email ini belum terhubung ke outlet Sajia. Gunakan Daftar bisnis baru.';
+              'Email ini belum terhubung ke outlet Kasata. Gunakan Daftar bisnis baru.';
         });
         return;
       }
@@ -687,7 +687,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
           _Field(
               ctrl: _nameCtrl,
               label: 'Nama Outlet *',
-              hint: 'Contoh: Sajia Coffee Braga',
+              hint: 'Contoh: Kasata Coffee Braga',
               icon: Icons.storefront_outlined),
           const SizedBox(height: 16),
           _Field(

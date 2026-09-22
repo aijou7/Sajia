@@ -103,7 +103,7 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
         children: [
           const Icon(Icons.system_update_alt_rounded),
           const SizedBox(width: 10),
-          Expanded(child: Text('Sajia ${info.latestVersion} tersedia')),
+          Expanded(child: Text('Kasata ${info.latestVersion} tersedia')),
         ],
       ),
       content: ConstrainedBox(
@@ -114,7 +114,7 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
           children: [
             Text(
               info.isMandatory
-                  ? 'Pembaruan ini diperlukan agar Sajia tetap dapat digunakan.'
+                  ? 'Pembaruan ini diperlukan agar Kasata tetap dapat digunakan.'
                   : 'Versi baru sudah siap dengan perbaikan dan fitur terbaru.',
             ),
             if (info.releaseNotes.isNotEmpty) ...[
@@ -124,7 +124,7 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> {
             if (_needsPermission) ...[
               const SizedBox(height: 16),
               const Text(
-                'Izinkan Sajia memasang update dari sumber ini satu kali di Pengaturan Android.',
+                'Izinkan Kasata memasang update dari sumber ini satu kali di Pengaturan Android.',
               ),
             ],
             if (_busy && _downloadedFile == null) ...[

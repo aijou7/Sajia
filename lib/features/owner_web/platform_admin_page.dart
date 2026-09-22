@@ -256,7 +256,7 @@ class _PlatformAdminPageState extends State<PlatformAdminPage> {
                             ),
                             SizedBox(height: 6),
                             Text(
-                              'Atur akses Free, Pro, dan Cloud seluruh akun Sajia.',
+                              'Atur akses Free, Pro, dan Cloud seluruh akun Kasata.',
                               style: TextStyle(color: AppTheme.textSecondary),
                             ),
                           ],

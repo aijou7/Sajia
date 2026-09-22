@@ -35,12 +35,12 @@ const plans = {
   PRO_LIFETIME: {
     envKey: "SAJIA_PRO_LIFETIME_PRICE",
     defaultPrice: 149000,
-    description: "Sajia Pro - lisensi aplikasi penuh",
+    description: "Kasata Pro - lisensi aplikasi penuh",
   },
   CLOUD_MONTHLY: {
     envKey: "SAJIA_CLOUD_MONTHLY_PRICE",
     defaultPrice: 10000,
-    description: "Sajia Cloud - 1 outlet / 1 bulan",
+    description: "Kasata Cloud - 1 outlet / 1 bulan",
   },
 } as const;
 
@@ -113,7 +113,7 @@ const handler = async (req: Request) => {
   const outletId = typeof payload.outlet_id === "string" ? payload.outlet_id.trim() : "";
   const outletName = typeof payload.outlet_name === "string" && payload.outlet_name.trim()
     ? payload.outlet_name.trim()
-    : "Outlet Sajia";
+    : "Outlet Kasata";
   const planCode = typeof payload.plan_code === "string" ? payload.plan_code : "";
   const plan = plans[planCode as keyof typeof plans];
   if (!outletId || outletId.length > 120 || !plan) {
@@ -194,10 +194,10 @@ const handler = async (req: Request) => {
     && (!ownedOutlet.license_expiry || new Date(ownedOutlet.license_expiry) > now)
   );
   if (planCode === "PRO_LIFETIME" && ownerHasPro) {
-    return json({ error: "Sajia Pro sudah aktif untuk akun owner ini" }, 409);
+    return json({ error: "Kasata Pro sudah aktif untuk akun owner ini" }, 409);
   }
   if (planCode === "CLOUD_MONTHLY" && !ownerHasPro) {
-    return json({ error: "Sajia Cloud membutuhkan lisensi Pro" }, 403);
+    return json({ error: "Kasata Cloud membutuhkan lisensi Pro" }, 403);
   }
 
   const successUrl =

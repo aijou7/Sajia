@@ -60,7 +60,7 @@ class _ProCheckoutPageState extends State<ProCheckoutPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pembayaran Sajia'),
+        title: const Text('Pembayaran Kasata'),
         actions: [
           IconButton(
             tooltip: 'Muat ulang',

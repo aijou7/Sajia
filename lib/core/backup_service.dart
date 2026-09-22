@@ -31,7 +31,7 @@ class BackupService {
   Future<PickedBackup?> pickBackupFile() async {
     try {
       const backupType = XTypeGroup(
-        label: 'Backup Sajia',
+        label: 'Backup Kasata',
         extensions: [_backupExtension, 'json'],
       );
       final selection = await openFile(

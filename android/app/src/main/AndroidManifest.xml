@@ -11,7 +11,7 @@
 <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
     <application
-        android:label="Sajia"
+        android:label="Kasata"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"

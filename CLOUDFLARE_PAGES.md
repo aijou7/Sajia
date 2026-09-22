@@ -1,4 +1,4 @@
-# Deploy dashboard Sajia ke Cloudflare Pages
+# Deploy dashboard Kasata ke Cloudflare Pages
 
 ## URL portal yang dipakai aplikasi
 

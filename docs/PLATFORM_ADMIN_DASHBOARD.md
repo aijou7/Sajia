@@ -1,4 +1,4 @@
-# Dashboard admin paket Sajia
+# Dashboard admin paket Kasata
 
 Dashboard owner di `/sajia/owner` punya mode **Akun & paket** untuk admin
 platform. Mode ini dapat melihat seluruh akun owner, mengubah paket menjadi

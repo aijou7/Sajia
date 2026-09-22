@@ -1,11 +1,11 @@
-# Panduan Midtrans Production - Sajia
+# Panduan Midtrans Production - Kasata
 
 Dokumen ini digunakan setelah akun merchant Midtrans **sudah disetujui untuk Production**.
 
 ## Sebelum mengaktifkan Production
 
 - Pastikan metode pembayaran Production yang diperlukan sudah aktif di dashboard Midtrans.
-- Pastikan harga Sajia Pro dan Cloud sudah benar.
+- Pastikan harga Kasata Pro dan Cloud sudah benar.
 - Siapkan satu transaksi nyata untuk pengujian akhir.
 - Jangan menyimpan Server Key di aplikasi, website, repository GitHub, screenshot, atau percakapan.
 
@@ -51,8 +51,8 @@ Pada Supabase, konfigurasi **Verify JWT with legacy secret** untuk fungsi `midtr
 
 ## 4. Pengujian transaksi nyata
 
-1. Buka aplikasi Sajia menggunakan akun owner.
-2. Pilih upgrade Sajia Pro atau Cloud.
+1. Buka aplikasi Kasata menggunakan akun owner.
+2. Pilih upgrade Kasata Pro atau Cloud.
 3. Pastikan halaman checkout tidak lagi bertanda **TEST**.
 4. Bayar menggunakan metode Production yang aktif.
 5. Pastikan transaksi Midtrans berstatus `settlement` atau `capture`.
@@ -82,4 +82,4 @@ Pastikan kedua nilai berasal dari environment yang sama. Jangan memasangkan Prod
 
 ---
 
-Sajia - dibuat oleh Aijou Teknologi Digital.
+Kasata - dibuat oleh Aijou Teknologi Digital.

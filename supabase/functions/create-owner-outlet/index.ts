@@ -52,7 +52,7 @@ const handler = async (req: Request) => {
   if (error) {
     const message = String(error.message || "");
     if (message.includes("SAJIA_PRO_REQUIRED_FOR_ADDITIONAL_OUTLET")) {
-      return json({ error: "Tambah cabang membutuhkan Sajia Pro" }, 403);
+      return json({ error: "Tambah cabang membutuhkan Kasata Pro" }, 403);
     }
     if (message.includes("OUTLET_ID_ALREADY_EXISTS")) {
       return json({ error: "ID cabang sudah digunakan" }, 409);

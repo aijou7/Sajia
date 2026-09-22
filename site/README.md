@@ -1,6 +1,6 @@
-# Sajia Official Site
+# Kasata Official Site
 
-Static landing page untuk download dan positioning resmi Sajia.
+Static landing page untuk download dan positioning resmi Kasata.
 
 ## Preview lokal
 

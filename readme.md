@@ -1,6 +1,6 @@
-# Sajia
+# Kasata
 
-Sajia is a cashier and F&B operations app for outlets that need fast orders, clear table flow, reliable receipts, and offline-first local storage.
+Kasata is a cashier and F&B operations app for outlets that need fast orders, clear table flow, reliable receipts, and offline-first local storage.
 
 Brand guidance lives in [`BRAND_IDENTITY.md`](BRAND_IDENTITY.md). The in-app brand constants and logo widget live in `lib/core/brand.dart`.
 
@@ -44,7 +44,7 @@ flutter analyze --no-pub
 
 ## Official Site
 
-Static website resmi Sajia ada di `site/`.
+Static website resmi Kasata ada di `site/`.
 
 APK publik disimpan sebagai GitHub Release, bukan di dalam repository. Untuk
 membuat APK ARM64 Android modern:
@@ -55,7 +55,7 @@ flutter build apk --release --split-per-abi --no-pub
 
 ## Pro payments
 
-Sajia Pro memakai checkout Midtrans melalui Supabase Edge Functions. Ikuti
+Kasata Pro memakai checkout Midtrans melalui Supabase Edge Functions. Ikuti
 [`supabase/README.md`](supabase/README.md) untuk migration, environment secret,
 deploy function, dan webhook Midtrans. Server Key Midtrans tidak boleh masuk ke
 APK.

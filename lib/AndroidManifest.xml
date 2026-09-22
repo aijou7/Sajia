@@ -1,5 +1,5 @@
 <!-- File: android/app/src/main/AndroidManifest.xml -->
-<!-- Ganti android:label dari "pos_mobile" jadi "Sajia" -->
+<!-- Ganti android:label dari "pos_mobile" jadi "Kasata" -->
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -16,7 +16,7 @@
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
 
     <application
-        android:label="Sajia"
+        android:label="Kasata"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true">

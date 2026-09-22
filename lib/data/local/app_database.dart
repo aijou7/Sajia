@@ -158,7 +158,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// Keeps local rows only for the verified owner's outlets.
   ///
-  /// Sajia uses one encrypted local database per installation. A change of
+  /// Kasata uses one encrypted local database per installation. A change of
   /// Supabase owner must remove previous-account rows before PIN lookup or a
   /// recovery push can run.
   Future<void> retainOnlyOutlets(Set<String> allowedOutletIds) async {

@@ -1,13 +1,13 @@
-# Sajia Brand Identity
+# Kasata Brand Identity
 
 ## Brand Core
 
-**Name:** Sajia
+**Name:** Kasata
 **Category:** Kasir dan operasional F&B
 **Tagline:** Kasir restoran yang rapi, cepat, dan siap tumbuh.
 **Short copy:** Kelola pesanan, meja, dan struk dalam satu alur.
 
-Sajia adalah aplikasi operasional untuk restoran, kafe, dan outlet F&B yang butuh alur kasir cepat, pencatatan rapi, dan sinkronisasi data yang bisa diandalkan.
+Kasata adalah aplikasi operasional untuk restoran, kafe, dan outlet F&B yang butuh alur kasir cepat, pencatatan rapi, dan sinkronisasi data yang bisa diandalkan.
 
 ## Personality
 
@@ -18,7 +18,7 @@ Sajia adalah aplikasi operasional untuk restoran, kafe, dan outlet F&B yang butu
 
 ## Logo
 
-Logo Sajia memakai simbol cloche di atas piring untuk mewakili layanan F&B, dengan badge "Rp" untuk menandai fungsi kasir dan transaksi.
+Logo Kasata memakai simbol cloche di atas piring untuk mewakili layanan F&B, dengan badge "Rp" untuk menandai fungsi kasir dan transaksi.
 
 Primary mark tersedia di:
 
@@ -37,7 +37,7 @@ Aturan pemakaian:
 
 | Token | Hex | Use |
 | --- | --- | --- |
-| Sajia Teal | `#356B66` | Primary buttons, progress, focus, and deliberate interaction accents |
+| Kasata Teal | `#356B66` | Primary buttons, progress, focus, and deliberate interaction accents |
 | Deep Teal | `#285752` | Primary-button gradient only |
 | Soft Teal | `#E7F1EF` | Rare brand moments; never a default card or frame color |
 | Ink | `#111111` | Main text, selected labels, icons, and strong UI chrome |
@@ -66,7 +66,7 @@ Usage:
 - Keep screens dense, clean, and fast to scan.
 - Prefer white surfaces on neutral gray backgrounds.
 - Use rounded controls, but keep cards and panels practical.
-- Treat Sajia Teal as an accent, not as the base color of the interface.
+- Treat Kasata Teal as an accent, not as the base color of the interface.
 - Keep normal text black or gray; use white text only on dark or accent-filled controls.
 - Keep frames, dividers, cards, fields, and default icon backgrounds neutral.
 - Use the teal gradient only for primary calls to action. Use black gradients for high-emphasis information surfaces.
@@ -74,7 +74,7 @@ Usage:
 
 ## Product Packaging
 
-Sajia should feel free to start, not locked before value is proven.
+Kasata should feel free to start, not locked before value is proven.
 
 Free includes the core POS workflow:
 

@@ -51,7 +51,7 @@ export const verifyPlayIntegrity = async (payload: {
     return {
       ok: false,
       enforced,
-      error: "Verifikasi aplikasi dibutuhkan. Update/install Sajia dari sumber resmi.",
+      error: "Verifikasi aplikasi dibutuhkan. Update/install Kasata dari sumber resmi.",
     };
   }
 
@@ -91,7 +91,7 @@ export const verifyPlayIntegrity = async (payload: {
     return {
       ok: false,
       enforced,
-      error: "Package aplikasi tidak cocok dengan Sajia resmi.",
+      error: "Package aplikasi tidak cocok dengan Kasata resmi.",
       verdict: tokenPayload,
     };
   }

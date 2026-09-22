@@ -212,7 +212,7 @@ class _OwnerSignInPageState extends State<_OwnerSignInPage> {
       case OtpResult.accountNotFound:
         widget.onAuthFlowEnd();
         setState(() => _error =
-            'Email ini belum terdaftar sebagai owner Sajia. Daftar melalui aplikasi terlebih dahulu.');
+            'Email ini belum terdaftar sebagai owner Kasata. Daftar melalui aplikasi terlebih dahulu.');
       case OtpResult.networkUnavailable:
         widget.onAuthFlowEnd();
         setState(() =>
@@ -868,7 +868,7 @@ class _DashboardLoadError extends StatelessWidget {
           title: 'Data dashboard belum dapat dimuat',
           message:
               'Periksa koneksi internet lalu coba lagi. Jika kendala tetap '
-              'terjadi, hubungi dukungan Sajia dan sertakan email owner Anda.',
+              'terjadi, hubungi dukungan Kasata dan sertakan email owner Anda.',
           actionLabel: 'Coba lagi',
           onAction: onRetry,
         ),
@@ -894,7 +894,7 @@ class _CloudEntitlementRequired extends StatelessWidget {
               title: 'Paket Cloud diperlukan',
               message: 'Owner Portal menampilkan laporan hanya untuk cabang '
                   'dengan paket Cloud aktif. Aktifkan Cloud melalui menu '
-                  'Pengaturan > Paket Sajia di aplikasi, lalu cek kembali di sini.',
+                  'Pengaturan > Paket Kasata di aplikasi, lalu cek kembali di sini.',
               actionLabel: 'Cek ulang akses Cloud',
               onAction: onRetry,
             ),

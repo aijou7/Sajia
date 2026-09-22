@@ -379,7 +379,7 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
             ? const _OwnerOperationsEmpty(
                 icon: Icons.storefront_outlined,
                 title: 'Belum ada cabang',
-                message: 'Buat cabang dari aplikasi Sajia terlebih dahulu.',
+                message: 'Buat cabang dari aplikasi Kasata terlebih dahulu.',
               )
             : FutureBuilder<_OperationsData>(
                 future: _data,

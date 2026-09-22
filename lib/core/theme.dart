@@ -6,7 +6,7 @@ import 'brand.dart';
 
 class AppTheme {
   // ── NEUTRAL UI + BRAND ACCENT ─────────────────
-  // Warna Sajia dipakai sebagai aksen interaksi, bukan sebagai warna chrome,
+  // Warna Kasata dipakai sebagai aksen interaksi, bukan sebagai warna chrome,
   // teks, frame, atau permukaan aplikasi.
   static const action = AppBrand.primary;
   static const actionDark = AppBrand.primaryDark;

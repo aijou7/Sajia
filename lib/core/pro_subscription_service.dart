@@ -175,7 +175,7 @@ class SajiaPlanService {
         uri.scheme != 'https' ||
         !allowedHosts.contains(uri.host.toLowerCase())) {
       throw const SajiaPlanException(
-        'Checkout pembayaran tidak valid. Hubungi support Sajia.',
+        'Checkout pembayaran tidak valid. Hubungi support Kasata.',
       );
     }
   }
@@ -184,7 +184,7 @@ class SajiaPlanService {
     final uri = Uri.tryParse(url);
     if (uri == null || uri.scheme != 'https') {
       throw const SajiaPlanException(
-        'Callback pembayaran tidak valid. Hubungi support Sajia.',
+        'Callback pembayaran tidak valid. Hubungi support Kasata.',
       );
     }
   }

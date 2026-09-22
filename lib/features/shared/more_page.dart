@@ -61,7 +61,7 @@ class MorePage extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          user?.name ?? 'Pengguna Sajia',
+                          user?.name ?? 'Pengguna Kasata',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(

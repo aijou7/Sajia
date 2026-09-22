@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 class AppBrand {
-  static const name = 'Sajia';
-  static const legalName = 'Sajia';
+  /// Public product name. Keep the legacy package/database identifiers
+  /// unchanged so existing installs can update in place.
+  static const name = 'Kasata';
+  static const legalName = 'Kasata';
   static const descriptor = 'Kasir & Operasional F&B';
   static const tagline = 'Kasir restoran yang rapi, cepat, dan siap tumbuh.';
   static const shortTagline =
@@ -90,7 +92,7 @@ class SajiaMark extends StatelessWidget {
   }
 }
 
-/// Logo utama Sajia untuk area yang cukup lebar.
+/// Logo utama Kasata untuk area yang cukup lebar.
 ///
 /// Ikon launcher sengaja tetap berupa simbol agar terbaca pada ukuran kecil,
 /// sedangkan lockup ini menyatukan simbol, wordmark, dan descriptor merek.

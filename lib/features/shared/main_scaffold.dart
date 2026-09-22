@@ -190,7 +190,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         context,
         const SnackBar(
           duration: Duration(seconds: 2),
-          content: Text('Tekan kembali sekali lagi untuk keluar dari Sajia.'),
+          content: Text('Tekan kembali sekali lagi untuk keluar dari Kasata.'),
         ),
       );
       return;

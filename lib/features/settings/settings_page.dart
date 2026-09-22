@@ -96,7 +96,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       if (!mounted) return;
       if (info == null) {
         AppNotice.show(context, const SnackBar(
-          content: Text('Sajia sudah versi terbaru, atau update belum bisa dicek.'),
+          content: Text('Kasata sudah versi terbaru, atau update belum bisa dicek.'),
           backgroundColor: AppTheme.success,
         ));
         return;
@@ -371,7 +371,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             const _SettingsTile(
               icon: Icons.business_center_outlined,
               title: 'Made by Aijou Teknologi Digital',
-              subtitle: 'Pengembang resmi aplikasi Sajia',
+              subtitle: 'Pengembang resmi aplikasi Kasata',
               onTap: null,
               trailing: Text('Developer',
                   style: TextStyle(color: AppTheme.primary, fontSize: 13)),
@@ -383,7 +383,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   : isPro
                       ? Icons.workspace_premium
                       : Icons.sell_outlined,
-              title: 'Paket Sajia',
+              title: 'Paket Kasata',
               subtitle: isCloud
                   ? 'Cloud aktif: backup online dan laporan lintas cabang.'
                   : isPro
@@ -415,7 +415,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 title: 'Dashboard Owner',
                 subtitle: isCloud
                     ? 'Buka laporan dan pantau seluruh cabang di web'
-                    : 'Buka dashboard web Sajia',
+                    : 'Buka dashboard web Kasata',
                 onTap: () => _openOwnerDashboard(context),
                 trailing: const Icon(
                   Icons.open_in_new_rounded,
@@ -455,7 +455,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               title: 'Pembaruan aplikasi',
               subtitle: _checkingAppUpdate
                   ? 'Sedang memeriksa versi terbaru…'
-                  : 'Cek dan download versi Sajia terbaru',
+                  : 'Cek dan download versi Kasata terbaru',
               onTap: _checkingAppUpdate ? null : _checkForAppUpdate,
               trailing: _checkingAppUpdate
                   ? const SizedBox(
@@ -523,7 +523,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               _SettingsTile(
                 icon: Icons.logout_rounded,
                 title: 'Logout akun email',
-                subtitle: 'Putuskan akun Sajia dari perangkat ini',
+                subtitle: 'Putuskan akun Kasata dari perangkat ini',
                 onTap: () => _confirmAccountLogout(context, ref),
                 trailing: const Icon(
                   Icons.chevron_right_rounded,
@@ -666,7 +666,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Logout akun Sajia?'),
+        title: const Text('Logout akun Kasata?'),
         content: const Text(
           'Email owner akan diputus dari perangkat ini. Untuk menggunakan '
           'akun dan PIN staff lagi, kamu harus login email/OTP kembali. '
@@ -870,7 +870,7 @@ Future<bool> _ensureCanCreateOutlet(BuildContext context, WidgetRef ref) async {
 
   if (context.mounted) {
     AppNotice.show(context, const SnackBar(
-      content: Text('Tambah cabang butuh Sajia Pro. Upgrade dulu ya.'),
+      content: Text('Tambah cabang butuh Kasata Pro. Upgrade dulu ya.'),
       backgroundColor: AppTheme.warning,
     ));
     showModalBottomSheet(
@@ -1170,9 +1170,9 @@ class _PlanActivationSheetState extends ConsumerState<_PlanActivationSheet> {
       if (!mounted || !showFeedback) return;
       AppNotice.show(context, SnackBar(
         content: Text(status.isCloud
-            ? 'Sajia Cloud aktif. Terima kasih!'
+            ? 'Kasata Cloud aktif. Terima kasih!'
             : status.isPro
-                ? 'Sajia Pro aktif. Cloud bisa diaktifkan kapan saja.'
+                ? 'Kasata Pro aktif. Cloud bisa diaktifkan kapan saja.'
                 : 'Pembayaran belum terkonfirmasi. Cek lagi sebentar.'),
         backgroundColor: status.isPro ? AppTheme.success : AppTheme.warning,
       ));
@@ -1196,7 +1196,7 @@ class _PlanActivationSheetState extends ConsumerState<_PlanActivationSheet> {
         outlet!.cloudExpiry!.isAfter(DateTime.now());
 
     return _BottomSheet(
-      title: 'Paket Sajia',
+      title: 'Paket Kasata',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1216,10 +1216,10 @@ class _PlanActivationSheetState extends ConsumerState<_PlanActivationSheet> {
               children: [
                 Text(
                   isCloud
-                      ? 'Sajia Cloud aktif'
+                      ? 'Kasata Cloud aktif'
                       : isPro
-                          ? 'Sajia Pro aktif'
-                          : 'Sajia Free aktif',
+                          ? 'Kasata Pro aktif'
+                          : 'Kasata Free aktif',
                   style: TextStyle(
                     color: isPro ? Colors.white : AppTheme.primary,
                     fontSize: 16,
@@ -1679,7 +1679,7 @@ class _OutletFormSheetState extends ConsumerState<_OutletFormSheet> {
       title: widget.createNew ? 'Tambah Cabang' : 'Informasi Outlet',
       child: Column(
         children: [
-          _FormField('Nama Outlet *', _nameCtrl, 'Contoh: Sajia Coffee Braga'),
+          _FormField('Nama Outlet *', _nameCtrl, 'Contoh: Kasata Coffee Braga'),
           const SizedBox(height: 12),
           _FormField('Alamat', _addressCtrl, 'Alamat lengkap outlet'),
           const SizedBox(height: 12),
@@ -1798,7 +1798,7 @@ class _ReceiptSettingsSheetState extends ConsumerState<_ReceiptSettingsSheet> {
               _serviceCtrl,
             ]),
             builder: (context, _) => _ReceiptPreviewCard(
-              outletName: outlet?.name ?? 'Sajia',
+              outletName: outlet?.name ?? 'Kasata',
               address: outlet?.address,
               phone: outlet?.phone,
               header: _headerCtrl.text,

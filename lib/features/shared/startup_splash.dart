@@ -284,7 +284,7 @@ class _LoadingStatus extends StatelessWidget {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Semantics(
       container: true,
-      label: 'Sajia sedang disiapkan',
+      label: 'Kasata sedang disiapkan',
       child: ExcludeSemantics(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -325,7 +325,7 @@ class _LoadingStatus extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             const Text(
-              'Menyiapkan Sajia',
+              'Menyiapkan Kasata',
               style: TextStyle(
                 color: AppBrand.mutedInk,
                 fontSize: 13,
@@ -368,7 +368,7 @@ class SajiaStartupError extends StatelessWidget {
                     const SajiaMark(size: 76, radius: 22),
                     const SizedBox(height: 28),
                     const Text(
-                      'Sajia belum dapat disiapkan',
+                      'Kasata belum dapat disiapkan',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: AppBrand.ink,
