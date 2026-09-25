@@ -140,11 +140,15 @@ class FinanceDao extends DatabaseAccessor<AppDatabase> with _$FinanceDaoMixin {
           .get();
       for (final item in paidItems) {
         final quantity = double.tryParse(item.quantity) ?? 0;
-        if (quantity <= 0) continue;
+        if (quantity <= 0) {
+          continue;
+        }
         soldQuantity += quantity;
         final snapshottedCogs = double.tryParse(item.unitCogs ?? '');
         if (snapshottedCogs == null || !snapshottedCogs.isFinite ||
-            snapshottedCogs < 0) continue;
+            snapshottedCogs < 0) {
+          continue;
+        }
         hppCoveredQuantity += quantity;
         cogs += snapshottedCogs * quantity;
       }
