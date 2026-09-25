@@ -273,6 +273,7 @@ class _DashboardData {
   int get transactions =>
       branches.fold(0, (sum, item) => sum + item.transactions);
   double get margin => revenue == 0 ? 0 : netProfit / revenue * 100;
+  bool get hasReliableHpp => branches.every((item) => item.hasReliableHpp);
 }
 
 class _MonthPicker extends StatelessWidget {
@@ -358,7 +359,11 @@ class _OverviewTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 104),
       children: [
-        _NetProfitHero(value: data.netProfit, margin: data.margin),
+        _NetProfitHero(
+          value: data.netProfit,
+          margin: data.margin,
+          hasReliableHpp: data.hasReliableHpp,
+        ),
         const SizedBox(height: 12),
         Row(children: [
           Expanded(
@@ -384,7 +389,9 @@ class _OverviewTab extends StatelessWidget {
           Expanded(
             child: _MetricCard(
               label: 'Estimasi laba kotor',
-              value: data.grossProfit.toRupiahCompact,
+              value: data.hasReliableHpp
+                  ? data.grossProfit.toRupiahCompact
+                  : 'HPP belum lengkap',
               icon: Icons.show_chart_rounded,
               color: AppTheme.success,
             ),
@@ -422,8 +429,9 @@ class _OverviewTab extends StatelessWidget {
                 : data.branches.length > 1
                     ? 'Cabang tugasmu bulan ini'
                     : '${best.outletName} bulan ini',
-            subtitle:
-                '${best.revenue.toRupiah} dari ${best.transactions} transaksi • margin operasional ${best.margin.toStringAsFixed(1)}%',
+            subtitle: best.hasReliableHpp
+                ? '${best.revenue.toRupiah} dari ${best.transactions} transaksi • margin operasional ${best.margin.toStringAsFixed(1)}%'
+                : '${best.revenue.toRupiah} dari ${best.transactions} transaksi • HPP belum lengkap',
           ),
       ],
     );
@@ -576,7 +584,12 @@ class _BranchesTab extends StatelessWidget {
 class _NetProfitHero extends StatelessWidget {
   final double value;
   final double margin;
-  const _NetProfitHero({required this.value, required this.margin});
+  final bool hasReliableHpp;
+  const _NetProfitHero({
+    required this.value,
+    required this.margin,
+    required this.hasReliableHpp,
+  });
 
   @override
   Widget build(BuildContext context) => Container(
@@ -598,13 +611,15 @@ class _NetProfitHero extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                         letterSpacing: .8)),
                 const SizedBox(height: 8),
-                Text(value.toRupiah,
+                Text(hasReliableHpp ? value.toRupiah : 'HPP belum lengkap',
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 25,
                         fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                Text('Margin operasional ${margin.toStringAsFixed(1)}% bulan ini',
+                Text(hasReliableHpp
+                    ? 'Margin operasional ${margin.toStringAsFixed(1)}% bulan ini'
+                    : 'Estimasi hasil menunggu HPP transaksi yang lengkap',
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: .86),
                         fontSize: 12)),
@@ -756,13 +771,13 @@ class _ProfitLossCard extends StatelessWidget {
           _MoneyLine('Harga pokok penjualan (HPP)', -data.cogs,
               AppTheme.textSecondary),
           _MoneyLine('Estimasi laba kotor', data.grossProfit, AppTheme.success,
-              bold: true),
+              bold: true, available: data.hasReliableHpp),
           const Divider(),
           _MoneyLine('Beban operasional', -data.expenses, AppTheme.danger),
           Container(height: 1, color: AppTheme.borderColor),
           _MoneyLine('ESTIMASI HASIL SETELAH BEBAN TERCATAT', data.netProfit,
               data.netProfit >= 0 ? AppTheme.success : AppTheme.danger,
-              bold: true, large: true),
+              bold: true, large: true, available: data.hasReliableHpp),
           const Padding(
             padding: EdgeInsets.only(bottom: 10),
             child: Text(
@@ -780,8 +795,9 @@ class _MoneyLine extends StatelessWidget {
   final Color color;
   final bool bold;
   final bool large;
+  final bool available;
   const _MoneyLine(this.label, this.amount, this.color,
-      {this.bold = false, this.large = false});
+      {this.bold = false, this.large = false, this.available = true});
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -792,7 +808,7 @@ class _MoneyLine extends StatelessWidget {
                   style: TextStyle(
                       fontSize: large ? 14 : 13,
                       fontWeight: bold ? FontWeight.w800 : FontWeight.w500))),
-          Text(amount.toRupiah,
+          Text(available ? amount.toRupiah : 'HPP belum lengkap',
               style: TextStyle(
                   fontSize: large ? 16 : 13,
                   fontWeight: FontWeight.w800,
@@ -812,7 +828,8 @@ class _HealthCard extends StatelessWidget {
         data.revenue == 0 ? 0.0 : data.expenses / data.revenue * 100;
     return ModernCard(
       child: Column(children: [
-        _RatioRow('Margin operasional (estimasi)', data.margin, AppTheme.success),
+        _RatioRow('Margin operasional (estimasi)', data.margin,
+            AppTheme.success, available: data.hasReliableHpp),
         const SizedBox(height: 14),
         _RatioRow('Porsi HPP', cogsRatio, AppTheme.warning),
         const SizedBox(height: 14),
@@ -826,7 +843,9 @@ class _RatioRow extends StatelessWidget {
   final String label;
   final double value;
   final Color color;
-  const _RatioRow(this.label, this.value, this.color);
+  final bool available;
+  const _RatioRow(this.label, this.value, this.color,
+      {this.available = true});
 
   @override
   Widget build(BuildContext context) =>
@@ -836,7 +855,7 @@ class _RatioRow extends StatelessWidget {
               child: Text(label,
                   style: const TextStyle(
                       fontSize: 12, fontWeight: FontWeight.w600))),
-          Text('${value.toStringAsFixed(1)}%',
+          Text(available ? '${value.toStringAsFixed(1)}%' : 'HPP belum lengkap',
               style: TextStyle(
                   fontSize: 12, fontWeight: FontWeight.w800, color: color)),
         ]),
@@ -844,7 +863,7 @@ class _RatioRow extends StatelessWidget {
         ClipRRect(
           borderRadius: BorderRadius.circular(99),
           child: LinearProgressIndicator(
-              value: value.clamp(0, 100).toDouble() / 100,
+              value: available ? value.clamp(0, 100).toDouble() / 100 : 0,
               minHeight: 7,
               color: color,
               backgroundColor: color.withValues(alpha: .12)),
@@ -885,7 +904,9 @@ class _BranchCard extends StatelessWidget {
                         fontSize: 14, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 4),
                 Text(
-                    '${branch.transactions} transaksi • margin operasional ${branch.margin.toStringAsFixed(1)}%',
+                    branch.hasReliableHpp
+                        ? '${branch.transactions} transaksi • margin operasional ${branch.margin.toStringAsFixed(1)}%'
+                        : '${branch.transactions} transaksi • HPP belum lengkap',
                     style: const TextStyle(
                         fontSize: 11, color: AppTheme.textSecondary)),
                 const SizedBox(height: 10),
@@ -899,6 +920,7 @@ class _BranchCard extends StatelessWidget {
                       child: _BranchAmount(
                           label: 'Estimasi hasil',
                           amount: branch.netProfit,
+                          available: branch.hasReliableHpp,
                           color: branch.netProfit >= 0
                               ? AppTheme.success
                               : AppTheme.danger)),
@@ -912,8 +934,12 @@ class _BranchAmount extends StatelessWidget {
   final String label;
   final double amount;
   final Color color;
+  final bool available;
   const _BranchAmount(
-      {required this.label, required this.amount, required this.color});
+      {required this.label,
+      required this.amount,
+      required this.color,
+      this.available = true});
 
   @override
   Widget build(BuildContext context) =>
@@ -922,7 +948,7 @@ class _BranchAmount extends StatelessWidget {
             style:
                 const TextStyle(fontSize: 10, color: AppTheme.textSecondary)),
         const SizedBox(height: 2),
-        Text(amount.toRupiahCompact,
+        Text(available ? amount.toRupiahCompact : 'HPP belum lengkap',
             style: TextStyle(
                 fontSize: 13, fontWeight: FontWeight.w800, color: color)),
       ]);

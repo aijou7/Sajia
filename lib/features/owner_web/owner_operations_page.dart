@@ -5,6 +5,8 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/numeric_input_formatter.dart';
 import '../../core/theme.dart';
+import '../../domain/costing.dart';
+import '../menu/hpp_calculator.dart';
 
 class OwnerOutletOption {
   final String id;
@@ -84,7 +86,28 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
             .limit(150)
       else
         Future.value(const <dynamic>[]),
+      _loadCostingRows(client, outlet.id),
+      client
+          .from('product_cost_profiles')
+          .select()
+          .eq('outlet_id', outlet.id),
     ]);
+
+    final costingRows = responses[4] as List<Map<String, dynamic>>;
+    final profilesByProduct = <String, Map<String, dynamic>>{};
+    for (final row in responses[5] as List) {
+      final profile = Map<String, dynamic>.from(row as Map);
+      final productId = profile['product_id']?.toString();
+      if (productId != null) profilesByProduct[productId] = profile;
+    }
+    final costingByProduct = <String, List<CostingComponent>>{};
+    for (final row in costingRows) {
+      final component = CostingComponent.fromJson(row);
+      if (component.productId.isEmpty) continue;
+      costingByProduct
+          .putIfAbsent(component.productId, () => [])
+          .add(component);
+    }
 
     // The promo migration is additive. Keep the existing operational
     // dashboard usable during a staged rollout if an older Cloud project does
@@ -130,7 +153,14 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
           .map((row) => _OwnerCategory.fromJson(Map<String, dynamic>.from(row as Map)))
           .toList(),
       products: (responses[1] as List)
-          .map((row) => _OwnerProduct.fromJson(Map<String, dynamic>.from(row as Map)))
+          .map((row) {
+            final json = Map<String, dynamic>.from(row as Map);
+            return _OwnerProduct.fromJson(
+              json,
+              recipeComponents: costingByProduct[json['id']?.toString()] ?? const [],
+              costProfile: profilesByProduct[json['id']?.toString()],
+            );
+          })
           .toList(),
       tables: (responses[2] as List)
           .map((row) => _OwnerTable.fromJson(Map<String, dynamic>.from(row as Map)))
@@ -147,6 +177,25 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
           )
           .toList(),
     );
+  }
+
+  Future<List<Map<String, dynamic>>> _loadCostingRows(
+    SupabaseClient client,
+    String outletId,
+  ) async {
+    try {
+      return ((await client
+                  .from('product_cost_components')
+                  .select()
+                  .eq('outlet_id', outletId)
+                  .order('updated_at')) as List)
+              .map((row) => Map<String, dynamic>.from(row as Map))
+              .toList(growable: false);
+    } catch (_) {
+      // Keep basic menu management available if an older project has not
+      // received the recipe-costing migration yet.
+      return const <Map<String, dynamic>>[];
+    }
   }
 
   void _reload() => setState(() => _data = _loadData());
@@ -181,6 +230,9 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
 
   Future<void> _saveProduct({
     required _OwnerProduct? product,
+    required String productId,
+    required List<CostingComponent> recipeComponents,
+    required int bufferPercent,
     required String? categoryId,
     required String name,
     required String? description,
@@ -193,34 +245,28 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
   }) async {
     final outletId = _outletId;
     if (outletId == null) return;
-    final payload = {
-      'category_id': categoryId,
-      'name': name.trim(),
-      'description': _emptyToNull(description),
-      'price': price,
-      'cogs': cogs,
-      'is_available': isAvailable,
-      'low_stock_alert': lowStockAlert,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    };
-    final table = Supabase.instance.client.from('products');
-    if (product == null) {
-      await table.insert({
-        ...payload,
-        'id': const Uuid().v4(),
+    final client = Supabase.instance.client;
+    await client.rpc('save_owner_product_with_costing', params: {
+      'p_product': {
+        'id': productId,
         'outlet_id': outletId,
-        // A product created in the portal cannot have a prior sale/reversal
-        // on another device, so its opening stock can be written safely.
+        'base_cogs': cogs,
+        'buffer_percent': bufferPercent,
+        'category_id': categoryId,
+        'name': name.trim(),
+        'description': _emptyToNull(description),
+        'price': price,
+        'is_available': isAvailable,
         'track_stock': trackStock,
         'stock': stock,
-        'sort_order': 0,
-      });
-    } else {
-      // Stock and the tracking mode are protected separately. Updating either
-      // as part of a general product edit can lose a sale/reversal that an
-      // offline cashier device is currently syncing.
-      await table.update(payload).eq('id', product.id).eq('outlet_id', outletId);
-    }
+        'low_stock_alert': lowStockAlert,
+      },
+      'p_components': recipeComponents
+          .map((component) => component.toJson())
+          .toList(growable: false),
+      'p_expected_updated_at': product?.updatedAt,
+      'p_expected_cost_revision': product?.costRevision,
+    });
     _reload();
   }
 
@@ -538,6 +584,7 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
       context: context,
       builder: (_) => _ProductEditor(
         product: product,
+        outletId: _outletId!,
         categories: data.categories,
         onSave: _saveProduct,
       ),
@@ -723,6 +770,7 @@ class _OwnerCategory {
 
 class _OwnerProduct {
   final String id;
+  final String? updatedAt;
   final String? categoryId;
   final String name;
   final String? description;
@@ -732,9 +780,14 @@ class _OwnerProduct {
   final bool trackStock;
   final String stock;
   final String lowStockAlert;
+  final List<CostingComponent> recipeComponents;
+  final String baseCogs;
+  final int bufferPercent;
+  final int? costRevision;
 
   const _OwnerProduct({
     required this.id,
+    required this.updatedAt,
     required this.categoryId,
     required this.name,
     required this.description,
@@ -744,10 +797,19 @@ class _OwnerProduct {
     required this.trackStock,
     required this.stock,
     required this.lowStockAlert,
+    this.recipeComponents = const [],
+    required this.baseCogs,
+    required this.bufferPercent,
+    required this.costRevision,
   });
 
-  factory _OwnerProduct.fromJson(Map<String, dynamic> json) => _OwnerProduct(
+  factory _OwnerProduct.fromJson(
+    Map<String, dynamic> json, {
+    List<CostingComponent> recipeComponents = const [],
+    Map<String, dynamic>? costProfile,
+  }) => _OwnerProduct(
         id: json['id']?.toString() ?? '',
+        updatedAt: json['updated_at']?.toString(),
         categoryId: json['category_id']?.toString(),
         name: json['name']?.toString() ?? 'Menu',
         description: json['description']?.toString(),
@@ -757,6 +819,15 @@ class _OwnerProduct {
         trackStock: json['track_stock'] == true,
         stock: json['stock']?.toString() ?? '0',
         lowStockAlert: json['low_stock_alert']?.toString() ?? '5',
+        recipeComponents: recipeComponents,
+        baseCogs: costProfile?['base_cogs']?.toString() ??
+            (recipeComponents.isEmpty
+                ? json['cogs']?.toString() ?? '0'
+                : totalCosting(recipeComponents).toString()),
+        bufferPercent: _asInt(costProfile?['buffer_percent'], fallback: 0),
+        costRevision: costProfile == null
+            ? null
+            : _asInt(costProfile['revision'], fallback: 0),
       );
 }
 
@@ -954,7 +1025,7 @@ class _MenuDataPanel extends StatelessWidget {
         const SizedBox(height: 30),
         _PanelHeader(
           title: 'Menu',
-          subtitle: 'Tambah atau ubah harga, HPP, ketersediaan, dan stok awal.',
+          subtitle: 'Atur harga, resep dan HPP per menu, ketersediaan, serta stok.',
           actionLabel: 'Tambah menu',
           actionIcon: Icons.add_rounded,
           onAction: onAddProduct,
@@ -979,6 +1050,9 @@ class _MenuDataPanel extends StatelessWidget {
                     subtitle: Text(
                       '${categoryNames[data.products[index].categoryId] ?? 'Tanpa kategori'} · '
                       '${_rupiah(data.products[index].price)}'
+                      ' · HPP ${_rupiah(data.products[index].cogs)}'
+                      '${data.products[index].bufferPercent == 0 ? '' : ' · Buffer ${data.products[index].bufferPercent}%'}'
+                      '${data.products[index].recipeComponents.isEmpty ? '' : ' · ${data.products[index].recipeComponents.length} bahan resep'}'
                       '${data.products[index].trackStock ? ' · Stok ${_numberLabel(data.products[index].stock)}' : ''}',
                     ),
                     trailing: Wrap(
@@ -1499,9 +1573,13 @@ class _CategoryEditorState extends State<_CategoryEditor> {
 
 class _ProductEditor extends StatefulWidget {
   final _OwnerProduct? product;
+  final String outletId;
   final List<_OwnerCategory> categories;
   final Future<void> Function({
     required _OwnerProduct? product,
+    required String productId,
+    required List<CostingComponent> recipeComponents,
+    required int bufferPercent,
     required String? categoryId,
     required String name,
     required String? description,
@@ -1515,6 +1593,7 @@ class _ProductEditor extends StatefulWidget {
 
   const _ProductEditor({
     required this.product,
+    required this.outletId,
     required this.categories,
     required this.onSave,
   });
@@ -1524,6 +1603,9 @@ class _ProductEditor extends StatefulWidget {
 }
 
 class _ProductEditorState extends State<_ProductEditor> {
+  late final String _draftProductId;
+  late List<CostingComponent> _recipeComponents;
+  late int _bufferPercent;
   late final TextEditingController _name;
   late final TextEditingController _description;
   late final TextEditingController _price;
@@ -1536,13 +1618,24 @@ class _ProductEditorState extends State<_ProductEditor> {
   bool _saving = false;
   String? _error;
 
+  double get _baseCogsPreview => _recipeComponents.isEmpty
+      ? _parseNumber(_cogs.text) ?? 0
+      : totalCosting(_recipeComponents);
+
   @override
   void initState() {
     super.initState();
+    _draftProductId = widget.product?.id ?? const Uuid().v4();
+    _recipeComponents = List<CostingComponent>.from(
+      widget.product?.recipeComponents ?? const [],
+    );
+    _bufferPercent = widget.product?.bufferPercent ?? 5;
     _name = TextEditingController(text: widget.product?.name ?? '');
     _description = TextEditingController(text: widget.product?.description ?? '');
     _price = TextEditingController(text: widget.product?.price ?? '');
-    _cogs = TextEditingController(text: widget.product?.cogs ?? '0');
+    _cogs = TextEditingController(
+      text: widget.product?.baseCogs ?? '0',
+    );
     _stock = TextEditingController(text: widget.product?.stock ?? '0');
     _lowStockAlert =
         TextEditingController(text: widget.product?.lowStockAlert ?? '5');
@@ -1551,6 +1644,22 @@ class _ProductEditorState extends State<_ProductEditor> {
         : null;
     _isAvailable = widget.product?.isAvailable ?? true;
     _trackStock = widget.product?.trackStock ?? false;
+  }
+
+  Future<void> _editRecipe() async {
+    final result = await showHppCalculator(
+      context: context,
+      outletId: widget.outletId,
+      productId: _draftProductId,
+      initial: _recipeComponents,
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      _recipeComponents = result;
+      if (result.isNotEmpty) {
+        _cogs.text = totalCosting(result).toStringAsFixed(2);
+      }
+    });
   }
 
   @override
@@ -1584,6 +1693,9 @@ class _ProductEditorState extends State<_ProductEditor> {
     try {
       await widget.onSave(
         product: widget.product,
+        productId: _draftProductId,
+        recipeComponents: _recipeComponents,
+        bufferPercent: _bufferPercent,
         categoryId: _categoryId,
         name: _name.text,
         description: _description.text,
@@ -1595,8 +1707,15 @@ class _ProductEditorState extends State<_ProductEditor> {
         lowStockAlert: lowStock,
       );
       if (mounted) Navigator.of(context).pop();
-    } on PostgrestException {
-      if (mounted) setState(() => _error = 'Menu belum dapat disimpan. Coba lagi.');
+    } on PostgrestException catch (error) {
+      if (!mounted) return;
+      final message = error.message.toUpperCase();
+      setState(() => _error = message.contains('PRODUCT_CHANGED_RELOAD') ||
+              message.contains('PRODUCT_COST_CHANGED_RELOAD')
+          ? 'Menu berubah di perangkat lain. Tutup form, muat ulang, lalu coba lagi.'
+          : error.code == 'PGRST202'
+              ? 'Pengaturan HPP belum aktif di Cloud. Terapkan migration terbaru.'
+              : 'Menu belum dapat disimpan. Periksa data lalu coba lagi.');
     } catch (_) {
       if (mounted) setState(() => _error = 'Menu belum dapat disimpan. Periksa koneksi.');
     } finally {
@@ -1659,12 +1778,84 @@ class _ProductEditorState extends State<_ProductEditor> {
                     Expanded(
                       child: TextField(
                         controller: _cogs,
+                        readOnly: _recipeComponents.isNotEmpty,
+                        onChanged: (_) => setState(() {}),
                         keyboardType:
                             const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: 'HPP'),
+                        decoration: InputDecoration(
+                          labelText: _recipeComponents.isEmpty
+                              ? 'HPP dasar manual'
+                              : 'HPP dasar dari resep',
+                        ),
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppTheme.subtleBorder),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Resep & perhitungan HPP',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _recipeComponents.isEmpty
+                            ? 'Resep opsional. Isi HPP dasar manual di atas.'
+                            : '${_recipeComponents.length} bahan · HPP dasar ${_rupiah(_baseCogsPreview.toString())}',
+                        style: const TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Bahan yang sulit ditakar, seperti air galon, boleh dimasukkan dengan perkiraan biaya per porsi.',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<int>(
+                        initialValue: _bufferPercent,
+                        decoration: const InputDecoration(
+                          labelText: 'Buffer kalibrasi & bahan sulit ditakar',
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 0, child: Text('0% · Tanpa buffer')),
+                          DropdownMenuItem(value: 5, child: Text('5% · Standar')),
+                          DropdownMenuItem(value: 10, child: Text('10% · Lebih longgar')),
+                        ],
+                        onChanged: _saving
+                            ? null
+                            : (value) => setState(() => _bufferPercent = value ?? 0),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'HPP final: ${_rupiah(bufferedHpp(_baseCogsPreview, _bufferPercent).toString())} / porsi',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _saving ? null : _editRecipe,
+                        icon: const Icon(Icons.calculate_outlined),
+                        label: Text(_recipeComponents.isEmpty
+                            ? 'Atur resep & hitung HPP'
+                            : 'Ubah resep (${_recipeComponents.length} bahan)'),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 8),
                 SwitchListTile.adaptive(

@@ -67,4 +67,17 @@ void main() {
     expect(line.hasCompatibleUnits, isFalse);
     expect(line.portionCost, 0);
   });
+
+  test('buffer HPP per menu dibulatkan sekali setelah seluruh bahan', () {
+    const base = 6766.4103;
+    expect(bufferedHpp(base, 0), 6766);
+    expect(bufferedHpp(base, 5), 7105);
+    expect(bufferedHpp(base, 10), 7443);
+  });
+
+  test('buffer HPP menolak persentase dan biaya yang tidak valid', () {
+    expect(() => bufferedHpp(1000, 7), throwsArgumentError);
+    expect(() => bufferedHpp(-1, 5), throwsArgumentError);
+    expect(() => bufferedHpp(double.nan, 5), throwsArgumentError);
+  });
 }

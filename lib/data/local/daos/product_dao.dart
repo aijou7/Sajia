@@ -95,7 +95,9 @@ class ProductDao extends DatabaseAccessor<AppDatabase> with _$ProductDaoMixin {
 
   Future<void> deleteProduct(String id) async {
     await transaction(() async {
-      await db.costingDao.deleteComponent(id, enqueueSync: true);
+      for (final component in await db.costingDao.getForProduct(id)) {
+        await db.costingDao.deleteComponent(component.id, enqueueSync: true);
+      }
       await (delete(productVariants)..where((v) => v.productId.equals(id)))
           .go();
       await (delete(products)..where((p) => p.id.equals(id))).go();
