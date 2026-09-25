@@ -317,6 +317,8 @@ begin
     updated_at = clock_timestamp()
   where id = v_product_id and outlet_id = v_outlet_id;
 
+  perform set_config('app.owner_cost_write', 'false', true);
+
   return jsonb_build_object(
     'product_id', v_product_id,
     'revision', v_revision,
