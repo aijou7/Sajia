@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/legacy_outlet.dart';
 import '../local/app_database.dart';
+import '../../domain/costing.dart';
 import 'product_image_uploader.dart';
 
 enum SyncPhase {
@@ -226,6 +227,7 @@ class SyncService {
     await _pushUserOutletAccesses();
     await _pushCategories();
     await _pushProducts();
+    await _pushCostingComponents();
     await _pushProductVariants();
     await _pushTables();
   }
@@ -245,6 +247,7 @@ class SyncService {
       if (item.operation != 'delete') continue;
       if (item.syncTableName != 'products' &&
           item.syncTableName != 'product_variants' &&
+          item.syncTableName != 'product_cost_components' &&
           item.syncTableName != 'restaurant_tables' &&
           item.syncTableName != 'user_outlet_accesses') {
         continue;
@@ -274,10 +277,19 @@ class SyncService {
               .from('product_variants')
               .delete()
               .eq('product_id', item.recordId);
+          await _supabase
+              .from('product_cost_components')
+              .delete()
+              .eq('product_id', item.recordId);
           await _supabase.from('products').delete().eq('id', item.recordId);
         } else if (item.syncTableName == 'product_variants') {
           await _supabase
               .from('product_variants')
+              .delete()
+              .eq('id', item.recordId);
+        } else if (item.syncTableName == 'product_cost_components') {
+          await _supabase
+              .from('product_cost_components')
               .delete()
               .eq('id', item.recordId);
         } else if (item.syncTableName == 'restaurant_tables') {
@@ -384,6 +396,7 @@ class SyncService {
     }
     await _pullCategories();
     await _pullProducts();
+    await _pullCostingComponents();
     await _pullProductVariants();
     await _pullScheduledPromotions(outletIds);
     // A remote delete can leave the source row temporarily visible if the
@@ -802,6 +815,24 @@ class SyncService {
     }
   }
 
+  Future<void> _pullCostingComponents() async {
+    try {
+      final response = await _supabase
+          .from('product_cost_components')
+          .select()
+          .order('updated_at', ascending: false)
+          .limit(5000);
+      for (final row in response as List? ?? const []) {
+        final component = CostingComponent.fromJson(_asMap(row));
+        if (component.id.isEmpty || component.productId.isEmpty) continue;
+        await _db.costingDao.upsertFromRemote(component);
+      }
+    } catch (e) {
+      _markRecoveryPullFailed();
+      debugPrint('[SyncService] pull product cost components failed: $e');
+    }
+  }
+
   /// Pull owner-managed price schedules into the local cache.
   ///
   /// This is recovery data rather than transaction data: a cashier can keep
@@ -1049,6 +1080,22 @@ class SyncService {
         await _db.productDao.markProductSynced(p.id);
       } catch (e) {
         debugPrint('[SyncService] push product ${p.id} failed: $e');
+      }
+    }
+  }
+
+  Future<void> _pushCostingComponents() async {
+    final unsynced = await _db.costingDao.getUnsynced();
+    for (final component in unsynced) {
+      try {
+        await _supabase
+            .from('product_cost_components')
+            .upsert(component.toJson());
+        await _db.costingDao.markSynced(component.id);
+      } catch (e) {
+        debugPrint(
+          '[SyncService] push product cost component ${component.id} failed: $e',
+        );
       }
     }
   }

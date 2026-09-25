@@ -15,6 +15,7 @@ import 'daos/order_dao.dart';
 import 'daos/session_dao.dart';
 import 'daos/sync_dao.dart';
 import 'daos/finance_dao.dart';
+import 'daos/costing_dao.dart';
 
 part 'app_database.g.dart';
 
@@ -48,19 +49,21 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   /// Scheduled promos are cache-only records sourced from the owner portal.
   /// They intentionally stay outside Drift's generated schema because the
   /// cashier never writes them; this keeps the rollout additive for existing
   /// encrypted databases while retaining an offline-readable cache.
   late final PromotionDao promotionDao = PromotionDao(this);
+  late final CostingDao costingDao = CostingDao(this);
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) async {
           await m.createAll();
           await _createPromotionCacheTables();
+          await _createCostingTable();
           await _insertDefaults();
         },
         onUpgrade: (m, from, to) async {
@@ -91,6 +94,9 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               'ALTER TABLE scheduled_promotions ADD COLUMN end_date TEXT',
             );
+          }
+          if (from < 8) {
+            await _createCostingTable();
           }
         },
         beforeOpen: (details) async {
@@ -142,6 +148,32 @@ class AppDatabase extends _$AppDatabase {
     ''');
   }
 
+  Future<void> _createCostingTable() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS product_cost_components (
+        id TEXT PRIMARY KEY,
+        outlet_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        material_name TEXT NOT NULL,
+        package_quantity TEXT NOT NULL,
+        package_unit TEXT NOT NULL,
+        package_price TEXT NOT NULL,
+        recipe_quantity TEXT NOT NULL,
+        recipe_unit TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_synced INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_product_cost_components_product
+      ON product_cost_components(product_id)
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_product_cost_components_outlet
+      ON product_cost_components(outlet_id, updated_at)
+    ''');
+  }
+
   /// Seed data default saat pertama install
   Future<void> _insertDefaults() async {
     // Outlet default — akan diupdate saat setup
@@ -171,6 +203,7 @@ class AppDatabase extends _$AppDatabase {
 
     await transaction(() async {
       await promotionDao.deleteForOutletIds(removedOutletIds);
+      await costingDao.deleteForOutletIds(removedOutletIds);
       final removedOrders = await (select(orders)
             ..where((order) => order.outletId.isIn(removedOutletIds)))
           .get();

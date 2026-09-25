@@ -14,9 +14,11 @@ import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
+import '../../domain/costing.dart';
 import '../../domain/product_variant_options.dart';
 import '../shared/polish_widgets.dart';
 import '../shared/product_image.dart';
+import 'hpp_calculator.dart';
 
 class MenuPage extends ConsumerStatefulWidget {
   const MenuPage({super.key});
@@ -840,9 +842,12 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
   bool _trackStock = false;
   bool _isSaving = false;
   bool _loadingVariants = false;
+  bool _loadingRecipe = false;
   String? _variantLoadError;
+  String? _recipeLoadError;
   final List<_EditableVariantGroup> _variants = [];
   final Set<String> _originalVariantIds = {};
+  List<CostingComponent> _recipeLines = [];
 
   bool get _isEdit => widget.product != null;
 
@@ -866,7 +871,49 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     _selectedCategoryId = p?.categoryId;
     _isAvailable = p?.isAvailable ?? true;
     _trackStock = p?.trackStock ?? false;
-    if (p != null) _loadVariants(p.id);
+    if (p != null) {
+      _loadVariants(p.id);
+      _loadRecipe(p.id);
+    }
+  }
+
+  Future<void> _loadRecipe(String productId) async {
+    setState(() {
+      _loadingRecipe = true;
+      _recipeLoadError = null;
+    });
+    try {
+      final stored =
+          await ref.read(databaseProvider).costingDao.getForProduct(productId);
+      if (!mounted) return;
+      setState(() {
+        _recipeLines = stored;
+        _loadingRecipe = false;
+        if (stored.isNotEmpty) {
+          _cogsCtrl.text = _formatHpp(totalCosting(stored));
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loadingRecipe = false;
+        _recipeLoadError = 'Resep HPP gagal dimuat.';
+      });
+    }
+  }
+
+  Future<void> _openHppCalculator() async {
+    final result = await showHppCalculator(
+      context: context,
+      outletId: ref.read(currentOutletIdProvider),
+      productId: widget.product?.id ?? 'draft-product',
+      initial: _recipeLines,
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      _recipeLines = result;
+      _cogsCtrl.text = _formatHpp(totalCosting(result));
+    });
   }
 
   Future<void> _loadVariants(String productId) async {
@@ -962,6 +1009,13 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
   }
 
   Future<void> _save() async {
+    if (_recipeLoadError != null) {
+      AppNotice.show(context, SnackBar(
+        content: Text('$_recipeLoadError Coba tutup lalu buka lagi.'),
+        backgroundColor: AppTheme.danger,
+      ));
+      return;
+    }
     if (ref.read(currentUserProvider)?.canManageOperations != true) {
       AppNotice.show(context, const SnackBar(
         content: Text('Kasir tidak memiliki akses mengubah menu.'),
@@ -987,6 +1041,23 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     final db = ref.read(databaseProvider);
     final outletId = ref.read(currentOutletIdProvider);
     final id = widget.product?.id ?? const Uuid().v4();
+    final cogsValue = _recipeLines.isNotEmpty
+        ? _formatHpp(totalCosting(_recipeLines))
+        : (_cogsCtrl.text.trim().isEmpty ? '0' : _cogsCtrl.text.trim());
+    final savedRecipe = _recipeLines
+        .map((line) => CostingComponent(
+              id: line.id,
+              outletId: outletId,
+              productId: id,
+              materialName: line.materialName,
+              packageQuantity: line.packageQuantity,
+              packageUnit: line.packageUnit,
+              packagePrice: line.packagePrice,
+              recipeQuantity: line.recipeQuantity,
+              recipeUnit: line.recipeUnit,
+              updatedAt: line.updatedAt,
+            ))
+        .toList(growable: false);
 
     try {
       await db.transaction(() async {
@@ -996,8 +1067,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
           categoryId: Value(_selectedCategoryId),
           name: Value(_nameCtrl.text.trim()),
           price: Value(_priceCtrl.text.trim()),
-          cogs: Value(
-              _cogsCtrl.text.trim().isEmpty ? '0' : _cogsCtrl.text.trim()),
+          cogs: Value(cogsValue),
           description: Value(
               _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim()),
           imageUrl: Value(_imagePath),
@@ -1016,6 +1086,11 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
           updatedAt: Value(DateTime.now()),
           isSynced: const Value(false),
         ));
+        await db.costingDao.replaceForProduct(
+          outletId: outletId,
+          productId: id,
+          components: savedRecipe,
+        );
 
         final currentVariantIds =
             _variants.map((variant) => variant.id).toSet();
@@ -1254,7 +1329,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const _FormLabel('Harga Modal'),
+                        const _FormLabel('HPP manual (opsional)'),
                         TextFormField(
                           controller: _cogsCtrl,
                           selectAllOnFocus: true,
@@ -1268,6 +1343,49 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 14),
+
+              // HPP calculator
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.subtleBorder),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.calculate_outlined,
+                        color: AppTheme.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Kalkulator HPP',
+                              style: TextStyle(fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 3),
+                          Text(
+                            _loadingRecipe
+                                ? 'Memuat resep...'
+                                : _recipeLoadError != null
+                                    ? _recipeLoadError!
+                                    : _recipeLines.isEmpty
+                                        ? 'Hitung dari bahan dan takaran per porsi.'
+                                        : '${_recipeLines.length} bahan · HPP ${_formatHpp(totalCosting(_recipeLines))}',
+                            style: const TextStyle(
+                                color: AppTheme.textSecondary, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                    OutlinedButton(
+                      onPressed: _loadingRecipe ? null : _openHppCalculator,
+                      child: Text(_recipeLines.isEmpty ? 'Atur resep' : 'Edit'),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 14),
 
@@ -2135,6 +2253,8 @@ class _CategoryFormSheetState extends ConsumerState<CategoryFormSheet> {
 }
 
 // ── HELPERS ───────────────────────────────────────────────────
+String _formatHpp(double value) => value.round().toString();
+
 class _FormLabel extends StatelessWidget {
   final String text;
   const _FormLabel(this.text);

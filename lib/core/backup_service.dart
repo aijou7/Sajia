@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'brand.dart';
 import '../data/local/app_database.dart';
+import '../domain/costing.dart';
 import 'package:drift/drift.dart' show InsertMode, Value;
 
 class BackupService {
@@ -82,6 +83,12 @@ class BackupService {
           : await (db.select(db.productVariants)
                 ..where((variant) => variant.productId.isIn(productIds)))
               .get();
+      final allCostingComponents = <CostingComponent>[];
+      for (final productId in productIds) {
+        allCostingComponents.addAll(
+          await db.costingDao.getForProduct(productId),
+        );
+      }
       final allUsers = await db.sessionDao.getUsers(outletId);
       final allAccesses = await (db.select(db.userOutletAccesses)
             ..where((access) => access.outletId.equals(outletId)))
@@ -153,6 +160,9 @@ class BackupService {
                   'is_required': variant.isRequired,
                   'updated_at': variant.updatedAt.toIso8601String(),
                 })
+            .toList(),
+        'product_cost_components': allCostingComponents
+            .map((component) => component.toJson())
             .toList(),
         'orders': allOrders
             .map((o) => {
@@ -425,6 +435,15 @@ class BackupService {
                 ),
                 mode: InsertMode.insertOrReplace,
               );
+        }
+
+        // Restore recipe/HPP lines after their parent products.
+        for (final raw in (data['product_cost_components'] as List? ?? [])) {
+          final component = CostingComponent.fromJson(
+            Map<String, dynamic>.from(raw as Map),
+          );
+          if (component.id.isEmpty || component.productId.isEmpty) continue;
+          await db.costingDao.upsertFromRemote(component, synced: false);
         }
 
         // Restore users
