@@ -146,3 +146,13 @@ double totalCosting(List<CostingComponent> components) => components.fold(
       0,
       (sum, component) => sum + component.portionCost,
     );
+
+/// Rupiah HPP recorded with a transaction after the owner's allowance for
+/// calibration, waste, and small ingredients that are difficult to measure.
+int bufferedHpp(double baseCogs, int bufferPercent) {
+  if (!baseCogs.isFinite || baseCogs < 0 ||
+      !const {0, 5, 10}.contains(bufferPercent)) {
+    throw ArgumentError('Invalid HPP or buffer percentage');
+  }
+  return (baseCogs * (100 + bufferPercent) / 100).round();
+}

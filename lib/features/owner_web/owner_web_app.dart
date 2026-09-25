@@ -981,6 +981,7 @@ class _OwnerDashboardData {
   final double cogs;
   final double expenses;
   final int transactions;
+  final double hppCoverageRatio;
   final bool cloudRequired;
   final bool isPlatformAdmin;
   final List<_BranchData> branches;
@@ -994,6 +995,7 @@ class _OwnerDashboardData {
     required this.cogs,
     required this.expenses,
     required this.transactions,
+    required this.hppCoverageRatio,
     required this.cloudRequired,
     required this.isPlatformAdmin,
     required this.branches,
@@ -1012,6 +1014,7 @@ class _OwnerDashboardData {
         cogs: 0,
         expenses: 0,
         transactions: 0,
+        hppCoverageRatio: 1,
         cloudRequired: false,
         isPlatformAdmin: true,
         branches: const [],
@@ -1035,6 +1038,7 @@ class _OwnerDashboardData {
       cogs: _asDouble(json['cogs']),
       expenses: _asDouble(json['expenses']),
       transactions: _asDouble(json['transactions']).toInt(),
+      hppCoverageRatio: _asDouble(json['hpp_coverage_ratio']),
       cloudRequired: json['cloud_required'] == true,
       isPlatformAdmin: false,
       branches: rawBranches,
@@ -1047,11 +1051,13 @@ class _OwnerDashboardData {
 
   double get grossProfit => revenue - cogs;
   double get netProfit => grossProfit - expenses;
+  bool get hasReliableHpp => transactions == 0 || hppCoverageRatio >= 0.999999;
   OwnerMetricSnapshot get metrics => OwnerMetricSnapshot(
         revenue: revenue,
         cogs: cogs,
         expenses: expenses,
         transactions: transactions,
+        hppCoverageRatio: hppCoverageRatio,
       );
 
   double get averageOrderValue => metrics.averageOrderValue;
@@ -1068,12 +1074,14 @@ class _BranchData {
   final double revenue;
   final double netProfit;
   final int transactions;
+  final double hppCoverageRatio;
 
   const _BranchData({
     required this.name,
     required this.revenue,
     required this.netProfit,
     required this.transactions,
+    required this.hppCoverageRatio,
   });
 
   factory _BranchData.fromJson(Map<String, dynamic> json) => _BranchData(
@@ -1081,7 +1089,10 @@ class _BranchData {
         revenue: _asDouble(json['revenue']),
         netProfit: _asDouble(json['net_profit']),
         transactions: _asDouble(json['transactions']).toInt(),
+        hppCoverageRatio: _asDouble(json['hpp_coverage_ratio']),
       );
+
+  bool get hasReliableHpp => transactions == 0 || hppCoverageRatio >= 0.999999;
 }
 
 class _OwnerOutletData {
@@ -1128,6 +1139,7 @@ OwnerMetricSnapshot _metricsFromJson(Map<String, dynamic> json) =>
       cogs: _asDouble(json['cogs']),
       expenses: _asDouble(json['expenses']),
       transactions: _asDouble(json['transactions']).toInt(),
+      hppCoverageRatio: _asDouble(json['hpp_coverage_ratio']),
     );
 
 class _OwnerDashboard extends StatelessWidget {
@@ -1210,7 +1222,9 @@ class _OwnerDashboard extends StatelessWidget {
                         ),
                         _MetricData(
                           label: 'Estimasi laba kotor*',
-                          value: _rupiah(data.grossProfit),
+                          value: data.hasReliableHpp
+                              ? _rupiah(data.grossProfit)
+                              : 'HPP belum lengkap',
                           icon: Icons.trending_up_rounded,
                           color: AppTheme.success,
                         ),
@@ -1381,7 +1395,9 @@ class _FinanceSummary extends StatelessWidget {
                 ),
                 _MetricData(
                   label: 'Estimasi laba kotor*',
-                  value: _rupiah(data.grossProfit),
+                  value: data.hasReliableHpp
+                      ? _rupiah(data.grossProfit)
+                      : 'HPP belum lengkap',
                   icon: Icons.trending_up_rounded,
                   color: AppTheme.success,
                 ),
@@ -2061,6 +2077,7 @@ class _FinanceBreakdownCard extends StatelessWidget {
                 label: 'Estimasi laba kotor*',
                 value: data.grossProfit,
                 emphasized: true,
+                available: data.hasReliableHpp,
               ),
               _FinanceLine(label: 'Beban usaha', value: -data.expenses),
               const Divider(height: 24),
@@ -2068,6 +2085,7 @@ class _FinanceBreakdownCard extends StatelessWidget {
                 label: 'Estimasi hasil setelah beban tercatat',
                 value: data.netProfit,
                 emphasized: true,
+                available: data.hasReliableHpp,
               ),
             ],
           ),
@@ -2079,11 +2097,13 @@ class _FinanceLine extends StatelessWidget {
   final String label;
   final double value;
   final bool emphasized;
+  final bool available;
 
   const _FinanceLine({
     required this.label,
     required this.value,
     this.emphasized = false,
+    this.available = true,
   });
 
   @override
@@ -2102,7 +2122,7 @@ class _FinanceLine extends StatelessWidget {
             ),
             Flexible(
               child: Text(
-                _rupiah(value),
+                available ? _rupiah(value) : 'HPP belum lengkap',
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontWeight: emphasized ? FontWeight.w900 : FontWeight.w700,
@@ -2195,7 +2215,9 @@ class _NetProfitCard extends StatelessWidget {
                           fontSize: 11)),
                   const SizedBox(height: 8),
                   Text(
-                    _rupiah(data.netProfit),
+                    data.hasReliableHpp
+                        ? _rupiah(data.netProfit)
+                        : 'HPP belum lengkap',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -2307,7 +2329,9 @@ class _BranchRow extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          'Estimasi hasil ${_rupiah(branch.netProfit)}',
+                          branch.hasReliableHpp
+                              ? 'Estimasi hasil ${_rupiah(branch.netProfit)}'
+                              : 'HPP belum lengkap',
                           style: TextStyle(
                             fontSize: 12,
                             color: branch.netProfit < 0
@@ -2334,7 +2358,9 @@ class _BranchRow extends StatelessWidget {
               children: [
                 Text(_rupiah(branch.revenue),
                     style: const TextStyle(fontWeight: FontWeight.w800)),
-                Text('Estimasi hasil ${_rupiah(branch.netProfit)}',
+                Text(branch.hasReliableHpp
+                    ? 'Estimasi hasil ${_rupiah(branch.netProfit)}'
+                    : 'HPP belum lengkap',
                     style: TextStyle(
                       fontSize: 11,
                       color: branch.netProfit < 0

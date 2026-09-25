@@ -12,6 +12,8 @@ class FinanceSummary {
   final double cogs;
   final double expenses;
   final int transactions;
+  final double soldQuantity;
+  final double hppCoveredQuantity;
 
   const FinanceSummary({
     required this.outletId,
@@ -20,11 +22,15 @@ class FinanceSummary {
     required this.cogs,
     required this.expenses,
     required this.transactions,
+    this.soldQuantity = 0,
+    this.hppCoveredQuantity = 0,
   });
 
   double get grossProfit => revenue - cogs;
   double get netProfit => grossProfit - expenses;
   double get margin => revenue == 0 ? 0 : netProfit / revenue * 100;
+  bool get hasReliableHpp => transactions == 0 ||
+      (soldQuantity > 0 && hppCoveredQuantity + 0.000001 >= soldQuantity);
 }
 
 @DriftAccessor(tables: [Outlets, Orders, OrderItems, Products, Expenses])
@@ -126,22 +132,21 @@ class FinanceDao extends DatabaseAccessor<AppDatabase> with _$FinanceDaoMixin {
       (sum, order) => sum + (double.tryParse(order.total) ?? 0),
     );
     double cogs = 0;
+    double soldQuantity = 0;
+    double hppCoveredQuantity = 0;
     if (orderIds.isNotEmpty) {
       final paidItems = await (select(orderItems)
             ..where((item) => item.orderId.isIn(orderIds)))
           .get();
-      final productList = await (select(products)
-            ..where((product) => product.outletId.equals(outletId)))
-          .get();
-      final productCogs = {
-        for (final product in productList)
-          product.id: double.tryParse(product.cogs) ?? 0,
-      };
       for (final item in paidItems) {
-        final snapshottedCogs = item.unitCogs == null
-            ? productCogs[item.productId] ?? 0
-            : double.tryParse(item.unitCogs!) ?? 0;
-        cogs += snapshottedCogs * (double.tryParse(item.quantity) ?? 0);
+        final quantity = double.tryParse(item.quantity) ?? 0;
+        if (quantity <= 0) continue;
+        soldQuantity += quantity;
+        final snapshottedCogs = double.tryParse(item.unitCogs ?? '');
+        if (snapshottedCogs == null || !snapshottedCogs.isFinite ||
+            snapshottedCogs < 0) continue;
+        hppCoveredQuantity += quantity;
+        cogs += snapshottedCogs * quantity;
       }
     }
     final expenseRows = await getExpenses(outletId, from, to);
@@ -156,6 +161,8 @@ class FinanceDao extends DatabaseAccessor<AppDatabase> with _$FinanceDaoMixin {
       cogs: cogs,
       expenses: expenseTotal,
       transactions: paidOrders.length,
+      soldQuantity: soldQuantity,
+      hppCoveredQuantity: hppCoveredQuantity,
     );
   }
 
@@ -177,6 +184,10 @@ class FinanceDao extends DatabaseAccessor<AppDatabase> with _$FinanceDaoMixin {
         expenses: branches.fold(0, (sum, branch) => sum + branch.expenses),
         transactions:
             branches.fold(0, (sum, branch) => sum + branch.transactions),
+        soldQuantity:
+            branches.fold(0, (sum, branch) => sum + branch.soldQuantity),
+        hppCoveredQuantity: branches.fold(
+            0, (sum, branch) => sum + branch.hppCoveredQuantity),
       ));
     }
     return days;
@@ -201,6 +212,8 @@ class FinanceDao extends DatabaseAccessor<AppDatabase> with _$FinanceDaoMixin {
         cogs: summary.cogs,
         expenses: summary.expenses,
         transactions: summary.transactions,
+        soldQuantity: summary.soldQuantity,
+        hppCoveredQuantity: summary.hppCoveredQuantity,
       ));
     }
     return days;
@@ -225,6 +238,10 @@ class FinanceDao extends DatabaseAccessor<AppDatabase> with _$FinanceDaoMixin {
         expenses: branches.fold(0, (sum, branch) => sum + branch.expenses),
         transactions:
             branches.fold(0, (sum, branch) => sum + branch.transactions),
+        soldQuantity:
+            branches.fold(0, (sum, branch) => sum + branch.soldQuantity),
+        hppCoveredQuantity: branches.fold(
+            0, (sum, branch) => sum + branch.hppCoveredQuantity),
       ));
     }
     return days;
