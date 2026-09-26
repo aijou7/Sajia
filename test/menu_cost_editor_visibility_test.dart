@@ -1,5 +1,3 @@
-import 'package:drift/drift.dart' show Value;
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,33 +9,23 @@ Future<void> _showProductForm(
   WidgetTester tester, {
   required bool cloud,
 }) async {
-  final database = AppDatabase.forTesting(NativeDatabase.memory());
-  addTearDown(database.close);
-  final product = await tester.runAsync(() async {
-    await database.into(database.outlets).insert(
-          OutletsCompanion.insert(
-            id: 'default-outlet',
-            name: 'Kafe',
-            licenseKey: cloud ? 'PRO' : 'FREE',
-            cloudExpiry: cloud ? Value(DateTime(2027, 1, 1)) : const Value(null),
-          ),
-        );
-    await database.productDao.upsertProduct(
-      ProductsCompanion.insert(
-        id: 'coffee',
-        outletId: 'default-outlet',
-        name: 'Kopi Susu',
-        price: '20000',
-        cogs: const Value('5000'),
-      ),
-    );
-    return database.productDao.getProduct('coffee');
-  });
+  final outlet = Outlet(
+    id: 'default-outlet',
+    name: 'Kafe',
+    taxPercent: '0',
+    serviceChargePercent: '0',
+    licenseKey: cloud ? 'PRO' : 'FREE',
+    cloudExpiry: cloud ? DateTime(2027, 1, 1) : null,
+    createdAt: DateTime(2026, 1, 1),
+  );
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [databaseProvider.overrideWithValue(database)],
-      child: MaterialApp(
-        home: Scaffold(body: ProductFormSheet(product: product)),
+      overrides: [
+        currentOutletProvider.overrideWith((ref) async => outlet),
+        categoriesProvider.overrideWith((ref) => Stream.value(<Category>[])),
+      ],
+      child: const MaterialApp(
+        home: Scaffold(body: ProductFormSheet()),
       ),
     ),
   );
@@ -45,16 +33,12 @@ Future<void> _showProductForm(
 }
 
 void main() {
-  testWidgets('cloud menu shows HPP as dashboard-managed, not editable',
-      (tester) async {
+  testWidgets('cloud menu directs HPP editing to dashboard', (tester) async {
     await _showProductForm(tester, cloud: true);
 
-    expect(find.textContaining('atur resep dan buffer di Dashboard Owner'),
-        findsOneWidget);
+    expect(find.textContaining('diatur dari Dashboard Owner'), findsOneWidget);
     expect(find.text('Biaya menu (opsional)'), findsNothing);
     expect(find.text('HPP manual'), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
   });
 
   testWidgets('offline menu keeps costing under an optional section',
@@ -62,14 +46,11 @@ void main() {
     await _showProductForm(tester, cloud: false);
 
     expect(find.text('Biaya menu (opsional)'), findsOneWidget);
-    expect(find.textContaining('atur resep dan buffer di Dashboard Owner'),
-        findsNothing);
+    expect(find.textContaining('diatur dari Dashboard Owner'), findsNothing);
     await tester.ensureVisible(find.text('Biaya menu (opsional)'));
     await tester.tap(find.text('Biaya menu (opsional)'));
     await tester.pumpAndSettle();
     expect(find.text('HPP manual'), findsOneWidget);
     expect(find.text('Hitung HPP'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
   });
 }
