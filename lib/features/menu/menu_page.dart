@@ -848,6 +848,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
   final List<_EditableVariantGroup> _variants = [];
   final Set<String> _originalVariantIds = {};
   List<CostingComponent> _recipeLines = [];
+  bool _recipeEdited = false;
 
   bool get _isEdit => widget.product != null;
 
@@ -889,9 +890,6 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
       setState(() {
         _recipeLines = stored;
         _loadingRecipe = false;
-        if (stored.isNotEmpty) {
-          _cogsCtrl.text = _formatHpp(totalCosting(stored));
-        }
       });
     } catch (_) {
       if (!mounted) return;
@@ -903,16 +901,27 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
   }
 
   Future<void> _openHppCalculator() async {
+    final db = ref.read(databaseProvider);
+    final outletId = ref.read(currentOutletIdProvider);
+    final outlet = await (db.select(db.outlets)
+          ..where((row) => row.id.equals(outletId)))
+        .getSingleOrNull();
+    if (!mounted || outlet == null || outlet.cloudExpiry != null) {
+      return;
+    }
     final result = await showHppCalculator(
       context: context,
-      outletId: ref.read(currentOutletIdProvider),
+      outletId: outletId,
       productId: widget.product?.id ?? 'draft-product',
       initial: _recipeLines,
     );
     if (!mounted || result == null) return;
     setState(() {
       _recipeLines = result;
-      _cogsCtrl.text = _formatHpp(totalCosting(result));
+      _recipeEdited = true;
+      if (result.isNotEmpty) {
+        _cogsCtrl.text = _formatHpp(totalCosting(result));
+      }
     });
   }
 
@@ -1009,7 +1018,21 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
   }
 
   Future<void> _save() async {
-    if (_recipeLoadError != null) {
+    final db = ref.read(databaseProvider);
+    final outletId = ref.read(currentOutletIdProvider);
+    final outlet = await (db.select(db.outlets)
+          ..where((row) => row.id.equals(outletId)))
+        .getSingleOrNull();
+    if (!mounted) return;
+    if (outlet == null) {
+      AppNotice.show(context, const SnackBar(
+        content: Text('Data outlet belum siap. Coba buka menu lagi.'),
+        backgroundColor: AppTheme.danger,
+      ));
+      return;
+    }
+    final cloudManagedCost = outlet.cloudExpiry != null;
+    if (!cloudManagedCost && _recipeLoadError != null) {
       AppNotice.show(context, SnackBar(
         content: Text('$_recipeLoadError Coba tutup lalu buka lagi.'),
         backgroundColor: AppTheme.danger,
@@ -1038,12 +1061,15 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     }
     setState(() => _isSaving = true);
 
-    final db = ref.read(databaseProvider);
-    final outletId = ref.read(currentOutletIdProvider);
     final id = widget.product?.id ?? const Uuid().v4();
-    final cogsValue = _recipeLines.isNotEmpty
-        ? _formatHpp(totalCosting(_recipeLines))
-        : (_cogsCtrl.text.trim().isEmpty ? '0' : _cogsCtrl.text.trim());
+    final String cogsValue;
+    if (cloudManagedCost) {
+      cogsValue = widget.product?.cogs ?? '0';
+    } else if (_recipeEdited && _recipeLines.isNotEmpty) {
+      cogsValue = _formatHpp(totalCosting(_recipeLines));
+    } else {
+      cogsValue = _cogsCtrl.text.trim().isEmpty ? '0' : _cogsCtrl.text.trim();
+    }
     final savedRecipe = _recipeLines
         .map((line) => CostingComponent(
               id: line.id,
@@ -1086,11 +1112,13 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
           updatedAt: Value(DateTime.now()),
           isSynced: const Value(false),
         ));
-        await db.costingDao.replaceForProduct(
-          outletId: outletId,
-          productId: id,
-          components: savedRecipe,
-        );
+        if (!cloudManagedCost && _recipeEdited) {
+          await db.costingDao.replaceForProduct(
+            outletId: outletId,
+            productId: id,
+            components: savedRecipe,
+          );
+        }
 
         final currentVariantIds =
             _variants.map((variant) => variant.id).toSet();
@@ -1149,6 +1177,9 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
   @override
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoriesProvider);
+    final outlet = ref.watch(currentOutletProvider).value;
+    // While the outlet is loading, do not expose offline-only cost editing.
+    final cloudManagedCost = outlet == null || outlet.cloudExpiry != null;
 
     return Container(
       decoration: const BoxDecoration(
@@ -1297,96 +1328,97 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
               ),
               const SizedBox(height: 14),
 
-              // Harga
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const _FormLabel('Harga Jual *'),
-                        TextFormField(
-                          controller: _priceCtrl,
-                          selectAllOnFocus: true,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: const [
-                            NormalizedNumberInputFormatter(),
-                          ],
-                          decoration: _inputDeco('0'),
-                          validator: (v) {
-                            if (v?.trim().isEmpty == true) return 'Wajib diisi';
-                            if (double.tryParse(v!) == null) {
-                              return 'Harus angka';
-                            }
-                            return null;
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const _FormLabel('HPP manual (opsional)'),
-                        TextFormField(
-                          controller: _cogsCtrl,
-                          selectAllOnFocus: true,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: const [
-                            NormalizedNumberInputFormatter(),
-                          ],
-                          decoration: _inputDeco('0'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              // Harga jual tetap cepat diakses saat melayani pelanggan.
+              const _FormLabel('Harga Jual *'),
+              TextFormField(
+                controller: _priceCtrl,
+                selectAllOnFocus: true,
+                keyboardType: TextInputType.number,
+                inputFormatters: const [NormalizedNumberInputFormatter()],
+                decoration: _inputDeco('0'),
+                validator: (v) {
+                  if (v?.trim().isEmpty == true) {
+                    return 'Wajib diisi';
+                  }
+                  if (double.tryParse(v!) == null) {
+                    return 'Harus angka';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 14),
-
-              // HPP calculator
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.subtleBorder),
-                ),
-                child: Row(
+              if (cloudManagedCost)
+                Text(
+                  outlet == null
+                      ? 'Memuat pengaturan biaya outlet...'
+                      : widget.product == null
+                          ? 'Resep dan HPP diatur dari Dashboard Owner setelah menu disimpan.'
+                          : 'HPP saat ini ${(double.tryParse(widget.product!.cogs) ?? 0).toRupiah} · atur resep dan buffer di Dashboard Owner.',
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                )
+              else
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(bottom: 8),
+                  title: const Text('Biaya menu (opsional)',
+                      style: TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w700)),
+                  subtitle: const Text('HPP manual atau hitung dari resep',
+                      style: TextStyle(fontSize: 11)),
                   children: [
-                    const Icon(Icons.calculate_outlined,
-                        color: AppTheme.primary),
-                    const SizedBox(width: 12),
-                    Expanded(
+                    SizedBox(
+                      width: double.infinity,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Kalkulator HPP',
-                              style: TextStyle(fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 3),
-                          Text(
-                            _loadingRecipe
-                                ? 'Memuat resep...'
-                                : _recipeLoadError != null
-                                    ? _recipeLoadError!
-                                    : _recipeLines.isEmpty
-                                        ? 'Hitung dari bahan dan takaran per porsi.'
-                                        : '${_recipeLines.length} bahan · HPP ${_formatHpp(totalCosting(_recipeLines))}',
-                            style: const TextStyle(
-                                color: AppTheme.textSecondary, fontSize: 11),
+                          const _FormLabel('HPP manual'),
+                          TextFormField(
+                            controller: _cogsCtrl,
+                            readOnly: _recipeLines.isNotEmpty,
+                            selectAllOnFocus: true,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: const [
+                              NormalizedNumberInputFormatter(),
+                            ],
+                            decoration: _inputDeco('0'),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _loadingRecipe
+                                      ? 'Memuat resep...'
+                                      : _recipeLoadError != null
+                                          ? _recipeLoadError!
+                                          : _recipeLines.isEmpty
+                                              ? 'Resep belum diisi.'
+                                              : '${_recipeLines.length} bahan resep',
+                                  style: const TextStyle(
+                                      color: AppTheme.textSecondary,
+                                      fontSize: 11),
+                                ),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed:
+                                    _loadingRecipe ? null : _openHppCalculator,
+                                icon: const Icon(Icons.calculate_outlined,
+                                    size: 18),
+                                label: Text(_recipeLines.isEmpty
+                                    ? 'Hitung HPP'
+                                    : 'Ubah resep'),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
-                    OutlinedButton(
-                      onPressed: _loadingRecipe ? null : _openHppCalculator,
-                      child: Text(_recipeLines.isEmpty ? 'Atur resep' : 'Edit'),
-                    ),
                   ],
                 ),
-              ),
               const SizedBox(height: 14),
 
               // Deskripsi
