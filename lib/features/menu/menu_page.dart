@@ -1361,63 +1361,67 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                   ),
                 )
               else
-                ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: const EdgeInsets.only(bottom: 8),
-                  title: const Text('Biaya menu (opsional)',
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w700)),
-                  subtitle: const Text('HPP manual atau hitung dari resep',
-                      style: TextStyle(fontSize: 11)),
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const _FormLabel('HPP manual'),
-                          TextFormField(
-                            controller: _cogsCtrl,
-                            readOnly: _recipeLines.isNotEmpty,
-                            selectAllOnFocus: true,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: const [
-                              NormalizedNumberInputFormatter(),
-                            ],
-                            decoration: _inputDeco('0'),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  _loadingRecipe
-                                      ? 'Memuat resep...'
-                                      : _recipeLoadError != null
-                                          ? _recipeLoadError!
-                                          : _recipeLines.isEmpty
-                                              ? 'Resep belum diisi.'
-                                              : '${_recipeLines.length} bahan resep',
-                                  style: const TextStyle(
-                                      color: AppTheme.textSecondary,
-                                      fontSize: 11),
+                Material(
+                  type: MaterialType.transparency,
+                  child: ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: const EdgeInsets.only(bottom: 8),
+                    title: const Text('Biaya menu (opsional)',
+                        style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w700)),
+                    subtitle: const Text('HPP manual atau hitung dari resep',
+                        style: TextStyle(fontSize: 11)),
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const _FormLabel('HPP manual'),
+                            TextFormField(
+                              controller: _cogsCtrl,
+                              readOnly: _recipeLines.isNotEmpty,
+                              selectAllOnFocus: true,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: const [
+                                NormalizedNumberInputFormatter(),
+                              ],
+                              decoration: _inputDeco('0'),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _loadingRecipe
+                                        ? 'Memuat resep...'
+                                        : _recipeLoadError != null
+                                            ? _recipeLoadError!
+                                            : _recipeLines.isEmpty
+                                                ? 'Resep belum diisi.'
+                                                : '${_recipeLines.length} bahan resep',
+                                    style: const TextStyle(
+                                        color: AppTheme.textSecondary,
+                                        fontSize: 11),
+                                  ),
                                 ),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed:
-                                    _loadingRecipe ? null : _openHppCalculator,
-                                icon: const Icon(Icons.calculate_outlined,
-                                    size: 18),
-                                label: Text(_recipeLines.isEmpty
-                                    ? 'Hitung HPP'
-                                    : 'Ubah resep'),
-                              ),
-                            ],
-                          ),
-                        ],
+                                OutlinedButton.icon(
+                                  onPressed: _loadingRecipe
+                                      ? null
+                                      : _openHppCalculator,
+                                  icon: const Icon(Icons.calculate_outlined,
+                                      size: 18),
+                                  label: Text(_recipeLines.isEmpty
+                                      ? 'Hitung HPP'
+                                      : 'Ubah resep'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               const SizedBox(height: 14),
 
