@@ -903,9 +903,20 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
   Future<void> _openHppCalculator() async {
     final db = ref.read(databaseProvider);
     final outletId = ref.read(currentOutletIdProvider);
-    final outlet = await (db.select(db.outlets)
-          ..where((row) => row.id.equals(outletId)))
-        .getSingleOrNull();
+    Outlet? outlet;
+    try {
+      outlet = await (db.select(db.outlets)
+            ..where((row) => row.id.equals(outletId)))
+          .getSingleOrNull();
+    } catch (_) {
+      if (mounted) {
+        AppNotice.show(context, const SnackBar(
+          content: Text('Data outlet gagal dimuat. Coba lagi.'),
+          backgroundColor: AppTheme.danger,
+        ));
+      }
+      return;
+    }
     if (!mounted || outlet == null || outlet.cloudExpiry != null) {
       return;
     }
@@ -1020,9 +1031,20 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
   Future<void> _save() async {
     final db = ref.read(databaseProvider);
     final outletId = ref.read(currentOutletIdProvider);
-    final outlet = await (db.select(db.outlets)
-          ..where((row) => row.id.equals(outletId)))
-        .getSingleOrNull();
+    Outlet? outlet;
+    try {
+      outlet = await (db.select(db.outlets)
+            ..where((row) => row.id.equals(outletId)))
+          .getSingleOrNull();
+    } catch (_) {
+      if (mounted) {
+        AppNotice.show(context, const SnackBar(
+          content: Text('Data outlet gagal dimuat. Coba lagi.'),
+          backgroundColor: AppTheme.danger,
+        ));
+      }
+      return;
+    }
     if (!mounted) return;
     if (outlet == null) {
       AppNotice.show(context, const SnackBar(
