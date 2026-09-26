@@ -13,24 +13,26 @@ Future<void> _showProductForm(
 }) async {
   final database = AppDatabase.forTesting(NativeDatabase.memory());
   addTearDown(database.close);
-  await database.into(database.outlets).insert(
-        OutletsCompanion.insert(
-          id: 'default-outlet',
-          name: 'Kafe',
-          licenseKey: cloud ? 'PRO' : 'FREE',
-          cloudExpiry: cloud ? Value(DateTime(2027, 1, 1)) : const Value(null),
-        ),
-      );
-  await database.productDao.upsertProduct(
-    ProductsCompanion.insert(
-      id: 'coffee',
-      outletId: 'default-outlet',
-      name: 'Kopi Susu',
-      price: '20000',
-      cogs: const Value('5000'),
-    ),
-  );
-  final product = await database.productDao.getProduct('coffee');
+  final product = await tester.runAsync(() async {
+    await database.into(database.outlets).insert(
+          OutletsCompanion.insert(
+            id: 'default-outlet',
+            name: 'Kafe',
+            licenseKey: cloud ? 'PRO' : 'FREE',
+            cloudExpiry: cloud ? Value(DateTime(2027, 1, 1)) : const Value(null),
+          ),
+        );
+    await database.productDao.upsertProduct(
+      ProductsCompanion.insert(
+        id: 'coffee',
+        outletId: 'default-outlet',
+        name: 'Kopi Susu',
+        price: '20000',
+        cogs: const Value('5000'),
+      ),
+    );
+    return database.productDao.getProduct('coffee');
+  });
   await tester.pumpWidget(
     ProviderScope(
       overrides: [databaseProvider.overrideWithValue(database)],
@@ -51,6 +53,8 @@ void main() {
         findsOneWidget);
     expect(find.text('Biaya menu (opsional)'), findsNothing);
     expect(find.text('HPP manual'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 
   testWidgets('offline menu keeps costing under an optional section',
@@ -65,5 +69,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('HPP manual'), findsOneWidget);
     expect(find.text('Hitung HPP'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 }
