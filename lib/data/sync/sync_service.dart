@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/legacy_outlet.dart';
 import '../local/app_database.dart';
 import '../../domain/costing.dart';
+import 'costing_sync_coordinator.dart';
 import 'product_image_uploader.dart';
 
 enum SyncPhase {
@@ -48,6 +49,7 @@ class SyncService {
 
   final AppDatabase _db;
   final SupabaseClient _supabase;
+  late final CostingSyncCoordinator _costingSync = CostingSyncCoordinator(_db);
   StreamSubscription? _connectivitySub;
   Timer? _periodicSync;
   bool _isSyncing = false;
@@ -223,9 +225,8 @@ class SyncService {
     await _pullTombstones(localOutlets.map((outlet) => outlet.id).toList());
     // Server profiles are authoritative even if this device still has
     // recipe writes queued by an older APK. Fail closed if the lookup fails.
-    final managedCostProfiles = await _fetchManagedCostProfiles();
-    await _db.costingDao.replaceManagedProfiles(managedCostProfiles);
-    final managedCostProductIds = managedCostProfiles.keys.toSet();
+    final managedCostProductIds = await _costingSync
+        .refreshManagedProfiles(_fetchManagedCostProfiles);
     await _processPendingRecoveryDeletes(managedCostProductIds);
     await _pushOutlets();
     await _pushUsers();
@@ -295,25 +296,27 @@ class SyncService {
               .eq('id', item.recordId);
         } else if (item.syncTableName == 'product_cost_components') {
           final payload = _decodePayload(item.payload);
-          var productId = payload['product_id'] as String?;
-          if (productId == null) {
-            final remote = await _supabase
-                .from('product_cost_components')
-                .select('product_id')
-                .eq('id', item.recordId)
-                .maybeSingle();
-            productId = remote?['product_id'] as String?;
-          }
-          if (productId == null || managedCostProductIds.contains(productId)) {
-            // A missing remote row is already deleted; a profiled row is
-            // dashboard-owned and must not be removed by the APK.
-            await _db.syncDao.markDone(item.id);
-            continue;
-          }
-          await _supabase
-              .from('product_cost_components')
-              .delete()
-              .eq('id', item.recordId);
+          await _costingSync.resolvePendingDelete(
+            queueId: item.id,
+            componentId: item.recordId,
+            productId: payload['product_id'] as String?,
+            managedProductIds: managedCostProductIds,
+            findRemoteProductId: (id) async {
+              final remote = await _supabase
+                  .from('product_cost_components')
+                  .select('product_id')
+                  .eq('id', id)
+                  .maybeSingle();
+              return remote?['product_id'] as String?;
+            },
+            deleteRemote: (id) async {
+              await _supabase
+                  .from('product_cost_components')
+                  .delete()
+                  .eq('id', id);
+            },
+          );
+          continue;
         } else if (item.syncTableName == 'restaurant_tables') {
           final payload = _decodePayload(item.payload);
           var outletId = payload['outlet_id'] as String?;
@@ -861,13 +864,10 @@ class SyncService {
   }
 
   Future<void> _pullCostingComponents() async {
-    final managedCostProfiles = await _fetchManagedCostProfiles();
-    await _db.costingDao.replaceManagedProfiles(managedCostProfiles);
-    final managedProductIds = managedCostProfiles.keys.toSet();
+    final managedProductIds = await _costingSync
+        .refreshManagedProfiles(_fetchManagedCostProfiles);
     try {
-      final managedRecipes = <String, List<CostingComponent>>{
-        for (final id in managedProductIds) id: <CostingComponent>[],
-      };
+      final remoteComponents = <CostingComponent>[];
       const pageSize = 1000;
       for (var offset = 0;; offset += pageSize) {
         final rows = await _supabase
@@ -877,18 +877,14 @@ class SyncService {
             .range(offset, offset + pageSize - 1);
         for (final row in rows) {
           final component = CostingComponent.fromJson(_asMap(row));
-          if (component.id.isEmpty || component.productId.isEmpty) continue;
-          if (managedProductIds.contains(component.productId)) {
-            managedRecipes[component.productId]!.add(component);
-          } else {
-            await _db.costingDao.upsertFromRemote(component);
-          }
+          remoteComponents.add(component);
         }
         if (rows.length < pageSize) break;
       }
-      for (final entry in managedRecipes.entries) {
-        await _db.costingDao.replaceManagedFromRemote(entry.key, entry.value);
-      }
+      await _costingSync.applyRemoteSnapshot(
+        managedProductIds: managedProductIds,
+        remoteComponents: remoteComponents,
+      );
     } catch (e) {
       _markRecoveryPullFailed();
       debugPrint('[SyncService] pull product cost components failed: $e');
@@ -1150,12 +1146,16 @@ class SyncService {
   Future<void> _pushCostingComponents(Set<String> managedProductIds) async {
     final unsynced = await _db.costingDao.getUnsynced();
     for (final component in unsynced) {
-      if (managedProductIds.contains(component.productId)) continue;
       try {
-        await _supabase
-            .from('product_cost_components')
-            .upsert(component.toJson());
-        await _db.costingDao.markSynced(component.id);
+        await _costingSync.pushIfUnmanaged(
+          component: component,
+          managedProductIds: managedProductIds,
+          upload: (line) async {
+            await _supabase
+                .from('product_cost_components')
+                .upsert(line.toJson());
+          },
+        );
       } catch (e) {
         debugPrint(
           '[SyncService] push product cost component ${component.id} failed: $e',
