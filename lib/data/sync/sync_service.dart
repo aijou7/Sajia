@@ -223,7 +223,9 @@ class SyncService {
     await _pullTombstones(localOutlets.map((outlet) => outlet.id).toList());
     // Server profiles are authoritative even if this device still has
     // recipe writes queued by an older APK. Fail closed if the lookup fails.
-    final managedCostProductIds = await _fetchManagedCostProductIds();
+    final managedCostProfiles = await _fetchManagedCostProfiles();
+    await _db.costingDao.replaceManagedProfiles(managedCostProfiles);
+    final managedCostProductIds = managedCostProfiles.keys.toSet();
     await _processPendingRecoveryDeletes(managedCostProductIds);
     await _pushOutlets();
     await _pushUsers();
@@ -835,28 +837,33 @@ class SyncService {
     }
   }
 
-  Future<Set<String>> _fetchManagedCostProductIds() async {
+  Future<Map<String, String>> _fetchManagedCostProfiles() async {
     const pageSize = 1000;
-    final productIds = <String>{};
+    final productOutlets = <String, String>{};
     for (var offset = 0;; offset += pageSize) {
       final rows = await _supabase
           .from('product_cost_profiles')
-          .select('product_id')
+          .select('product_id,outlet_id')
           .order('product_id')
           .range(offset, offset + pageSize - 1);
       for (final row in rows) {
-        final productId = _asMap(row)['product_id'] as String?;
-        if (productId != null && productId.isNotEmpty) {
-          productIds.add(productId);
+        final map = _asMap(row);
+        final productId = map['product_id'] as String?;
+        final outletId = map['outlet_id'] as String?;
+        if (productId != null && productId.isNotEmpty &&
+            outletId != null && outletId.isNotEmpty) {
+          productOutlets[productId] = outletId;
         }
       }
       if (rows.length < pageSize) break;
     }
-    return productIds;
+    return productOutlets;
   }
 
   Future<void> _pullCostingComponents() async {
-    final managedProductIds = await _fetchManagedCostProductIds();
+    final managedCostProfiles = await _fetchManagedCostProfiles();
+    await _db.costingDao.replaceManagedProfiles(managedCostProfiles);
+    final managedProductIds = managedCostProfiles.keys.toSet();
     try {
       final managedRecipes = <String, List<CostingComponent>>{
         for (final id in managedProductIds) id: <CostingComponent>[],

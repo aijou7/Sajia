@@ -49,7 +49,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   /// Scheduled promos are cache-only records sourced from the owner portal.
   /// They intentionally stay outside Drift's generated schema because the
@@ -64,6 +64,7 @@ class AppDatabase extends _$AppDatabase {
           await m.createAll();
           await _createPromotionCacheTables();
           await _createCostingTable();
+          await _createManagedCostCacheTable();
           await _insertDefaults();
         },
         onUpgrade: (m, from, to) async {
@@ -97,6 +98,9 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 8) {
             await _createCostingTable();
+          }
+          if (from < 9) {
+            await _createManagedCostCacheTable();
           }
         },
         beforeOpen: (details) async {
@@ -171,6 +175,21 @@ class AppDatabase extends _$AppDatabase {
     await customStatement('''
       CREATE INDEX IF NOT EXISTS idx_product_cost_components_outlet
       ON product_cost_components(outlet_id, updated_at)
+    ''');
+  }
+
+  /// Local-only cache of products whose HPP is authoritative in the owner
+  /// dashboard. A complete successful profile pull replaces this cache.
+  Future<void> _createManagedCostCacheTable() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS owner_managed_product_costs (
+        product_id TEXT PRIMARY KEY,
+        outlet_id TEXT NOT NULL
+      )
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS idx_owner_managed_product_costs_outlet
+      ON owner_managed_product_costs(outlet_id)
     ''');
   }
 

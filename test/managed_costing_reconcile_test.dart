@@ -18,6 +18,21 @@ CostingComponent _component(String id, {double price = 100000}) =>
     );
 
 void main() {
+  test('owner-managed status persists locally and is replaced atomically',
+      () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(database.close);
+
+    await database.costingDao.replaceManagedProfiles({'coffee': 'outlet'});
+    expect(await database.costingDao.isOwnerManagedProduct('coffee'), isTrue);
+    await database.costingDao.replaceManagedProfiles({'tea': 'outlet'});
+    expect(await database.costingDao.isOwnerManagedProduct('coffee'), isFalse);
+    expect(await database.costingDao.isOwnerManagedProduct('tea'), isTrue);
+
+    await database.costingDao.deleteForOutletIds(['outlet']);
+    expect(await database.costingDao.isOwnerManagedProduct('tea'), isFalse);
+  });
+
   test('dashboard recipe replaces stale and unsynced local ingredients',
       () async {
     final database = AppDatabase.forTesting(NativeDatabase.memory());

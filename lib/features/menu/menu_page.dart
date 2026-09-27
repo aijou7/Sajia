@@ -849,6 +849,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
   final Set<String> _originalVariantIds = {};
   List<CostingComponent> _recipeLines = [];
   bool _recipeEdited = false;
+  bool? _ownerManagedCost;
 
   bool get _isEdit => widget.product != null;
 
@@ -875,6 +876,20 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     if (p != null) {
       _loadVariants(p.id);
       _loadRecipe(p.id);
+      _loadCostOwnership(p.id);
+    }
+  }
+
+  Future<void> _loadCostOwnership(String productId) async {
+    try {
+      final managed = await ref
+          .read(databaseProvider)
+          .costingDao
+          .isOwnerManagedProduct(productId);
+      if (mounted) setState(() => _ownerManagedCost = managed);
+    } catch (_) {
+      // Unknown ownership stays read-only until a later successful lookup.
+      if (mounted) setState(() => _ownerManagedCost = null);
     }
   }
 
@@ -920,6 +935,29 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     if (!mounted || outlet == null || outlet.cloudExpiry != null) {
       return;
     }
+    if (widget.product != null) {
+      try {
+        if (await db.costingDao.isOwnerManagedProduct(widget.product!.id)) {
+          if (mounted) {
+            setState(() => _ownerManagedCost = true);
+            AppNotice.show(context, const SnackBar(
+              content: Text('HPP menu ini diatur dari Dashboard Owner.'),
+              backgroundColor: AppTheme.danger,
+            ));
+          }
+          return;
+        }
+      } catch (_) {
+        if (mounted) {
+          AppNotice.show(context, const SnackBar(
+            content: Text('Status HPP belum siap. Coba lagi.'),
+            backgroundColor: AppTheme.danger,
+          ));
+        }
+        return;
+      }
+    }
+    if (!mounted) return;
     final result = await showHppCalculator(
       context: context,
       outletId: outletId,
@@ -1053,7 +1091,34 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
       ));
       return;
     }
-    final cloudManagedCost = outlet.cloudExpiry != null;
+    bool profileManagedCost = false;
+    if (widget.product != null) {
+      try {
+        profileManagedCost =
+            await db.costingDao.isOwnerManagedProduct(widget.product!.id);
+      } catch (_) {
+        if (mounted) {
+          AppNotice.show(context, const SnackBar(
+            content: Text('Status HPP gagal dimuat. Coba lagi.'),
+            backgroundColor: AppTheme.danger,
+          ));
+        }
+        return;
+      }
+      if (!mounted) return;
+    }
+    final cloudManagedCost = outlet.cloudExpiry != null || profileManagedCost;
+    if (profileManagedCost && widget.product != null &&
+        (_recipeEdited ||
+            _cogsCtrl.text.trim() !=
+                (widget.product!.cogs == '0' ? '' : widget.product!.cogs))) {
+      setState(() => _ownerManagedCost = true);
+      AppNotice.show(context, const SnackBar(
+        content: Text('HPP menu ini sudah diatur di Dashboard Owner. Buka ulang menu.'),
+        backgroundColor: AppTheme.danger,
+      ));
+      return;
+    }
     if (!cloudManagedCost && _recipeLoadError != null) {
       AppNotice.show(context, SnackBar(
         content: Text('$_recipeLoadError Coba tutup lalu buka lagi.'),
@@ -1210,7 +1275,9 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     final categoriesAsync = ref.watch(categoriesProvider);
     final outlet = ref.watch(currentOutletProvider).value;
     // While the outlet is loading, do not expose offline-only cost editing.
-    final cloudManagedCost = outlet == null || outlet.cloudExpiry != null;
+    final cloudManagedCost = outlet == null ||
+        outlet.cloudExpiry != null ||
+        (widget.product != null && _ownerManagedCost != false);
 
     return Container(
       decoration: const BoxDecoration(
