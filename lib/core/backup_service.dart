@@ -89,6 +89,8 @@ class BackupService {
           await db.costingDao.getForProduct(productId),
         );
       }
+      final managedCostProductIds =
+          await db.costingDao.managedProductIdsForOutlet(outletId);
       final allUsers = await db.sessionDao.getUsers(outletId);
       final allAccesses = await (db.select(db.userOutletAccesses)
             ..where((access) => access.outletId.equals(outletId)))
@@ -164,6 +166,7 @@ class BackupService {
         'product_cost_components': allCostingComponents
             .map((component) => component.toJson())
             .toList(),
+        'owner_managed_product_costs': managedCostProductIds,
         'orders': allOrders
             .map((o) => {
                   'id': o.id,
@@ -444,6 +447,16 @@ class BackupService {
           );
           if (component.id.isEmpty || component.productId.isEmpty) continue;
           await db.costingDao.upsertFromRemote(component, synced: false);
+        }
+        final restoredProductIds = (data['products'] as List)
+            .map((product) => (product as Map)['id'])
+            .whereType<String>()
+            .toSet();
+        for (final productId in
+            (data['owner_managed_product_costs'] as List? ?? const [])) {
+          if (productId is String && restoredProductIds.contains(productId)) {
+            await db.costingDao.markOwnerManagedProduct(productId, outletId);
+          }
         }
 
         // Restore users

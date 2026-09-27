@@ -10,6 +10,42 @@ import '../app_database.dart';
 class CostingDao extends DatabaseAccessor<AppDatabase> {
   CostingDao(super.db);
 
+  Future<bool> isOwnerManagedProduct(String productId) async {
+    final rows = await customSelect(
+      'SELECT 1 FROM owner_managed_product_costs WHERE product_id = ? LIMIT 1',
+      variables: [Variable<String>(productId)],
+    ).get();
+    return rows.isNotEmpty;
+  }
+
+  Future<List<String>> managedProductIdsForOutlet(String outletId) async {
+    final rows = await customSelect(
+      'SELECT product_id FROM owner_managed_product_costs WHERE outlet_id = ?',
+      variables: [Variable<String>(outletId)],
+    ).get();
+    return rows.map((row) => row.read<String>('product_id')).toList();
+  }
+
+  Future<void> markOwnerManagedProduct(String productId, String outletId) =>
+      customStatement(
+        'INSERT OR REPLACE INTO owner_managed_product_costs (product_id, outlet_id) VALUES (?, ?)',
+        [productId, outletId],
+      );
+
+  /// Replace only after the server's complete paginated profile lookup.
+  /// A network error must leave the previous offline ownership cache intact.
+  Future<void> replaceManagedProfiles(Map<String, String> productOutlets) async {
+    await db.transaction(() async {
+      await customStatement('DELETE FROM owner_managed_product_costs');
+      for (final entry in productOutlets.entries) {
+        await customStatement(
+          'INSERT INTO owner_managed_product_costs (product_id, outlet_id) VALUES (?, ?)',
+          [entry.key, entry.value],
+        );
+      }
+    });
+  }
+
   Future<List<CostingComponent>> getForProduct(String productId) async {
     final rows = await customSelect(
       '''
@@ -139,6 +175,27 @@ class CostingDao extends DatabaseAccessor<AppDatabase> {
     );
   }
 
+  /// The owner dashboard is authoritative for a profiled product. Replace
+  /// the entire local recipe so ingredients removed on the web cannot linger
+  /// (or later be uploaded by an older offline edit).
+  Future<void> replaceManagedFromRemote(
+    String productId,
+    List<CostingComponent> components,
+  ) async {
+    if (components.any((component) => component.productId != productId)) {
+      throw ArgumentError('Recipe product does not match');
+    }
+    await db.transaction(() async {
+      await customStatement(
+        'DELETE FROM product_cost_components WHERE product_id = ?',
+        [productId],
+      );
+      for (final component in components) {
+        await upsertFromRemote(component);
+      }
+    });
+  }
+
   Future<void> markSynced(String id) async {
     await customStatement(
       'UPDATE product_cost_components SET is_synced = 1 WHERE id = ?',
@@ -167,6 +224,10 @@ class CostingDao extends DatabaseAccessor<AppDatabase> {
 
   Future<void> deleteForOutletIds(Iterable<String> outletIds) async {
     for (final outletId in outletIds) {
+      await customStatement(
+        'DELETE FROM owner_managed_product_costs WHERE outlet_id = ?',
+        [outletId],
+      );
       await customStatement(
         'DELETE FROM product_cost_components WHERE outlet_id = ?',
         [outletId],

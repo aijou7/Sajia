@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/legacy_outlet.dart';
 import '../local/app_database.dart';
 import '../../domain/costing.dart';
+import 'costing_sync_coordinator.dart';
 import 'product_image_uploader.dart';
 
 enum SyncPhase {
@@ -48,6 +49,7 @@ class SyncService {
 
   final AppDatabase _db;
   final SupabaseClient _supabase;
+  late final CostingSyncCoordinator _costingSync = CostingSyncCoordinator(_db);
   StreamSubscription? _connectivitySub;
   Timer? _periodicSync;
   bool _isSyncing = false;
@@ -221,13 +223,17 @@ class SyncService {
   Future<void> _pushRecoveryData() async {
     final localOutlets = await _db.select(_db.outlets).get();
     await _pullTombstones(localOutlets.map((outlet) => outlet.id).toList());
-    await _processPendingRecoveryDeletes();
+    // Server profiles are authoritative even if this device still has
+    // recipe writes queued by an older APK. Fail closed if the lookup fails.
+    final managedCostProductIds = await _costingSync
+        .refreshManagedProfiles(_fetchManagedCostProfiles);
+    await _processPendingRecoveryDeletes(managedCostProductIds);
     await _pushOutlets();
     await _pushUsers();
     await _pushUserOutletAccesses();
     await _pushCategories();
     await _pushProducts();
-    await _pushCostingComponents();
+    await _pushCostingComponents(managedCostProductIds);
     await _pushProductVariants();
     await _pushTables();
   }
@@ -241,7 +247,8 @@ class SyncService {
     await _pushExpenses(outletIds);
   }
 
-  Future<void> _processPendingRecoveryDeletes() async {
+  Future<void> _processPendingRecoveryDeletes(
+      Set<String> managedCostProductIds) async {
     final pending = await _db.syncDao.getPending(limit: 100);
     for (final item in pending) {
       if (item.operation != 'delete') continue;
@@ -288,10 +295,28 @@ class SyncService {
               .delete()
               .eq('id', item.recordId);
         } else if (item.syncTableName == 'product_cost_components') {
-          await _supabase
-              .from('product_cost_components')
-              .delete()
-              .eq('id', item.recordId);
+          final payload = _decodePayload(item.payload);
+          await _costingSync.resolvePendingDelete(
+            queueId: item.id,
+            componentId: item.recordId,
+            productId: payload['product_id'] as String?,
+            managedProductIds: managedCostProductIds,
+            findRemoteProductId: (id) async {
+              final remote = await _supabase
+                  .from('product_cost_components')
+                  .select('product_id')
+                  .eq('id', id)
+                  .maybeSingle();
+              return remote?['product_id'] as String?;
+            },
+            deleteRemote: (id) async {
+              await _supabase
+                  .from('product_cost_components')
+                  .delete()
+                  .eq('id', id);
+            },
+          );
+          continue;
         } else if (item.syncTableName == 'restaurant_tables') {
           final payload = _decodePayload(item.payload);
           var outletId = payload['outlet_id'] as String?;
@@ -815,21 +840,55 @@ class SyncService {
     }
   }
 
-  Future<void> _pullCostingComponents() async {
-    try {
-      final response = await _supabase
-          .from('product_cost_components')
-          .select()
-          .order('updated_at', ascending: false)
-          .limit(5000);
-      for (final row in response as List? ?? const []) {
-        final component = CostingComponent.fromJson(_asMap(row));
-        if (component.id.isEmpty || component.productId.isEmpty) continue;
-        await _db.costingDao.upsertFromRemote(component);
+  Future<Map<String, String>> _fetchManagedCostProfiles() async {
+    const pageSize = 1000;
+    final productOutlets = <String, String>{};
+    for (var offset = 0;; offset += pageSize) {
+      final rows = await _supabase
+          .from('product_cost_profiles')
+          .select('product_id,outlet_id')
+          .order('product_id')
+          .range(offset, offset + pageSize - 1);
+      for (final row in rows) {
+        final map = _asMap(row);
+        final productId = map['product_id'] as String?;
+        final outletId = map['outlet_id'] as String?;
+        if (productId != null && productId.isNotEmpty &&
+            outletId != null && outletId.isNotEmpty) {
+          productOutlets[productId] = outletId;
+        }
       }
+      if (rows.length < pageSize) break;
+    }
+    return productOutlets;
+  }
+
+  Future<void> _pullCostingComponents() async {
+    final managedProductIds = await _costingSync
+        .refreshManagedProfiles(_fetchManagedCostProfiles);
+    try {
+      final remoteComponents = <CostingComponent>[];
+      const pageSize = 1000;
+      for (var offset = 0;; offset += pageSize) {
+        final rows = await _supabase
+            .from('product_cost_components')
+            .select()
+            .order('id')
+            .range(offset, offset + pageSize - 1);
+        for (final row in rows) {
+          final component = CostingComponent.fromJson(_asMap(row));
+          remoteComponents.add(component);
+        }
+        if (rows.length < pageSize) break;
+      }
+      await _costingSync.applyRemoteSnapshot(
+        managedProductIds: managedProductIds,
+        remoteComponents: remoteComponents,
+      );
     } catch (e) {
       _markRecoveryPullFailed();
       debugPrint('[SyncService] pull product cost components failed: $e');
+      if (managedProductIds.isNotEmpty) rethrow;
     }
   }
 
@@ -1084,18 +1143,26 @@ class SyncService {
     }
   }
 
-  Future<void> _pushCostingComponents() async {
+  Future<void> _pushCostingComponents(Set<String> managedProductIds) async {
     final unsynced = await _db.costingDao.getUnsynced();
     for (final component in unsynced) {
       try {
-        await _supabase
-            .from('product_cost_components')
-            .upsert(component.toJson());
-        await _db.costingDao.markSynced(component.id);
+        await _costingSync.pushIfUnmanaged(
+          component: component,
+          managedProductIds: managedProductIds,
+          upload: (line) async {
+            await _supabase
+                .from('product_cost_components')
+                .upsert(line.toJson());
+          },
+        );
       } catch (e) {
         debugPrint(
           '[SyncService] push product cost component ${component.id} failed: $e',
         );
+        if (e.toString().contains('OWNER_COSTING_MANAGED_IN_DASHBOARD')) {
+          rethrow;
+        }
       }
     }
   }
