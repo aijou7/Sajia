@@ -19,6 +19,7 @@ import '../../domain/product_variant_options.dart';
 import '../shared/polish_widgets.dart';
 import '../shared/product_image.dart';
 import 'hpp_calculator.dart';
+import 'menu_cost_save.dart';
 
 class MenuPage extends ConsumerStatefulWidget {
   const MenuPage({super.key});
@@ -1158,14 +1159,6 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     setState(() => _isSaving = true);
 
     final id = widget.product?.id ?? const Uuid().v4();
-    final String cogsValue;
-    if (cloudManagedCost) {
-      cogsValue = widget.product?.cogs ?? _cogsCtrl.text.trim();
-    } else if (_recipeEdited && _recipeLines.isNotEmpty) {
-      cogsValue = _formatHpp(totalCosting(_recipeLines));
-    } else {
-      cogsValue = _cogsCtrl.text.trim().isEmpty ? '0' : _cogsCtrl.text.trim();
-    }
     final savedRecipe = _recipeLines
         .map((line) => CostingComponent(
               id: line.id,
@@ -1183,13 +1176,21 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
 
     try {
       await db.transaction(() async {
+        final cost = await resolveMenuCostForSave(
+          db: db,
+          outletId: outletId,
+          openedProduct: widget.product,
+          recipeEdited: _recipeEdited,
+          recipeLines: _recipeLines,
+          enteredCogs: _cogsCtrl.text,
+        );
         await db.productDao.upsertProduct(ProductsCompanion(
           id: Value(id),
           outletId: Value(outletId),
           categoryId: Value(_selectedCategoryId),
           name: Value(_nameCtrl.text.trim()),
           price: Value(_priceCtrl.text.trim()),
-          cogs: Value(cogsValue),
+          cogs: Value(cost.cogs),
           description: Value(
               _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim()),
           imageUrl: Value(_imagePath),
@@ -1208,7 +1209,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
           updatedAt: Value(DateTime.now()),
           isSynced: const Value(false),
         ));
-        if (!cloudManagedCost && _recipeEdited) {
+        if (!cost.ownerManaged && _recipeEdited) {
           await db.costingDao.replaceForProduct(
             outletId: outletId,
             productId: id,
