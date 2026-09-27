@@ -221,13 +221,16 @@ class SyncService {
   Future<void> _pushRecoveryData() async {
     final localOutlets = await _db.select(_db.outlets).get();
     await _pullTombstones(localOutlets.map((outlet) => outlet.id).toList());
-    await _processPendingRecoveryDeletes();
+    // Server profiles are authoritative even if this device still has
+    // recipe writes queued by an older APK. Fail closed if the lookup fails.
+    final managedCostProductIds = await _fetchManagedCostProductIds();
+    await _processPendingRecoveryDeletes(managedCostProductIds);
     await _pushOutlets();
     await _pushUsers();
     await _pushUserOutletAccesses();
     await _pushCategories();
     await _pushProducts();
-    await _pushCostingComponents();
+    await _pushCostingComponents(managedCostProductIds);
     await _pushProductVariants();
     await _pushTables();
   }
@@ -241,7 +244,8 @@ class SyncService {
     await _pushExpenses(outletIds);
   }
 
-  Future<void> _processPendingRecoveryDeletes() async {
+  Future<void> _processPendingRecoveryDeletes(
+      Set<String> managedCostProductIds) async {
     final pending = await _db.syncDao.getPending(limit: 100);
     for (final item in pending) {
       if (item.operation != 'delete') continue;
@@ -288,6 +292,22 @@ class SyncService {
               .delete()
               .eq('id', item.recordId);
         } else if (item.syncTableName == 'product_cost_components') {
+          final payload = _decodePayload(item.payload);
+          var productId = payload['product_id'] as String?;
+          if (productId == null) {
+            final remote = await _supabase
+                .from('product_cost_components')
+                .select('product_id')
+                .eq('id', item.recordId)
+                .maybeSingle();
+            productId = remote?['product_id'] as String?;
+          }
+          if (productId == null || managedCostProductIds.contains(productId)) {
+            // A missing remote row is already deleted; a profiled row is
+            // dashboard-owned and must not be removed by the APK.
+            await _db.syncDao.markDone(item.id);
+            continue;
+          }
           await _supabase
               .from('product_cost_components')
               .delete()
@@ -815,21 +835,57 @@ class SyncService {
     }
   }
 
+  Future<Set<String>> _fetchManagedCostProductIds() async {
+    const pageSize = 1000;
+    final productIds = <String>{};
+    for (var offset = 0;; offset += pageSize) {
+      final rows = await _supabase
+          .from('product_cost_profiles')
+          .select('product_id')
+          .order('product_id')
+          .range(offset, offset + pageSize - 1);
+      for (final row in rows) {
+        final productId = _asMap(row)['product_id'] as String?;
+        if (productId != null && productId.isNotEmpty) {
+          productIds.add(productId);
+        }
+      }
+      if (rows.length < pageSize) break;
+    }
+    return productIds;
+  }
+
   Future<void> _pullCostingComponents() async {
+    final managedProductIds = await _fetchManagedCostProductIds();
     try {
-      final response = await _supabase
-          .from('product_cost_components')
-          .select()
-          .order('updated_at', ascending: false)
-          .limit(5000);
-      for (final row in response as List? ?? const []) {
-        final component = CostingComponent.fromJson(_asMap(row));
-        if (component.id.isEmpty || component.productId.isEmpty) continue;
-        await _db.costingDao.upsertFromRemote(component);
+      final managedRecipes = <String, List<CostingComponent>>{
+        for (final id in managedProductIds) id: <CostingComponent>[],
+      };
+      const pageSize = 1000;
+      for (var offset = 0;; offset += pageSize) {
+        final rows = await _supabase
+            .from('product_cost_components')
+            .select()
+            .order('id')
+            .range(offset, offset + pageSize - 1);
+        for (final row in rows) {
+          final component = CostingComponent.fromJson(_asMap(row));
+          if (component.id.isEmpty || component.productId.isEmpty) continue;
+          if (managedProductIds.contains(component.productId)) {
+            managedRecipes[component.productId]!.add(component);
+          } else {
+            await _db.costingDao.upsertFromRemote(component);
+          }
+        }
+        if (rows.length < pageSize) break;
+      }
+      for (final entry in managedRecipes.entries) {
+        await _db.costingDao.replaceManagedFromRemote(entry.key, entry.value);
       }
     } catch (e) {
       _markRecoveryPullFailed();
       debugPrint('[SyncService] pull product cost components failed: $e');
+      if (managedProductIds.isNotEmpty) rethrow;
     }
   }
 
@@ -1084,9 +1140,10 @@ class SyncService {
     }
   }
 
-  Future<void> _pushCostingComponents() async {
+  Future<void> _pushCostingComponents(Set<String> managedProductIds) async {
     final unsynced = await _db.costingDao.getUnsynced();
     for (final component in unsynced) {
+      if (managedProductIds.contains(component.productId)) continue;
       try {
         await _supabase
             .from('product_cost_components')
@@ -1096,6 +1153,9 @@ class SyncService {
         debugPrint(
           '[SyncService] push product cost component ${component.id} failed: $e',
         );
+        if (e.toString().contains('OWNER_COSTING_MANAGED_IN_DASHBOARD')) {
+          rethrow;
+        }
       }
     }
   }

@@ -1068,6 +1068,15 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
       ));
       return;
     }
+    final initialHpp = double.tryParse(_cogsCtrl.text.trim());
+    if (cloudManagedCost && widget.product == null &&
+        (initialHpp == null || !initialHpp.isFinite || initialHpp <= 0)) {
+      AppNotice.show(context, const SnackBar(
+        content: Text('Isi HPP awal lebih dari 0 sebelum menyimpan menu.'),
+        backgroundColor: AppTheme.danger,
+      ));
+      return;
+    }
 
     if (!_formKey.currentState!.validate()) return;
     final variantNames = <String>{};
@@ -1086,7 +1095,7 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
     final id = widget.product?.id ?? const Uuid().v4();
     final String cogsValue;
     if (cloudManagedCost) {
-      cogsValue = widget.product?.cogs ?? '0';
+      cogsValue = widget.product?.cogs ?? _cogsCtrl.text.trim();
     } else if (_recipeEdited && _recipeLines.isNotEmpty) {
       cogsValue = _formatHpp(totalCosting(_recipeLines));
     } else {
@@ -1369,13 +1378,37 @@ class _ProductFormSheetState extends ConsumerState<ProductFormSheet> {
                 },
               ),
               const SizedBox(height: 14),
-              if (cloudManagedCost)
+              if (cloudManagedCost && outlet != null && widget.product == null) ...[
+                const _FormLabel('HPP awal *'),
+                TextFormField(
+                  key: const ValueKey('initial-hpp'),
+                  controller: _cogsCtrl,
+                  selectAllOnFocus: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: const [NormalizedNumberInputFormatter()],
+                  decoration: _inputDeco('0'),
+                  validator: (value) {
+                    final hpp = double.tryParse(value?.trim() ?? '');
+                    if (hpp == null || !hpp.isFinite || hpp <= 0) {
+                      return 'Isi HPP awal lebih dari 0';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Resep dan buffer biaya bisa diatur nanti dari Dashboard Owner.',
+                  style: TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ] else if (cloudManagedCost)
                 Text(
                   outlet == null
                       ? 'Memuat pengaturan biaya outlet...'
-                      : widget.product == null
-                          ? 'Resep dan HPP diatur dari Dashboard Owner setelah menu disimpan.'
-                          : 'HPP saat ini ${(double.tryParse(widget.product!.cogs) ?? 0).toRupiah} · atur resep dan buffer di Dashboard Owner.',
+                      : 'HPP saat ini ${(double.tryParse(widget.product!.cogs) ?? 0).toRupiah} · atur resep dan buffer di Dashboard Owner.',
                   style: const TextStyle(
                     color: AppTheme.textSecondary,
                     fontSize: 12,

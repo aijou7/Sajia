@@ -33,12 +33,24 @@ Future<void> _showProductForm(
 }
 
 void main() {
-  testWidgets('cloud menu directs HPP editing to dashboard', (tester) async {
+  testWidgets('new cloud menu requires HPP awal and keeps recipe in dashboard',
+      (tester) async {
     await _showProductForm(tester, cloud: true);
 
-    expect(find.textContaining('diatur dari Dashboard Owner'), findsOneWidget);
+    expect(find.text('HPP awal *'), findsOneWidget);
+    expect(find.textContaining('diatur nanti dari Dashboard Owner'),
+        findsOneWidget);
     expect(find.text('Biaya menu (opsional)'), findsNothing);
     expect(find.text('HPP manual'), findsNothing);
+
+    final form = tester.state<FormState>(find.byType(Form));
+    expect(form.validate(), isFalse);
+    await tester.pump();
+    expect(find.text('Isi HPP awal lebih dari 0'), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('initial-hpp')), '5000');
+    form.validate();
+    await tester.pump();
+    expect(find.text('Isi HPP awal lebih dari 0'), findsNothing);
   });
 
   testWidgets('offline menu keeps costing under an optional section',

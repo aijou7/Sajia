@@ -139,6 +139,27 @@ class CostingDao extends DatabaseAccessor<AppDatabase> {
     );
   }
 
+  /// The owner dashboard is authoritative for a profiled product. Replace
+  /// the entire local recipe so ingredients removed on the web cannot linger
+  /// (or later be uploaded by an older offline edit).
+  Future<void> replaceManagedFromRemote(
+    String productId,
+    List<CostingComponent> components,
+  ) async {
+    if (components.any((component) => component.productId != productId)) {
+      throw ArgumentError('Recipe product does not match');
+    }
+    await db.transaction(() async {
+      await customStatement(
+        'DELETE FROM product_cost_components WHERE product_id = ?',
+        [productId],
+      );
+      for (final component in components) {
+        await upsertFromRemote(component);
+      }
+    });
+  }
+
   Future<void> markSynced(String id) async {
     await customStatement(
       'UPDATE product_cost_components SET is_synced = 1 WHERE id = ?',
