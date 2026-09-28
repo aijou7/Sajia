@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:pos_mobile/core/providers.dart';
 import 'package:pos_mobile/core/theme.dart';
 import 'package:pos_mobile/data/local/app_database.dart';
@@ -34,6 +35,7 @@ class _SampleCart extends CartNotifier {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
+    await initializeDateFormatting('id_ID');
     final fonts = FontLoader('Inter');
     for (final weight in ['Regular', 'Medium', 'SemiBold', 'Bold', 'ExtraBold', 'Black']) {
       fonts.addFont(rootBundle.load('assets/fonts/Inter-$weight.ttf'));
