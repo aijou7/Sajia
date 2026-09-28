@@ -1310,55 +1310,36 @@ class _CartBar extends ConsumerWidget {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         decoration: BoxDecoration(
-          gradient: AppTheme.actionGradient,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: AppTheme.primary.withValues(alpha: 0.26),
-              blurRadius: 24,
-              offset: const Offset(0, 12),
-            ),
-          ],
+          color: AppTheme.action,
+          borderRadius: BorderRadius.circular(AppTheme.radius),
         ),
         child: Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Lihat Pesanan',
+                    style: TextStyle(
+                        color: Colors.white, fontSize: 14,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text('${cart.itemCount} item',
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 12)),
+              ],
             ),
-            child: Text('${cart.itemCount} item',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600)),
           ),
           const SizedBox(width: 12),
-          const Text('Lihat Pesanan',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600)),
-          const Spacer(),
-          Text(cart.total(taxPercent, servicePercent).toRupiah,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800)),
-          const SizedBox(width: 8),
-          Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.18),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.keyboard_arrow_up,
-              color: Colors.white,
-              size: 18,
-            ),
+          Flexible(
+            child: Text(cart.total(taxPercent, servicePercent).toRupiah,
+                textAlign: TextAlign.end,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 15,
+                    fontWeight: FontWeight.w700)),
           ),
+          const SizedBox(width: 8),
+          const Icon(Icons.keyboard_arrow_up, color: Colors.white, size: 22),
         ]),
       ),
     );
