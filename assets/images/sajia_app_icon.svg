@@ -1,15 +1,5 @@
-<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1024" height="1024" rx="226" fill="url(#sajia-gradient)"/>
-  <!-- Lumer-organik mark, optically centered and kept inside launcher safe bounds. -->
-  <path d="M160 611C192 349 342 198 512 198C682 198 832 349 864 611H752C739 547 707 502 662 502C598 502 624 653 560 653C496 653 522 458 458 458C394 458 419 605 355 605C294 605 317 506 256 506C205 506 192 557 186 611H160Z" fill="white"/>
-  <rect x="115" y="653" width="794" height="102" rx="51" fill="white"/>
-  <rect x="422" y="122" width="179" height="90" rx="45" fill="white"/>
-  <circle cx="760" cy="206" r="112" fill="#746FA8"/>
-  <text x="760" y="246" text-anchor="middle" fill="white" font-family="Inter, Arial, sans-serif" font-size="96" font-weight="850">Rp</text>
-  <defs>
-    <linearGradient id="sajia-gradient" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#5F8E89"/>
-      <stop offset="1" stop-color="#285752"/>
-    </linearGradient>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 64 64" fill="none">
+  <title>Kasata</title>
+  <rect width="64" height="64" rx="16" fill="#176B55"/>
+  <rect x="14" y="17" width="9" height="30" rx="2" fill="#fff"/><path d="M28 32L41 17H52L39 32L52 47H41Z" fill="#fff"/>
 </svg>

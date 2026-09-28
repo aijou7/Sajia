@@ -66,6 +66,7 @@ class _SajiaStartupSplashState extends State<SajiaStartupSplash>
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
+        fontFamily: 'Inter',
         colorScheme: ColorScheme.fromSeed(
           seedColor: AppBrand.primary,
           surface: _startupBackground,
@@ -227,7 +228,7 @@ class _AnimatedBrand extends StatelessWidget {
                 color: AppBrand.ink,
                 fontSize: 38,
                 height: 1,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w700,
                 letterSpacing: -1.2,
               ),
             ),

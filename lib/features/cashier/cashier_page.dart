@@ -513,13 +513,7 @@ class _TopBar extends ConsumerWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryDeep.withValues(alpha: 0.06),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        border: const Border(bottom: BorderSide(color: AppTheme.subtleBorder)),
       ),
       padding: EdgeInsets.fromLTRB(
         16,
@@ -532,15 +526,8 @@ class _TopBar extends ConsumerWidget {
           width: 42,
           height: 42,
           decoration: BoxDecoration(
-            gradient: AppTheme.brandGradient,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primary.withValues(alpha: 0.22),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
+            color: AppTheme.action,
+            borderRadius: BorderRadius.circular(12),
           ),
           child: const SajiaMark(
             size: 42,
@@ -556,8 +543,8 @@ class _TopBar extends ConsumerWidget {
             const Text(AppBrand.name,
                 style: TextStyle(
                     fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.2,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.4,
                     color: AppTheme.textPrimary)),
             Text(
                 '${outlet?.name.trim().isNotEmpty == true ? outlet!.name.trim() : 'Outlet aktif'} · ${DateHelper.formatDate(now)}',
@@ -803,7 +790,6 @@ class _CatChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? AppTheme.primary;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Semantics(
@@ -814,41 +800,40 @@ class _CatChip extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(10),
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
+              duration: const Duration(milliseconds: 160),
               curve: Curves.easeOutCubic,
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                color: selected ? c : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: selected ? c : AppTheme.subtleBorder),
-                boxShadow: selected
-                    ? [
-                        BoxShadow(
-                          color: c.withValues(alpha: 0.22),
-                          blurRadius: 14,
-                          offset: const Offset(0, 7),
-                        ),
-                      ]
-                    : null,
+                color: selected ? AppTheme.textPrimary : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: selected ? AppTheme.textPrimary : AppTheme.borderColor,
+                ),
               ),
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                strutStyle: const StrutStyle(
-                  fontSize: 12,
-                  height: 1,
-                  forceStrutHeight: true,
-                ),
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  color: selected ? Colors.white : AppTheme.textSecondary,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (color != null) ...[
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: selected ? Colors.white : AppTheme.textPrimary,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -868,14 +853,14 @@ class _SearchBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       child: TextField(
         controller: ctrl,
         onChanged: onChanged,
-        style: const TextStyle(fontSize: 13),
+        style: const TextStyle(fontSize: 14),
         decoration: InputDecoration(
-          hintText: 'Cari menu...',
-          hintStyle: const TextStyle(fontSize: 13, color: Color(0xFFA9B3C2)),
+          hintText: 'Cari nama menu',
+          hintStyle: const TextStyle(fontSize: 14, color: AppTheme.textSecondary),
           prefixIcon: const Icon(Icons.search_rounded,
               size: 18, color: Color(0xFF9CA3AF)),
           suffixIcon: ctrl.text.isNotEmpty
@@ -884,8 +869,11 @@ class _SearchBar extends StatelessWidget {
                     ctrl.clear();
                     onChanged('');
                   },
-                  child: const Icon(Icons.close,
-                      size: 16, color: Color(0xFF9CA3AF)))
+                  child: const SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Icon(Icons.close, size: 20, color: AppTheme.textSecondary),
+                  ))
               : null,
           filled: true,
           fillColor: Colors.white,
@@ -925,14 +913,13 @@ class _MenuGrid extends ConsumerWidget {
     final promotions = ref.watch(scheduledPromotionsProvider).value ??
         const <ScheduledPromotion>[];
     final now = ref.watch(promotionClockProvider).value ?? DateTime.now();
-    final w = MediaQuery.of(context).size.width;
-    final cols = w > 900
-        ? 4
-        : w > 600
-            ? 3
-            : 2;
-
-    return productsAsync.when(
+    return LayoutBuilder(builder: (context, constraints) {
+      // Use the menu's actual width after the order panel takes its space.
+      final cols = (constraints.maxWidth / 190).floor().clamp(2, 6);
+      final cardWidth = (constraints.maxWidth - 32 - (cols - 1) * 12) / cols;
+      final textScale = MediaQuery.textScalerOf(context).scale(1);
+      final cardHeight = cardWidth * 0.75 + 108 * textScale;
+      return productsAsync.when(
       data: (products) {
         final filtered = products.where((p) {
           final matchCat = categoryId == null || p.categoryId == categoryId;
@@ -957,12 +944,12 @@ class _MenuGrid extends ConsumerWidget {
         }
 
         return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(12, 2, 12, 108),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: cols,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: 0.82,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            mainAxisExtent: cardHeight,
           ),
           itemCount: filtered.length,
           itemBuilder: (_, i) {
@@ -984,11 +971,11 @@ class _MenuGrid extends ConsumerWidget {
       },
       loading: () => GridView.builder(
         padding: const EdgeInsets.all(12),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 0.82,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: cols,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          mainAxisExtent: cardHeight,
         ),
         itemCount: 6,
         itemBuilder: (_, __) => _SkeletonCard(),
@@ -997,7 +984,8 @@ class _MenuGrid extends ConsumerWidget {
         title: 'Menu belum bisa dimuat',
         onRetry: () => ref.invalidate(availableProductsProvider),
       ),
-    );
+      );
+    });
   }
 }
 
@@ -1044,19 +1032,13 @@ class _MenuCardState extends State<_MenuCard> {
             curve: Curves.easeOutCubic,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: AppTheme.subtleBorder, width: 0.7),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.primaryDeep
-                      .withValues(alpha: _pressed ? 0.04 : 0.08),
-                  blurRadius: _pressed ? 10 : 20,
-                  offset: Offset(0, _pressed ? 4 : 10),
-                ),
-              ],
+              borderRadius: BorderRadius.circular(AppTheme.radius),
+              border: Border.all(
+                color: _pressed ? AppTheme.action : AppTheme.borderColor,
+              ),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(AppTheme.radius),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1153,8 +1135,8 @@ class _MenuCardState extends State<_MenuCard> {
                       ],
                     ),
                   ),
-                  Expanded(
-                    flex: 4,
+                  SizedBox(
+                    height: 108 * MediaQuery.textScalerOf(context).scale(1),
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(11, 9, 11, 11),
                       child: Column(
@@ -1165,8 +1147,8 @@ class _MenuCardState extends State<_MenuCard> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
                               height: 1.25,
                               color: AppTheme.textPrimary,
                             ),
@@ -1180,8 +1162,8 @@ class _MenuCardState extends State<_MenuCard> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w800,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
                                         color: AppTheme.primary,
                                       ),
                                     )
@@ -1205,8 +1187,8 @@ class _MenuCardState extends State<_MenuCard> {
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
-                                            fontSize: 12.5,
-                                            fontWeight: FontWeight.w900,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
                                             color: AppTheme.warning,
                                           ),
                                         ),
@@ -1214,8 +1196,8 @@ class _MenuCardState extends State<_MenuCard> {
                                     ),
                             ),
                             const Icon(
-                              Icons.touch_app_rounded,
-                              color: Color(0xFFB9C4D2),
+                              Icons.add_circle_outline_rounded,
+                              color: AppTheme.action,
                               size: AppTheme.iconCompact,
                             ),
                           ]),
@@ -1328,55 +1310,36 @@ class _CartBar extends ConsumerWidget {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         decoration: BoxDecoration(
-          gradient: AppTheme.actionGradient,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: AppTheme.primary.withValues(alpha: 0.26),
-              blurRadius: 24,
-              offset: const Offset(0, 12),
-            ),
-          ],
+          color: AppTheme.action,
+          borderRadius: BorderRadius.circular(AppTheme.radius),
         ),
         child: Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Lihat Pesanan',
+                    style: TextStyle(
+                        color: Colors.white, fontSize: 14,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text('${cart.itemCount} item',
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 12)),
+              ],
             ),
-            child: Text('${cart.itemCount} item',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600)),
           ),
           const SizedBox(width: 12),
-          const Text('Lihat Pesanan',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600)),
-          const Spacer(),
-          Text(cart.total(taxPercent, servicePercent).toRupiah,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800)),
-          const SizedBox(width: 8),
-          Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.18),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.keyboard_arrow_up,
-              color: Colors.white,
-              size: 18,
-            ),
+          Flexible(
+            child: Text(cart.total(taxPercent, servicePercent).toRupiah,
+                textAlign: TextAlign.end,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 15,
+                    fontWeight: FontWeight.w700)),
           ),
+          const SizedBox(width: 8),
+          const Icon(Icons.keyboard_arrow_up, color: Colors.white, size: 22),
         ]),
       ),
     );

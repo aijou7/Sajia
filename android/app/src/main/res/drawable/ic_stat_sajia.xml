@@ -1,19 +1,8 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <!-- Monochrome lumer-organik Kasata mark for Android status notifications. -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M3.75,14.33C4.5,8.18 8.03,4.65 12,4.65C15.98,4.65 19.5,8.18 20.25,14.33H17.63C17.33,12.83 16.58,11.78 15.53,11.78C14.03,11.78 14.63,15.3 13.13,15.3C11.63,15.3 12.23,10.73 10.73,10.73C9.23,10.73 9.83,14.18 8.33,14.18C6.9,14.18 7.43,11.85 6,11.85C4.8,11.85 4.5,13.05 4.35,14.33Z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M9.9,2.85H14.1V4.95H9.9Z" />
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2.4"
-        android:strokeLineCap="round"
-        android:pathData="M3.9,16.5H20.1" />
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M14,17H23V47H14Z M28,32L41,17H52L39,32L52,47H41Z" />
 </vector>

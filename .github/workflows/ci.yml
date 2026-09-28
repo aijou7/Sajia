@@ -34,4 +34,13 @@ jobs:
         run: flutter analyze
 
       - name: Run tests
-        run: flutter test
+        run: flutter test --dart-define=KASATA_VISUAL_REVIEW=true
+
+      - name: Save UI review screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kasata-ui-review
+          path: build/visual-review
+          if-no-files-found: ignore
+          retention-days: 7

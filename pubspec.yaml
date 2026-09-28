@@ -1,7 +1,7 @@
 name: pos_mobile
 description: Kasata cashier and F&B operations app
 publish_to: 'none'
-version: 1.0.30+2033
+version: 1.0.31+2034
 
 environment:
   sdk: ">=3.2.0 <4.0.0"
@@ -52,6 +52,21 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Inter-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Inter-Black.ttf
+          weight: 900
 
 hooks:
   user_defines:

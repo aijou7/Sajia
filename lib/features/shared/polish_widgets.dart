@@ -23,7 +23,7 @@ class ModernHeroHeader extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         border: Border.all(color: AppTheme.subtleBorder),
         boxShadow: AppTheme.softShadow,
       ),
@@ -53,7 +53,7 @@ class ModernHeroHeader extends StatelessWidget {
                   style: const TextStyle(
                     color: AppTheme.textPrimary,
                     fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: -0.25,
                   ),
                 ),
@@ -64,9 +64,9 @@ class ModernHeroHeader extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: AppTheme.textSecondary,
-                    fontSize: 12,
-                    height: 1.25,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    height: 1.4,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
               ],
@@ -103,7 +103,7 @@ class ModernCard extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
         border: Border.all(color: AppTheme.subtleBorder),
         boxShadow: AppTheme.softShadow,
       ),
@@ -115,7 +115,7 @@ class ModernCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(AppTheme.radius),
         child: card,
       ),
     );
