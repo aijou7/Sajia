@@ -119,17 +119,10 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
             color: Colors.white,
             border: const Border(
                 top: BorderSide(color: AppTheme.subtleBorder, width: 0.5)),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primaryDeep.withValues(alpha: 0.08),
-                blurRadius: 24,
-                offset: const Offset(0, -8),
-              ),
-            ],
           ),
           child: SafeArea(
             child: SizedBox(
-              height: 64,
+              height: 68,
               child: Row(children: [
                 _NavItem(
                   icon: Icons.point_of_sale_outlined,
@@ -362,17 +355,17 @@ class _NavItem extends StatelessWidget {
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
                   curve: Curves.easeOutCubic,
-                  width: 38,
+                  width: 52,
                   height: 30,
                   decoration: BoxDecoration(
                     color:
-                        selected ? AppTheme.primaryLight : Colors.transparent,
-                    borderRadius: BorderRadius.circular(999),
+                        selected ? AppTheme.actionSoft : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
                     selected ? activeIcon : icon,
                     color:
-                        selected ? AppTheme.primary : const Color(0xFFB0B7C3),
+                        selected ? AppTheme.textPrimary : AppTheme.textSecondary,
                     size: 22,
                   ),
                 ),
@@ -383,9 +376,9 @@ class _NavItem extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     color:
-                        selected ? AppTheme.primary : const Color(0xFFB0B7C3),
+                        selected ? AppTheme.textPrimary : AppTheme.textSecondary,
                   ),
                 ),
               ],

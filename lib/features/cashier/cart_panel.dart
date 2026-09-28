@@ -30,90 +30,71 @@ class CartPanel extends ConsumerWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryDeep.withValues(alpha: 0.14),
-            blurRadius: 28,
-            offset: const Offset(0, -10),
-          ),
-        ],
+        borderRadius: scrollController == null
+            ? BorderRadius.zero
+            : const BorderRadius.vertical(top: Radius.circular(20)),
+        border: Border.all(color: AppTheme.subtleBorder),
       ),
       child: Column(
         children: [
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            width: 42,
-            height: 4,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE5E7EB),
-              borderRadius: BorderRadius.circular(2),
+          if (scrollController != null)
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.borderColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ),
-          ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-            child: Row(
+            padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Pesanan',
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: AppTheme.textPrimary)),
-                const SizedBox(width: 8),
-                if (cart.itemCount > 0)
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 180),
-                    child: Container(
-                      key: ValueKey(cart.itemCount),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryLight,
-                        borderRadius: BorderRadius.circular(999),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Pesanan',
+                          style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.textPrimary)),
+                    ),
+                    if (cart.itemCount > 0)
+                      Text('${cart.itemCount} item',
+                          style: const TextStyle(
+                              fontSize: 12, color: AppTheme.textSecondary)),
+                    if (!cart.isEmpty)
+                      IconButton(
+                        tooltip: 'Kosongkan pesanan',
+                        onPressed: () => _confirmClear(context, ref),
+                        icon: const Icon(Icons.delete_outline_rounded,
+                            size: 20, color: AppTheme.textSecondary),
                       ),
-                      child: Text(
-                        '${cart.itemCount}',
-                        style: const TextStyle(
-                          color: AppTheme.primary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _OrderTypeToggle(),
+                    if (cart.tableId != null)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 180),
+                        child: Text(
+                          cart.tableLabel ?? '-',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600),
                         ),
                       ),
-                    ),
-                  ),
-                const Spacer(),
-                // Order type toggle
-                _OrderTypeToggle(),
-                if (cart.tableId != null) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF3F4F6),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.table_bar_outlined,
-                            size: 14, color: Color(0xFF6B7280)),
-                        const SizedBox(width: 4),
-                        Text(cart.tableLabel ?? '-',
-                            style: const TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w500)),
-                      ],
-                    ),
-                  ),
-                ],
-                if (!cart.isEmpty) ...[
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _confirmClear(context, ref),
-                    child: const Icon(Icons.delete_outline,
-                        size: 20, color: Color(0xFF9CA3AF)),
-                  ),
-                ],
+                  ],
+                ),
               ],
             ),
           ),
@@ -142,13 +123,13 @@ class CartPanel extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.shopping_bag_outlined, size: 48, color: Colors.grey[300]),
+          const Icon(Icons.receipt_long_outlined, size: 40, color: AppTheme.textSecondary),
           const SizedBox(height: 12),
           Text('Belum ada pesanan',
-              style: TextStyle(color: Colors.grey[400], fontSize: 14)),
+              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
-          Text('Tap menu untuk menambahkan',
-              style: TextStyle(color: Colors.grey[300], fontSize: 12)),
+          Text('Pilih menu untuk mulai pesanan',
+              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
         ],
       ),
     );

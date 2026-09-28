@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'brand.dart';
 
@@ -13,14 +12,16 @@ class AppTheme {
   static const actionBright = AppBrand.primaryBright;
   static const actionSoft = AppBrand.primaryLight;
 
-  static const surface = Color(0xFFF6F6F6);
+  static const surface = Color(0xFFF5F6F5);
   static const surfaceWarm = Colors.white;
-  static const neutralSoft = Color(0xFFF1F1F1);
-  static const borderColor = Color(0xFFE0E0E0);
-  static const subtleBorder = Color(0xFFE7E7E7);
+  static const neutralSoft = Color(0xFFF0F2F1);
+  static const borderColor = Color(0xFFDDE2DF);
+  static const subtleBorder = Color(0xFFE8ECE9);
   static const cardBg = Colors.white;
-  static const textPrimary = Color(0xFF111111);
-  static const textSecondary = Color(0xFF626262);
+  static const textPrimary = AppBrand.ink;
+  static const textSecondary = AppBrand.mutedInk;
+  static const radius = 12.0;
+  static const radiusLarge = 18.0;
 
   // Alias lama sengaja dinetralkan agar komponen yang sebelumnya mewarnai
   // teks, ikon, kartu, dan frame otomatis kembali ke hitam/abu. Gunakan
@@ -65,9 +66,9 @@ class AppTheme {
 
   static List<BoxShadow> get softShadow => [
         BoxShadow(
-          color: const Color(0xFF172321).withValues(alpha: 0.08),
-          blurRadius: 22,
-          offset: const Offset(0, 10),
+          color: textPrimary.withValues(alpha: 0.035),
+          blurRadius: 8,
+          offset: const Offset(0, 2),
         ),
       ];
 
@@ -113,7 +114,9 @@ class AppTheme {
       shadow: Colors.black,
       scrim: Colors.black,
     ),
-    textTheme: GoogleFonts.interTextTheme().apply(
+    fontFamily: 'Inter',
+    textTheme: ThemeData.light().textTheme.apply(
+      fontFamily: 'Inter',
       bodyColor: textPrimary,
       displayColor: textPrimary,
     ),
@@ -122,15 +125,15 @@ class AppTheme {
       color: textSecondary,
     ),
     scaffoldBackgroundColor: surface,
-    appBarTheme: AppBarTheme(
+    appBarTheme: const AppBarTheme(
       backgroundColor: Colors.white,
       foregroundColor: textPrimary,
       elevation: 0,
-      scrolledUnderElevation: 1,
+      scrolledUnderElevation: 0,
       centerTitle: false,
       systemOverlayStyle: SystemUiOverlayStyle.dark,
-      titleTextStyle: GoogleFonts.inter(
-        fontSize: 18,
+      titleTextStyle: TextStyle(fontFamily: 'Inter',
+        fontSize: 20,
         fontWeight: FontWeight.w700,
         letterSpacing: -0.2,
         color: textPrimary,
@@ -140,7 +143,7 @@ class AppTheme {
       elevation: 0,
       color: Colors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(16)),
+        borderRadius: BorderRadius.all(Radius.circular(radius)),
         side: BorderSide(color: borderColor),
       ),
     ),
@@ -150,14 +153,15 @@ class AppTheme {
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+        textStyle: const TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w600),
         elevation: 0,
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: const Color(0xFFF8F9F8),
+      fillColor: Colors.white,
+      hintStyle: const TextStyle(fontFamily: 'Inter', color: textSecondary, fontSize: 14),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -183,7 +187,7 @@ class AppTheme {
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(
       backgroundColor: Colors.white,
       selectedItemColor: primary,
-      unselectedItemColor: Color(0xFF8B9894),
+      unselectedItemColor: textSecondary,
       elevation: 0,
     ),
     iconButtonTheme: IconButtonThemeData(
@@ -205,7 +209,7 @@ class AppTheme {
         foregroundColor: textPrimary,
         side: const BorderSide(color: borderColor),
         minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
@@ -213,7 +217,7 @@ class AppTheme {
         backgroundColor: action,
         foregroundColor: Colors.white,
         minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
       ),
     ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
@@ -223,8 +227,8 @@ class AppTheme {
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      contentTextStyle: GoogleFonts.inter(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+      contentTextStyle: const TextStyle(fontFamily: 'Inter',
         color: Colors.white,
         fontSize: 14,
         fontWeight: FontWeight.w600,
@@ -238,26 +242,40 @@ class AppTheme {
     chipTheme: ChipThemeData(
       backgroundColor: surface,
       selectedColor: neutralSoft,
-      labelStyle: GoogleFonts.inter(fontSize: 12, color: textPrimary),
+      labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 12, color: textPrimary),
       secondaryLabelStyle:
-          GoogleFonts.inter(fontSize: 12, color: textPrimary),
+          const TextStyle(fontFamily: 'Inter', fontSize: 12, color: textPrimary),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(10),
         side: const BorderSide(color: borderColor),
       ),
     ),
-    tabBarTheme: TabBarThemeData(
+    tabBarTheme: const TabBarThemeData(
       labelColor: textPrimary,
       unselectedLabelColor: textSecondary,
       indicatorColor: textPrimary,
       dividerColor: borderColor,
-      labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w700),
+      labelStyle: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600),
     ),
     listTileTheme: const ListTileThemeData(
       iconColor: textSecondary,
       textColor: textPrimary,
       selectedColor: textPrimary,
       selectedTileColor: neutralSoft,
+    ),
+    dialogTheme: const DialogThemeData(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(radiusLarge)),
+      ),
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
     ),
     progressIndicatorTheme: const ProgressIndicatorThemeData(
       color: action,
@@ -271,7 +289,8 @@ class AppTheme {
     brightness: Brightness.dark,
     colorScheme:
         ColorScheme.fromSeed(seedColor: action, brightness: Brightness.dark),
-    textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+    fontFamily: 'Inter',
+    textTheme: ThemeData.dark().textTheme.apply(fontFamily: 'Inter'),
   );
 }
 
