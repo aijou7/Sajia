@@ -80,6 +80,7 @@ void main() {
                     updatedAt: now, isSynced: true),
               ])),
           scheduledPromotionsProvider.overrideWith((ref) => Stream.value([])),
+          tablesProvider.overrideWith((ref) => Stream.value([])),
           promotionClockProvider.overrideWith((ref) => Stream.value(now)),
           syncStatusProvider.overrideWith((ref) => Stream.value(const SyncStatus())),
         ],
