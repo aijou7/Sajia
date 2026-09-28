@@ -114,7 +114,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).first, 'Americano');
       await tester.pumpAndSettle();
-      expect(find.text('Americano'), findsOneWidget);
+      expect(find.text('Americano', skipOffstage: true).evaluate()
+          .where((element) => element.widget is Text), hasLength(1));
       expect(find.text('Matcha Latte'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
