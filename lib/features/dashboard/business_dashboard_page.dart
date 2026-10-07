@@ -187,6 +187,11 @@ class _BusinessDashboardPageState extends ConsumerState<BusinessDashboardPage>
   }
 
   Future<void> _deleteExpense(Expense expense) async {
+    if (expense.id.startsWith('internal:')) {
+      AppNotice.show(context, const SnackBar(content: Text(
+          'HPP ini dicatat otomatis dari pemakaian bahan dan tidak dapat dihapus sebagai pengeluaran biasa.')));
+      return;
+    }
     final user = ref.read(currentUserProvider);
     if (user?.isOwner != true) {
       AppNotice.show(context,
@@ -987,7 +992,7 @@ class _ExpenseRow extends StatelessWidget {
                 fontSize: 12,
               ),
             ),
-            if (onDelete != null) ...[
+            if (onDelete != null && !expense.id.startsWith('internal:')) ...[
               const SizedBox(width: 4),
               IconButton(
                 tooltip: 'Hapus pengeluaran',

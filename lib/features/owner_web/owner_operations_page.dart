@@ -1,11 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/numeric_input_formatter.dart';
+import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../domain/costing.dart';
+import '../../domain/ingredient_inventory.dart';
+import 'owner_inventory_panel.dart';
 import '../menu/hpp_calculator.dart';
 
 class OwnerOutletOption {
@@ -33,6 +38,9 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
   late Future<_OperationsData> _data;
   String? _outletId;
   _OperationsTab _selectedTab = _OperationsTab.menu;
+  Timer? _menuRefreshTimer;
+  bool _backgroundRefreshing = false;
+  bool _refreshFailed = false;
 
   OwnerOutletOption? get _selectedOutlet {
     for (final outlet in widget.outlets) {
@@ -46,6 +54,50 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
     super.initState();
     _outletId = widget.outlets.isEmpty ? null : widget.outlets.first.id;
     _data = _loadData();
+    _menuRefreshTimer =
+        Timer.periodic(const Duration(seconds: 30), (_) => _refreshMenu());
+  }
+
+  @override
+  void dispose() {
+    _menuRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  // Keep tablet changes visible without replacing the screen while an owner
+  // edits a form. Discard a response if the branch or manual load changed.
+  Future<void> _refreshMenu() async {
+    if (!mounted ||
+        _backgroundRefreshing ||
+        _selectedTab != _OperationsTab.menu ||
+        _outletId == null ||
+        !TickerMode.valuesOf(context).enabled ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        (WidgetsBinding.instance.lifecycleState != null &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed)) {
+      return;
+    }
+    final previous = _data;
+    final outletId = _outletId;
+    _backgroundRefreshing = true;
+    try {
+      final data = await _loadData();
+      if (!mounted || _outletId != outletId || !identical(_data, previous)) {
+        return;
+      }
+      setState(() {
+        _data = Future.value(data);
+        _refreshFailed = false;
+      });
+    } catch (error) {
+      debugPrint('[OwnerMenu] refresh failed: ${error.runtimeType}');
+      if (mounted && _outletId == outletId && identical(_data, previous)) {
+        setState(() => _refreshFailed = true);
+      }
+    } finally {
+      _backgroundRefreshing = false;
+    }
   }
 
   @override
@@ -87,10 +139,7 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
       else
         Future.value(const <dynamic>[]),
       _loadCostingRows(client, outlet.id),
-      client
-          .from('product_cost_profiles')
-          .select()
-          .eq('outlet_id', outlet.id),
+      client.from('product_cost_profiles').select().eq('outlet_id', outlet.id),
     ]);
 
     final costingRows = responses[4] as List<Map<String, dynamic>>;
@@ -116,13 +165,13 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
     var promotionItems = const <Map<String, dynamic>>[];
     try {
       promotionRows = ((await client
-                  .from('scheduled_promotions')
-                  .select()
-                  .eq('outlet_id', outlet.id)
-                  .order('priority', ascending: false)
-                  .order('updated_at', ascending: false)) as List)
-              .map((row) => Map<String, dynamic>.from(row as Map))
-              .toList(growable: false);
+              .from('scheduled_promotions')
+              .select()
+              .eq('outlet_id', outlet.id)
+              .order('priority', ascending: false)
+              .order('updated_at', ascending: false)) as List)
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList(growable: false);
       final promotionIds = promotionRows
           .map((row) => row['id']?.toString())
           .whereType<String>()
@@ -130,11 +179,11 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
           .toList(growable: false);
       if (promotionIds.isNotEmpty) {
         promotionItems = ((await client
-                    .from('scheduled_promotion_items')
-                    .select()
-                    .inFilter('promotion_id', promotionIds)) as List)
-                .map((row) => Map<String, dynamic>.from(row as Map))
-                .toList(growable: false);
+                .from('scheduled_promotion_items')
+                .select()
+                .inFilter('promotion_id', promotionIds)) as List)
+            .map((row) => Map<String, dynamic>.from(row as Map))
+            .toList(growable: false);
       }
     } catch (_) {
       // The editor will simply remain empty until the migration is applied.
@@ -150,23 +199,26 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
 
     return _OperationsData(
       categories: (responses[0] as List)
-          .map((row) => _OwnerCategory.fromJson(Map<String, dynamic>.from(row as Map)))
+          .where((row) => (row as Map)['deleted_at'] == null)
+          .map((row) =>
+              _OwnerCategory.fromJson(Map<String, dynamic>.from(row as Map)))
           .toList(),
-      products: (responses[1] as List)
-          .map((row) {
-            final json = Map<String, dynamic>.from(row as Map);
-            return _OwnerProduct.fromJson(
-              json,
-              recipeComponents: costingByProduct[json['id']?.toString()] ?? const [],
-              costProfile: profilesByProduct[json['id']?.toString()],
-            );
-          })
-          .toList(),
+      products: (responses[1] as List).map((row) {
+        final json = Map<String, dynamic>.from(row as Map);
+        return _OwnerProduct.fromJson(
+          json,
+          recipeComponents:
+              costingByProduct[json['id']?.toString()] ?? const [],
+          costProfile: profilesByProduct[json['id']?.toString()],
+        );
+      }).toList(),
       tables: (responses[2] as List)
-          .map((row) => _OwnerTable.fromJson(Map<String, dynamic>.from(row as Map)))
+          .map((row) =>
+              _OwnerTable.fromJson(Map<String, dynamic>.from(row as Map)))
           .toList(),
       expenses: (responses[3] as List)
-          .map((row) => _OwnerExpense.fromJson(Map<String, dynamic>.from(row as Map)))
+          .map((row) =>
+              _OwnerExpense.fromJson(Map<String, dynamic>.from(row as Map)))
           .toList(),
       promotions: promotionRows
           .map(
@@ -185,12 +237,12 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
   ) async {
     try {
       return ((await client
-                  .from('product_cost_components')
-                  .select()
-                  .eq('outlet_id', outletId)
-                  .order('updated_at')) as List)
-              .map((row) => Map<String, dynamic>.from(row as Map))
-              .toList(growable: false);
+              .from('product_cost_components')
+              .select()
+              .eq('outlet_id', outletId)
+              .order('updated_at')) as List)
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList(growable: false);
     } catch (_) {
       // Keep basic menu management available if an older project has not
       // received the recipe-costing migration yet.
@@ -198,7 +250,60 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
     }
   }
 
-  void _reload() => setState(() => _data = _loadData());
+  void _reload() => setState(() {
+        _refreshFailed = false;
+        _data = _loadData();
+      });
+
+  Future<void> _deleteMenuEntity(String kind, String id, String name) async {
+    final outletId = _outletId;
+    if (outletId == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Hapus ${kind == 'product' ? 'menu' : 'kategori'}?'),
+        content: Text(
+            '“$name” akan dihapus dari daftar. Riwayat transaksi tetap tersimpan.'
+            '${kind == 'category' ? ' Menu di dalamnya menjadi tanpa kategori.' : ''}'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Batal')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Hapus')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final deleted = await Supabase.instance.client
+          .rpc('delete_owner_menu_entity', params: {
+        'p_outlet_id': outletId,
+        'p_kind': kind,
+        'p_id': id,
+      });
+      if (deleted != true) {
+        throw StateError('Data sudah berubah. Muat ulang terlebih dahulu.');
+      }
+      if (!mounted) return;
+      _reload();
+      AppNotice.show(
+          context,
+          const SnackBar(
+              content: Text(
+                  'Berhasil dihapus. Tablet mengikuti setelah sinkronisasi.')));
+    } catch (error) {
+      if (!mounted) return;
+      AppNotice.show(
+          context,
+          SnackBar(
+              content: Text(error is PostgrestException &&
+                      error.code == 'PGRST202'
+                  ? 'Fitur hapus membutuhkan migration terbaru. Data belum dihapus.'
+                  : 'Belum dapat menghapus. Periksa koneksi dan coba lagi.')));
+    }
+  }
 
   Future<void> _saveCategory({
     required _OwnerCategory? category,
@@ -223,7 +328,10 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
         'sort_order': 0,
       });
     } else {
-      await table.update(payload).eq('id', category.id).eq('outlet_id', outletId);
+      await table
+          .update(payload)
+          .eq('id', category.id)
+          .eq('outlet_id', outletId);
     }
     _reload();
   }
@@ -262,7 +370,8 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
         'low_stock_alert': lowStockAlert,
       },
       'p_components': recipeComponents
-          .map((component) => component.toJson())
+          .map((component) =>
+              {...component.toJson(), 'ingredient_id': component.ingredientId})
           .toList(growable: false),
       'p_expected_updated_at': product?.updatedAt,
       'p_expected_cost_revision': product?.costRevision,
@@ -348,7 +457,10 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
         'outlet_id': outlet.id,
       });
     } else {
-      await remote.update(payload).eq('id', expense.id).eq('outlet_id', outlet.id);
+      await remote
+          .update(payload)
+          .eq('id', expense.id)
+          .eq('outlet_id', outlet.id);
     }
     _reload();
   }
@@ -428,9 +540,10 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
                 message: 'Buat cabang dari aplikasi Kasata terlebih dahulu.',
               )
             : FutureBuilder<_OperationsData>(
+                key: ValueKey(_outletId),
                 future: _data,
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
+                  if (!snapshot.hasData && !snapshot.hasError) {
                     return const Center(child: CircularProgressIndicator());
                   }
                   if (snapshot.hasError) {
@@ -460,11 +573,13 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
                               children: [
                                 Text('Data operasional',
                                     style: TextStyle(
-                                        fontSize: 28, fontWeight: FontWeight.w900)),
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.w900)),
                                 SizedBox(height: 6),
                                 Text(
                                   'Kelola menu, meja, stok awal, dan pengeluaran dari browser.',
-                                  style: TextStyle(color: AppTheme.textSecondary),
+                                  style:
+                                      TextStyle(color: AppTheme.textSecondary),
                                 ),
                               ],
                             ),
@@ -477,7 +592,14 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
                         ],
                       ),
                       const SizedBox(height: 24),
+                      if (_refreshFailed)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: Text(
+                              'Penyegaran otomatis belum berhasil. Data terakhir tetap ditampilkan; coba muat ulang.'),
+                        ),
                       DropdownButtonFormField<String>(
+                        isExpanded: true,
                         key: ValueKey(_outletId),
                         initialValue: _outletId,
                         decoration: const InputDecoration(
@@ -494,6 +616,7 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
                           if (value == null || value == _outletId) return;
                           setState(() {
                             _outletId = value;
+                            _refreshFailed = false;
                             _data = _loadData();
                           });
                         },
@@ -515,15 +638,32 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
                       ),
                       const SizedBox(height: 24),
                       switch (_selectedTab) {
+                        _OperationsTab.inventory => outlet.isCloud
+                            ? OwnerInventoryPanel(
+                                key: ValueKey(outlet.id),
+                                outletId: outlet.id,
+                                onChanged: _reload)
+                            : const _OwnerOperationsEmpty(
+                                icon: Icons.inventory_2_outlined,
+                                title: 'Bahan baku membutuhkan Cloud',
+                                message:
+                                    'Aktifkan Cloud agar belanja, stok bahan, dan pemakaian cabang terhubung.'),
                         _OperationsTab.menu => _MenuDataPanel(
                             data: data,
                             outletId: outlet.id,
                             onAddCategory: () => _openCategoryEditor(context),
-                            onEditCategory: (category) =>
-                                _openCategoryEditor(context, category: category),
-                            onAddProduct: () => _openProductEditor(context, data),
-                            onEditProduct: (product) =>
-                                _openProductEditor(context, data, product: product),
+                            onEditCategory: (category) => _openCategoryEditor(
+                                context,
+                                category: category),
+                            onDeleteCategory: (category) => _deleteMenuEntity(
+                                'category', category.id, category.name),
+                            onAddProduct: () =>
+                                _openProductEditor(context, data),
+                            onEditProduct: (product) => _openProductEditor(
+                                context, data,
+                                product: product),
+                            onDeleteProduct: (product) => _deleteMenuEntity(
+                                'product', product.id, product.name),
                             onAdjustProductStock: (product) =>
                                 _openStockAdjustment(context, product),
                           ),
@@ -537,8 +677,8 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
                             ? _ExpenseDataPanel(
                                 expenses: data.expenses,
                                 onAdd: () => _openExpenseEditor(context),
-                                onEdit: (expense) =>
-                                    _openExpenseEditor(context, expense: expense),
+                                onEdit: (expense) => _openExpenseEditor(context,
+                                    expense: expense),
                               )
                             : const _OwnerOperationsEmpty(
                                 icon: Icons.cloud_outlined,
@@ -550,8 +690,9 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
                             promotions: data.promotions,
                             products: data.products,
                             onAdd: () => _openPromotionEditor(context, data),
-                            onEdit: (promotion) =>
-                                _openPromotionEditor(context, data, promotion: promotion),
+                            onEdit: (promotion) => _openPromotionEditor(
+                                context, data,
+                                promotion: promotion),
                             onDelete: (promotion) =>
                                 _confirmDeletePromotion(context, promotion),
                           ),
@@ -677,17 +818,19 @@ class _OwnerOperationsPageState extends State<OwnerOperationsPage> {
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Promo belum dapat dihapus. Periksa koneksi.')),
+        const SnackBar(
+            content: Text('Promo belum dapat dihapus. Periksa koneksi.')),
       );
     }
   }
 }
 
-enum _OperationsTab { menu, tables, expenses, promotions }
+enum _OperationsTab { menu, tables, inventory, expenses, promotions }
 
 extension on _OperationsTab {
   String get label => switch (this) {
         _OperationsTab.menu => 'Menu',
+        _OperationsTab.inventory => 'Bahan & Belanja',
         _OperationsTab.tables => 'Meja',
         _OperationsTab.expenses => 'Pengeluaran',
         _OperationsTab.promotions => 'Promo',
@@ -695,6 +838,7 @@ extension on _OperationsTab {
 
   IconData get icon => switch (this) {
         _OperationsTab.menu => Icons.restaurant_menu_rounded,
+        _OperationsTab.inventory => Icons.inventory_2_outlined,
         _OperationsTab.tables => Icons.table_restaurant_outlined,
         _OperationsTab.expenses => Icons.receipt_long_outlined,
         _OperationsTab.promotions => Icons.schedule_rounded,
@@ -807,7 +951,8 @@ class _OwnerProduct {
     Map<String, dynamic> json, {
     List<CostingComponent> recipeComponents = const [],
     Map<String, dynamic>? costProfile,
-  }) => _OwnerProduct(
+  }) =>
+      _OwnerProduct(
         id: json['id']?.toString() ?? '',
         updatedAt: json['updated_at']?.toString(),
         categoryId: json['category_id']?.toString(),
@@ -915,9 +1060,10 @@ class _OwnerScheduledPromotion {
         startTime: _timeOfDayFromSql(json['start_time']?.toString()),
         endTime: _timeOfDayFromSql(json['end_time']?.toString()),
         activeWeekdays: _weekdaysFromJson(json['active_days']),
-        scheduleMode: json['schedule_mode']?.toString().toUpperCase() == 'DATE_RANGE'
-            ? 'DATE_RANGE'
-            : 'WEEKLY',
+        scheduleMode:
+            json['schedule_mode']?.toString().toUpperCase() == 'DATE_RANGE'
+                ? 'DATE_RANGE'
+                : 'WEEKLY',
         startDate: _dateOnlyFromSql(json['start_date']?.toString()),
         endDate: _dateOnlyFromSql(json['end_date']?.toString()),
         isActive: json['is_active'] != false,
@@ -959,8 +1105,10 @@ class _MenuDataPanel extends StatelessWidget {
   final String outletId;
   final VoidCallback onAddCategory;
   final ValueChanged<_OwnerCategory> onEditCategory;
+  final ValueChanged<_OwnerCategory> onDeleteCategory;
   final VoidCallback onAddProduct;
   final ValueChanged<_OwnerProduct> onEditProduct;
+  final ValueChanged<_OwnerProduct> onDeleteProduct;
   final ValueChanged<_OwnerProduct> onAdjustProductStock;
 
   const _MenuDataPanel({
@@ -968,14 +1116,18 @@ class _MenuDataPanel extends StatelessWidget {
     required this.outletId,
     required this.onAddCategory,
     required this.onEditCategory,
+    required this.onDeleteCategory,
     required this.onAddProduct,
     required this.onEditProduct,
+    required this.onDeleteProduct,
     required this.onAdjustProductStock,
   });
 
   @override
   Widget build(BuildContext context) {
-    final categoryNames = {for (final category in data.categories) category.id: category.name};
+    final categoryNames = {
+      for (final category in data.categories) category.id: category.name
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -997,24 +1149,35 @@ class _MenuDataPanel extends StatelessWidget {
           Card(
             child: Column(
               children: [
-                for (var index = 0; index < data.categories.length; index++) ...[
+                for (var index = 0;
+                    index < data.categories.length;
+                    index++) ...[
                   ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: _colorFromHex(data.categories[index].colorHex)
-                          .withValues(alpha: .16),
+                      backgroundColor:
+                          _colorFromHex(data.categories[index].colorHex)
+                              .withValues(alpha: .16),
                       child: Icon(Icons.category_outlined,
-                          color: _colorFromHex(data.categories[index].colorHex)),
+                          color:
+                              _colorFromHex(data.categories[index].colorHex)),
                     ),
                     title: Text(data.categories[index].name,
                         style: const TextStyle(fontWeight: FontWeight.w800)),
                     subtitle: Text(data.categories[index].isActive
                         ? 'Aktif'
                         : 'Disembunyikan dari kasir'),
-                    trailing: IconButton(
-                      tooltip: 'Ubah kategori',
-                      onPressed: () => onEditCategory(data.categories[index]),
-                      icon: const Icon(Icons.edit_outlined),
-                    ),
+                    trailing: Wrap(children: [
+                      IconButton(
+                          tooltip: 'Ubah kategori',
+                          onPressed: () =>
+                              onEditCategory(data.categories[index]),
+                          icon: const Icon(Icons.edit_outlined)),
+                      IconButton(
+                          tooltip: 'Hapus kategori',
+                          onPressed: () =>
+                              onDeleteCategory(data.categories[index]),
+                          icon: const Icon(Icons.delete_outline)),
+                    ]),
                   ),
                   if (index < data.categories.length - 1)
                     const Divider(height: 1, indent: 72),
@@ -1025,7 +1188,8 @@ class _MenuDataPanel extends StatelessWidget {
         const SizedBox(height: 30),
         _PanelHeader(
           title: 'Menu',
-          subtitle: 'Atur harga, resep dan HPP per menu, ketersediaan, serta stok.',
+          subtitle:
+              'Atur harga, resep dan HPP per menu, ketersediaan, serta stok.',
           actionLabel: 'Tambah menu',
           actionIcon: Icons.add_rounded,
           onAction: onAddProduct,
@@ -1070,6 +1234,11 @@ class _MenuDataPanel extends StatelessWidget {
                           onPressed: () => onEditProduct(data.products[index]),
                           icon: const Icon(Icons.edit_outlined),
                         ),
+                        IconButton(
+                            tooltip: 'Hapus menu',
+                            onPressed: () =>
+                                onDeleteProduct(data.products[index]),
+                            icon: const Icon(Icons.delete_outline)),
                         if (data.products[index].trackStock)
                           IconButton(
                             tooltip: 'Sesuaikan stok',
@@ -1108,7 +1277,8 @@ class _TableDataPanel extends StatelessWidget {
         children: [
           _PanelHeader(
             title: 'Meja',
-            subtitle: 'Atur label, area, dan kapasitas meja untuk kasir dine-in.',
+            subtitle:
+                'Atur label, area, dan kapasitas meja untuk kasir dine-in.',
             actionLabel: 'Tambah meja',
             actionIcon: Icons.add_rounded,
             onAction: onAdd,
@@ -1179,7 +1349,8 @@ class _ExpenseDataPanel extends StatelessWidget {
             const _OwnerOperationsEmpty(
               icon: Icons.receipt_long_outlined,
               title: 'Belum ada pengeluaran',
-              message: 'Pengeluaran yang dicatat di sini otomatis masuk laporan.',
+              message:
+                  'Pengeluaran yang dicatat di sini otomatis masuk laporan.',
             )
           else
             Card(
@@ -1202,10 +1373,16 @@ class _ExpenseDataPanel extends StatelessWidget {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(_rupiah(expenses[index].amount),
-                              style: const TextStyle(fontWeight: FontWeight.w800)),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800)),
                           IconButton(
-                            tooltip: 'Ubah pengeluaran',
-                            onPressed: () => onEdit(expenses[index]),
+                            tooltip: expenses[index].id.startsWith('internal:')
+                                ? 'HPP otomatis dari pemakaian bahan'
+                                : 'Ubah pengeluaran',
+                            onPressed:
+                                expenses[index].id.startsWith('internal:')
+                                    ? null
+                                    : () => onEdit(expenses[index]),
                             icon: const Icon(Icons.edit_outlined),
                           ),
                         ],
@@ -1238,7 +1415,9 @@ class _PromotionDataPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final productNames = {for (final product in products) product.id: product.name};
+    final productNames = {
+      for (final product in products) product.id: product.name
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1296,7 +1475,8 @@ class _PromotionDataPanel extends StatelessWidget {
                         vertical: 8,
                       ),
                       leading: CircleAvatar(
-                        backgroundColor: AppTheme.warning.withValues(alpha: .12),
+                        backgroundColor:
+                            AppTheme.warning.withValues(alpha: .12),
                         child: const Icon(Icons.local_offer_outlined,
                             color: AppTheme.warning),
                       ),
@@ -1304,10 +1484,13 @@ class _PromotionDataPanel extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(promotions[index].name,
-                                style: const TextStyle(fontWeight: FontWeight.w800)),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800)),
                           ),
                           _StatusPill(
-                            label: promotions[index].isActive ? 'Aktif' : 'Nonaktif',
+                            label: promotions[index].isActive
+                                ? 'Aktif'
+                                : 'Nonaktif',
                             active: promotions[index].isActive,
                           ),
                         ],
@@ -1371,9 +1554,11 @@ class _PanelHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w900)),
               const SizedBox(height: 4),
-              Text(subtitle, style: const TextStyle(color: AppTheme.textSecondary)),
+              Text(subtitle,
+                  style: const TextStyle(color: AppTheme.textSecondary)),
             ],
           );
           final action = FilledButton.icon(
@@ -1459,7 +1644,8 @@ class _CategoryEditorState extends State<_CategoryEditor> {
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Kategori belum dapat disimpan. Periksa koneksi.');
+        setState(
+            () => _error = 'Kategori belum dapat disimpan. Periksa koneksi.');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -1468,7 +1654,8 @@ class _CategoryEditorState extends State<_CategoryEditor> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: Text(widget.category == null ? 'Tambah kategori' : 'Ubah kategori'),
+        title:
+            Text(widget.category == null ? 'Tambah kategori' : 'Ubah kategori'),
         content: SizedBox(
           width: 420,
           child: SingleChildScrollView(
@@ -1545,9 +1732,12 @@ class _CategoryEditorState extends State<_CategoryEditor> {
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Kategori aktif'),
-                  subtitle: const Text('Kategori nonaktif disembunyikan dari kasir.'),
+                  subtitle:
+                      const Text('Kategori nonaktif disembunyikan dari kasir.'),
                   value: _isActive,
-                  onChanged: _saving ? null : (value) => setState(() => _isActive = value),
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _isActive = value),
                 ),
                 if (_error != null)
                   Padding(
@@ -1631,7 +1821,8 @@ class _ProductEditorState extends State<_ProductEditor> {
     );
     _bufferPercent = widget.product?.bufferPercent ?? 5;
     _name = TextEditingController(text: widget.product?.name ?? '');
-    _description = TextEditingController(text: widget.product?.description ?? '');
+    _description =
+        TextEditingController(text: widget.product?.description ?? '');
     _price = TextEditingController(text: widget.product?.price ?? '');
     _cogs = TextEditingController(
       text: widget.product?.baseCogs ?? '0',
@@ -1639,19 +1830,35 @@ class _ProductEditorState extends State<_ProductEditor> {
     _stock = TextEditingController(text: widget.product?.stock ?? '0');
     _lowStockAlert =
         TextEditingController(text: widget.product?.lowStockAlert ?? '5');
-    _categoryId = widget.categories.any((item) => item.id == widget.product?.categoryId)
-        ? widget.product?.categoryId
-        : null;
+    _categoryId =
+        widget.categories.any((item) => item.id == widget.product?.categoryId)
+            ? widget.product?.categoryId
+            : null;
     _isAvailable = widget.product?.isAvailable ?? true;
     _trackStock = widget.product?.trackStock ?? false;
   }
 
   Future<void> _editRecipe() async {
+    List<Ingredient> ingredients;
+    try {
+      final rows = await Supabase.instance.client
+          .from('ingredients')
+          .select()
+          .eq('outlet_id', widget.outletId)
+          .order('name');
+      ingredients = rows.map(Ingredient.fromJson).toList();
+    } catch (error) {
+      if (!mounted) return;
+      AppNotice.show(context, SnackBar(content: Text(inventoryError(error))));
+      return;
+    }
+    if (!mounted) return;
     final result = await showHppCalculator(
       context: context,
       outletId: widget.outletId,
       productId: _draftProductId,
       initial: _recipeComponents,
+      ingredients: ingredients,
     );
     if (!mounted || result == null) return;
     setState(() {
@@ -1717,7 +1924,9 @@ class _ProductEditorState extends State<_ProductEditor> {
               ? 'Pengaturan HPP belum aktif di Cloud. Terapkan migration terbaru.'
               : 'Menu belum dapat disimpan. Periksa data lalu coba lagi.');
     } catch (_) {
-      if (mounted) setState(() => _error = 'Menu belum dapat disimpan. Periksa koneksi.');
+      if (mounted) {
+        setState(() => _error = 'Menu belum dapat disimpan. Periksa koneksi.');
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1752,7 +1961,9 @@ class _ProductEditorState extends State<_ProductEditor> {
                           child: Text(category.name),
                         )),
                   ],
-                  onChanged: _saving ? null : (value) => setState(() => _categoryId = value),
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _categoryId = value),
                 ),
                 const SizedBox(height: 14),
                 TextField(
@@ -1769,9 +1980,10 @@ class _ProductEditorState extends State<_ProductEditor> {
                     Expanded(
                       child: TextField(
                         controller: _price,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: 'Harga jual'),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration:
+                            const InputDecoration(labelText: 'Harga jual'),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -1780,8 +1992,8 @@ class _ProductEditorState extends State<_ProductEditor> {
                         controller: _cogs,
                         readOnly: _recipeComponents.isNotEmpty,
                         onChanged: (_) => setState(() {}),
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
                         decoration: InputDecoration(
                           labelText: _recipeComponents.isEmpty
                               ? 'HPP dasar manual'
@@ -1830,17 +2042,24 @@ class _ProductEditorState extends State<_ProductEditor> {
                       DropdownButtonFormField<int>(
                         initialValue: _bufferPercent,
                         decoration: const InputDecoration(
-                          labelText: 'Buffer kalibrasi & bahan sulit ditakar',
+                          labelText: 'Buffer bahan sulit ditakar',
                         ),
                         items: const [
-                          DropdownMenuItem(value: 0, child: Text('0% · Tanpa buffer')),
-                          DropdownMenuItem(value: 5, child: Text('5% · Standar')),
-                          DropdownMenuItem(value: 10, child: Text('10% · Lebih longgar')),
+                          DropdownMenuItem(
+                              value: 0, child: Text('0% · Tanpa buffer')),
+                          DropdownMenuItem(
+                              value: 5, child: Text('5% · Standar')),
+                          DropdownMenuItem(
+                              value: 10, child: Text('10% · Lebih longgar')),
                         ],
                         onChanged: _saving
                             ? null
-                            : (value) => setState(() => _bufferPercent = value ?? 0),
+                            : (value) =>
+                                setState(() => _bufferPercent = value ?? 0),
                       ),
+                      const SizedBox(height: 8),
+                      const Text(
+                          'R&D/kalibrasi yang dicatat terpisah sudah masuk biaya pemakaian. Jangan memasukkan biaya yang sama lagi ke buffer.'),
                       const SizedBox(height: 8),
                       Text(
                         'HPP final: ${_rupiah(bufferedHpp(_baseCogsPreview, _bufferPercent).toString())} / porsi',
@@ -1861,9 +2080,12 @@ class _ProductEditorState extends State<_ProductEditor> {
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Menu tersedia'),
-                  subtitle: const Text('Matikan untuk menyembunyikan menu dari kasir.'),
+                  subtitle: const Text(
+                      'Matikan untuk menyembunyikan menu dari kasir.'),
                   value: _isAvailable,
-                  onChanged: _saving ? null : (value) => setState(() => _isAvailable = value),
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _isAvailable = value),
                 ),
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
@@ -1901,8 +2123,10 @@ class _ProductEditorState extends State<_ProductEditor> {
                         Expanded(
                           child: TextField(
                             controller: _stock,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            decoration: const InputDecoration(labelText: 'Stok awal'),
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration:
+                                const InputDecoration(labelText: 'Stok awal'),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -1910,8 +2134,10 @@ class _ProductEditorState extends State<_ProductEditor> {
                       Expanded(
                         child: TextField(
                           controller: _lowStockAlert,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'Batas stok rendah'),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const InputDecoration(
+                              labelText: 'Batas stok rendah'),
                         ),
                       ),
                     ],
@@ -1953,8 +2179,7 @@ class _StockAdjustmentDialog extends StatefulWidget {
   });
 
   @override
-  State<_StockAdjustmentDialog> createState() =>
-      _StockAdjustmentDialogState();
+  State<_StockAdjustmentDialog> createState() => _StockAdjustmentDialogState();
 }
 
 class _StockAdjustmentDialogState extends State<_StockAdjustmentDialog> {
@@ -2120,9 +2345,13 @@ class _TableEditorState extends State<_TableEditor> {
       );
       if (mounted) Navigator.of(context).pop();
     } on PostgrestException {
-      if (mounted) setState(() => _error = 'Meja belum dapat disimpan. Coba lagi.');
+      if (mounted) {
+        setState(() => _error = 'Meja belum dapat disimpan. Coba lagi.');
+      }
     } catch (_) {
-      if (mounted) setState(() => _error = 'Meja belum dapat disimpan. Periksa koneksi.');
+      if (mounted) {
+        setState(() => _error = 'Meja belum dapat disimpan. Periksa koneksi.');
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -2156,13 +2385,15 @@ class _TableEditorState extends State<_TableEditor> {
                 TextField(
                   controller: _capacity,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Kapasitas kursi'),
+                  decoration:
+                      const InputDecoration(labelText: 'Kapasitas kursi'),
                 ),
                 if (widget.table != null) ...[
                   const SizedBox(height: 12),
                   const Text(
                     'Status meja yang sedang dipakai kasir tidak diubah dari dashboard.',
-                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                    style:
+                        TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                   ),
                 ],
                 if (_error != null)
@@ -2214,8 +2445,10 @@ class _ExpenseEditorState extends State<_ExpenseEditor> {
   @override
   void initState() {
     super.initState();
-    _category = TextEditingController(text: widget.expense?.category ?? 'Operasional');
-    _description = TextEditingController(text: widget.expense?.description ?? '');
+    _category =
+        TextEditingController(text: widget.expense?.category ?? 'Operasional');
+    _description =
+        TextEditingController(text: widget.expense?.description ?? '');
     _amount = TextEditingController(text: widget.expense?.amount ?? '');
     _occurredAt = widget.expense?.occurredAt.toLocal() ?? DateTime.now();
   }
@@ -2270,7 +2503,8 @@ class _ExpenseEditorState extends State<_ExpenseEditor> {
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Pengeluaran belum dapat disimpan. Periksa koneksi.');
+        setState(() =>
+            _error = 'Pengeluaran belum dapat disimpan. Periksa koneksi.');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -2279,7 +2513,8 @@ class _ExpenseEditorState extends State<_ExpenseEditor> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: Text(widget.expense == null ? 'Catat pengeluaran' : 'Ubah pengeluaran'),
+        title: Text(
+            widget.expense == null ? 'Catat pengeluaran' : 'Ubah pengeluaran'),
         content: SizedBox(
           width: 450,
           child: SingleChildScrollView(
@@ -2295,7 +2530,8 @@ class _ExpenseEditorState extends State<_ExpenseEditor> {
                 const SizedBox(height: 14),
                 TextField(
                   controller: _amount,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(labelText: 'Nominal'),
                 ),
                 const SizedBox(height: 14),
@@ -2313,7 +2549,8 @@ class _ExpenseEditorState extends State<_ExpenseEditor> {
                   child: OutlinedButton.icon(
                     onPressed: _saving ? null : _pickDate,
                     icon: const Icon(Icons.event_outlined),
-                    label: Text(DateFormat('d MMMM y', 'id_ID').format(_occurredAt)),
+                    label: Text(
+                        DateFormat('d MMMM y', 'id_ID').format(_occurredAt)),
                   ),
                 ),
                 if (_error != null)
@@ -2381,8 +2618,10 @@ class _PromotionEditorState extends State<_PromotionEditor> {
   void initState() {
     super.initState();
     _name = TextEditingController(text: widget.promotion?.name ?? 'Happy Hour');
-    _startTime = widget.promotion?.startTime ?? const TimeOfDay(hour: 8, minute: 0);
-    _endTime = widget.promotion?.endTime ?? const TimeOfDay(hour: 11, minute: 0);
+    _startTime =
+        widget.promotion?.startTime ?? const TimeOfDay(hour: 8, minute: 0);
+    _endTime =
+        widget.promotion?.endTime ?? const TimeOfDay(hour: 11, minute: 0);
     _activeWeekdays = Set<int>.from(
       widget.promotion?.activeWeekdays ?? const {1, 2, 3, 4, 5, 6, 7},
     );
@@ -2390,7 +2629,8 @@ class _PromotionEditorState extends State<_PromotionEditor> {
     _startDate = widget.promotion?.startDate;
     _endDate = widget.promotion?.endDate;
     _isActive = widget.promotion?.isActive ?? true;
-    for (final item in widget.promotion?.items ?? const <_OwnerPromotionItem>[]) {
+    for (final item
+        in widget.promotion?.items ?? const <_OwnerPromotionItem>[]) {
       _promoPrices[item.productId] = TextEditingController(
         text: _numberLabel(item.promoPrice.toString()),
       );
@@ -2429,7 +2669,8 @@ class _PromotionEditorState extends State<_PromotionEditor> {
 
   Future<void> _pickDate({required bool start}) async {
     final now = DateTime.now();
-    final initial = start ? (_startDate ?? now) : (_endDate ?? _startDate ?? now);
+    final initial =
+        start ? (_startDate ?? now) : (_endDate ?? _startDate ?? now);
     final firstDate = DateTime(now.year - 1);
     final picked = await showDatePicker(
       context: context,
@@ -2477,7 +2718,9 @@ class _PromotionEditorState extends State<_PromotionEditor> {
       return;
     }
     if (_scheduleMode == 'DATE_RANGE' &&
-        (_startDate == null || _endDate == null || _endDate!.isBefore(_startDate!))) {
+        (_startDate == null ||
+            _endDate == null ||
+            _endDate!.isBefore(_startDate!))) {
       setState(() => _error = 'Pilih rentang tanggal promo yang valid.');
       return;
     }
@@ -2490,13 +2733,17 @@ class _PromotionEditorState extends State<_PromotionEditor> {
       return;
     }
 
-    final productsById = {for (final product in widget.products) product.id: product};
+    final productsById = {
+      for (final product in widget.products) product.id: product
+    };
     final items = <_OwnerPromotionItemDraft>[];
     for (final entry in _promoPrices.entries) {
       final product = productsById[entry.key];
       final promoPrice = _parseNumber(entry.value.text);
       final regularPrice = product == null ? null : _parseNumber(product.price);
-      if (promoPrice == null || regularPrice == null || promoPrice >= regularPrice) {
+      if (promoPrice == null ||
+          regularPrice == null ||
+          promoPrice >= regularPrice) {
         setState(() {
           _error = product == null
               ? 'Salah satu menu promo sudah tidak tersedia. Tutup lalu buka ulang data.'
@@ -2548,7 +2795,8 @@ class _PromotionEditorState extends State<_PromotionEditor> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: Text(widget.promotion == null ? 'Buat promo terjadwal' : 'Ubah promo'),
+        title: Text(
+            widget.promotion == null ? 'Buat promo terjadwal' : 'Ubah promo'),
         content: SizedBox(
           width: 580,
           child: SingleChildScrollView(
@@ -2650,7 +2898,8 @@ class _PromotionEditorState extends State<_PromotionEditor> {
                   const SizedBox(height: 6),
                   const Text(
                     'Promo aktif setiap hari dalam rentang ini, lalu otomatis berhenti.',
-                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                    style:
+                        TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -2658,12 +2907,14 @@ class _PromotionEditorState extends State<_PromotionEditor> {
                     runSpacing: 10,
                     children: [
                       OutlinedButton.icon(
-                        onPressed: _saving ? null : () => _pickDate(start: true),
+                        onPressed:
+                            _saving ? null : () => _pickDate(start: true),
                         icon: const Icon(Icons.event_outlined),
                         label: Text('Mulai ${_dateLabel(_startDate)}'),
                       ),
                       OutlinedButton.icon(
-                        onPressed: _saving ? null : () => _pickDate(start: false),
+                        onPressed:
+                            _saving ? null : () => _pickDate(start: false),
                         icon: const Icon(Icons.event_available_outlined),
                         label: Text('Selesai ${_dateLabel(_endDate)}'),
                       ),
@@ -2674,9 +2925,12 @@ class _PromotionEditorState extends State<_PromotionEditor> {
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
                   value: _isActive,
-                  onChanged: _saving ? null : (value) => setState(() => _isActive = value),
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _isActive = value),
                   title: const Text('Promo aktif'),
-                  subtitle: const Text('Promo nonaktif tersimpan, tetapi tidak dipakai kasir.'),
+                  subtitle: const Text(
+                      'Promo nonaktif tersimpan, tetapi tidak dipakai kasir.'),
                 ),
                 const SizedBox(height: 8),
                 const Text('Menu dan harga promo',
@@ -2735,7 +2989,8 @@ class _PromotionProductRow extends StatelessWidget {
         margin: const EdgeInsets.only(top: 8),
         padding: const EdgeInsets.fromLTRB(8, 4, 10, 8),
         decoration: BoxDecoration(
-          color: controller == null ? AppTheme.surface : const Color(0xFFFFFBEB),
+          color:
+              controller == null ? AppTheme.surface : const Color(0xFFFFFBEB),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppTheme.subtleBorder),
         ),
@@ -2747,7 +3002,8 @@ class _PromotionProductRow extends StatelessWidget {
               value: controller != null,
               onChanged: enabled ? (value) => onSelected(value ?? false) : null,
               title: Text(product.name,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w700)),
               subtitle: Text('Harga normal ${_rupiah(product.price)}',
                   style: const TextStyle(fontSize: 11)),
             ),
@@ -2798,7 +3054,8 @@ class _OperationsPageShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         color: AppTheme.surface,
-        padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 16 : 40),
+        padding:
+            EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 16 : 40),
         child: SingleChildScrollView(
           child: Center(
             child: ConstrainedBox(
@@ -2834,7 +3091,8 @@ class _OwnerOperationsEmpty extends StatelessWidget {
                 Icon(icon, size: 34, color: AppTheme.primary),
                 const SizedBox(height: 12),
                 Text(title,
-                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, fontSize: 17)),
                 const SizedBox(height: 6),
                 Text(message,
                     textAlign: TextAlign.center,
@@ -2894,9 +3152,7 @@ double? _parseNumber(String input) {
     final separator = lastDot >= 0 ? '.' : ',';
     final parts = normalized.split(separator);
     final hasGroupedThousands = parts.length > 2 ||
-        (parts.length == 2 &&
-            parts[1].length == 3 &&
-            parts[0].isNotEmpty);
+        (parts.length == 2 && parts[1].length == 3 && parts[0].isNotEmpty);
     if (hasGroupedThousands) {
       normalized = parts.join();
     } else {
@@ -2940,15 +3196,17 @@ String? _validNumber(String input, {bool allowZero = true}) {
   return value.toString();
 }
 
-int _asInt(dynamic value, {required int fallback}) => value is int
-    ? value
-    : int.tryParse(value?.toString() ?? '') ?? fallback;
+int _asInt(dynamic value, {required int fallback}) =>
+    value is int ? value : int.tryParse(value?.toString() ?? '') ?? fallback;
 
 String _numberLabel(String value) {
   final number = _parseNumber(value) ?? 0;
   return number == number.roundToDouble()
       ? number.toInt().toString()
-      : number.toStringAsFixed(2).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+      : number
+          .toStringAsFixed(2)
+          .replaceFirst(RegExp(r'0+$'), '')
+          .replaceFirst(RegExp(r'\.$'), '');
 }
 
 String _rupiah(String value) => NumberFormat.currency(
@@ -2992,7 +3250,9 @@ String? _dateOnlySql(DateTime? date) => date == null
 DateTime? _dateOnlyFromSql(String? raw) {
   if (raw == null || raw.trim().isEmpty) return null;
   final parsed = DateTime.tryParse(raw.trim());
-  return parsed == null ? null : DateTime(parsed.year, parsed.month, parsed.day);
+  return parsed == null
+      ? null
+      : DateTime(parsed.year, parsed.month, parsed.day);
 }
 
 String _dateLabel(DateTime? date) => date == null
@@ -3044,12 +3304,10 @@ String _promotionProductsLabel(
   Map<String, String> productNames,
 ) {
   if (promotion.items.isEmpty) return 'Tidak ada menu';
-  final labels = promotion.items
-      .map((item) {
-        final name = productNames[item.productId] ?? 'Menu dihapus';
-        return '$name ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(item.promoPrice)}';
-      })
-      .toList(growable: false);
+  final labels = promotion.items.map((item) {
+    final name = productNames[item.productId] ?? 'Menu dihapus';
+    return '$name ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(item.promoPrice)}';
+  }).toList(growable: false);
   if (labels.length <= 2) return labels.join(' · ');
   return '${labels.take(2).join(' · ')} +${labels.length - 2} menu';
 }

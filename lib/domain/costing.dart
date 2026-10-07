@@ -40,7 +40,6 @@ extension CostingUnitLabel on CostingUnit {
         CostingUnit.liter => 1000,
         CostingUnit.piece => 1,
       };
-
 }
 
 CostingUnit costingUnitFromStorage(String? value) => switch (value) {
@@ -65,6 +64,7 @@ class CostingComponent {
     required this.recipeUnit,
     required this.updatedAt,
     this.isSynced = false,
+    this.ingredientId,
   });
 
   final String id;
@@ -78,6 +78,7 @@ class CostingComponent {
   final CostingUnit recipeUnit;
   final DateTime updatedAt;
   final bool isSynced;
+  final String? ingredientId;
 
   bool get hasCompatibleUnits => packageUnit.family == recipeUnit.family;
 
@@ -98,6 +99,7 @@ class CostingComponent {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        if (ingredientId != null) 'ingredient_id': ingredientId,
         'outlet_id': outletId,
         'product_id': productId,
         'material_name': materialName,
@@ -121,10 +123,13 @@ class CostingComponent {
         recipeUnit: recipeUnit,
         updatedAt: updatedAt,
         isSynced: isSynced ?? this.isSynced,
+        ingredientId: ingredientId,
       );
 
-  static CostingComponent fromJson(Map<String, dynamic> row) => CostingComponent(
+  static CostingComponent fromJson(Map<String, dynamic> row) =>
+      CostingComponent(
         id: row['id']?.toString() ?? '',
+        ingredientId: row['ingredient_id']?.toString(),
         outletId: row['outlet_id']?.toString() ?? '',
         productId: row['product_id']?.toString() ?? '',
         materialName: row['material_name']?.toString() ?? '',
@@ -150,7 +155,8 @@ double totalCosting(List<CostingComponent> components) => components.fold(
 /// Rupiah HPP recorded with a transaction after the owner's allowance for
 /// calibration, waste, and small ingredients that are difficult to measure.
 int bufferedHpp(double baseCogs, int bufferPercent) {
-  if (!baseCogs.isFinite || baseCogs < 0 ||
+  if (!baseCogs.isFinite ||
+      baseCogs < 0 ||
       !const {0, 5, 10}.contains(bufferPercent)) {
     throw ArgumentError('Invalid HPP or buffer percentage');
   }

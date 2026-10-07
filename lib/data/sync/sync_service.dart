@@ -60,6 +60,7 @@ class SyncService {
   final Set<String>? Function()? _operationalOutletScope;
   bool _strictRecoveryPull = false;
   bool _recoveryPullFailed = false;
+  final Set<String> _uploadFailures = {};
 
   SyncService(
     this._db,
@@ -112,6 +113,7 @@ class SyncService {
     if (!isEnabled) return;
     if (_isSyncing) return;
     _isSyncing = true;
+    _uploadFailures.clear();
     await _publishStatus(SyncPhase.syncing);
     try {
       final connected = await _isConnected();
@@ -137,6 +139,10 @@ class SyncService {
       // staff PINs, outlets, menu, variants, and tables without creating a
       // duplicate local identity.
       await _pushRecoveryData();
+      if (_uploadFailures.isNotEmpty) {
+        throw Exception(
+            'Belum tersinkron: ${_uploadFailures.join(', ')}. Data tetap tersimpan di perangkat; coba sinkronisasi lagi.');
+      }
       final outletIds = await _pullRecoveryData();
 
       // Transaction history, shifts, expenses, and cross-device live sync
@@ -151,6 +157,9 @@ class SyncService {
         return;
       }
       await _pushOperationalData(scopedCloudOutletIds);
+      if (_uploadFailures.isNotEmpty) {
+        throw Exception('Belum tersinkron: ${_uploadFailures.join(', ')}.');
+      }
       await _pullOperationalData(
         outletIds.where(scopedCloudOutletIds.contains).toList(),
       );
@@ -225,14 +234,16 @@ class SyncService {
     await _pullTombstones(localOutlets.map((outlet) => outlet.id).toList());
     // Server profiles are authoritative even if this device still has
     // recipe writes queued by an older APK. Fail closed if the lookup fails.
-    final managedCostProductIds = await _costingSync
-        .refreshManagedProfiles(_fetchManagedCostProfiles);
-    await _processPendingRecoveryDeletes(managedCostProductIds);
     await _pushOutlets();
     await _pushUsers();
     await _pushUserOutletAccesses();
     await _pushCategories();
     await _pushProducts();
+    // Basic menu uploads must not depend on the recipe-profile migration.
+    // Recipe writes still fail closed if the authoritative lookup fails.
+    final managedCostProductIds =
+        await _costingSync.refreshManagedProfiles(_fetchManagedCostProfiles);
+    await _processPendingRecoveryDeletes(managedCostProductIds);
     await _pushCostingComponents(managedCostProductIds);
     await _pushProductVariants();
     await _pushTables();
@@ -245,6 +256,34 @@ class SyncService {
     await _processPendingInventoryEvents(outletIds);
     await _pushSessions(outletIds);
     await _pushExpenses(outletIds);
+    await _pushInternalUsage(outletIds);
+  }
+
+  Future<void> _pushInternalUsage(Set<String> outletIds) async {
+    final pending = await (_db.select(_db.syncQueue)
+          ..where((q) => q.syncTableName.equals('internal_usage'))
+          ..orderBy([(q) => OrderingTerm.asc(q.createdAt)]))
+        .get();
+    for (final item in pending) {
+      final payload = _asMap(jsonDecode(item.payload));
+      if (!outletIds.contains(payload['outlet_id'])) continue;
+      try {
+        await _supabase.rpc('record_internal_material_usage', params: {
+          'p_id': item.recordId,
+          'p_outlet_id': payload['outlet_id'],
+          'p_purpose': payload['purpose'],
+          'p_items': payload['items'],
+          'p_occurred_at': payload['occurred_at'],
+          'p_note': payload['note'],
+        });
+        await _db.syncDao.markDone(item.id);
+      } catch (error) {
+        await _db.syncDao.incrementRetry(item.id, error.toString());
+        _uploadFailures.add('pemakaian internal');
+        debugPrint(
+            '[SyncService] internal usage ${item.recordId} failed: $error');
+      }
+    }
   }
 
   Future<void> _processPendingRecoveryDeletes(
@@ -467,6 +506,8 @@ class SyncService {
           final recordId = map['record_id'] as String?;
           if (recordId == null) continue;
           switch (map['entity_type']) {
+            case 'category':
+              await _db.productDao.deleteCategory(recordId);
             case 'product':
               await _db.productDao.deleteProduct(recordId);
             case 'expense':
@@ -755,6 +796,16 @@ class SyncService {
 
   Future<void> _pullProducts() async {
     try {
+      final pendingUsageProducts = <String>{};
+      final pendingUsage = await (_db.select(_db.syncQueue)
+            ..where((q) => q.syncTableName.equals('internal_usage')))
+          .get();
+      for (final event in pendingUsage) {
+        final payload = _decodePayload(event.payload);
+        for (final item in payload['items'] as List? ?? const []) {
+          pendingUsageProducts.add(item['product_id'] as String);
+        }
+      }
       final response = await _supabase
           .from('products')
           .select()
@@ -774,7 +825,11 @@ class SyncService {
           description: Value(map['description'] as String?),
           isAvailable: Value(map['is_available'] as bool? ?? true),
           trackStock: Value(map['track_stock'] as bool? ?? false),
-          stock: Value(map['stock']?.toString() ?? '0'),
+          // Keep the local decrement until its receipt is acknowledged. A
+          // recovery pull happens before the operational upload in this cycle.
+          stock: pendingUsageProducts.contains(map['id'])
+              ? const Value.absent()
+              : Value(map['stock']?.toString() ?? '0'),
           lowStockAlert: Value(map['low_stock_alert']?.toString() ?? '5'),
           sortOrder: Value(map['sort_order'] as int? ?? 0),
           updatedAt: Value(_date(map['updated_at']) ?? DateTime.now()),
@@ -853,8 +908,10 @@ class SyncService {
         final map = _asMap(row);
         final productId = map['product_id'] as String?;
         final outletId = map['outlet_id'] as String?;
-        if (productId != null && productId.isNotEmpty &&
-            outletId != null && outletId.isNotEmpty) {
+        if (productId != null &&
+            productId.isNotEmpty &&
+            outletId != null &&
+            outletId.isNotEmpty) {
           productOutlets[productId] = outletId;
         }
       }
@@ -864,8 +921,8 @@ class SyncService {
   }
 
   Future<void> _pullCostingComponents() async {
-    final managedProductIds = await _costingSync
-        .refreshManagedProfiles(_fetchManagedCostProfiles);
+    final managedProductIds =
+        await _costingSync.refreshManagedProfiles(_fetchManagedCostProfiles);
     try {
       final remoteComponents = <CostingComponent>[];
       const pageSize = 1000;
@@ -1138,6 +1195,7 @@ class SyncService {
         }
         await _db.productDao.markProductSynced(p.id);
       } catch (e) {
+        _uploadFailures.add('menu ${p.name}');
         debugPrint('[SyncService] push product ${p.id} failed: $e');
       }
     }
@@ -1256,6 +1314,7 @@ class SyncService {
         });
         await _db.productDao.markCategorySynced(c.id);
       } catch (e) {
+        _uploadFailures.add('kategori ${c.name}');
         debugPrint('[SyncService] push category ${c.id} failed: $e');
       }
     }
@@ -1318,6 +1377,7 @@ class SyncService {
         });
         await _db.orderDao.markOrderSynced(o.id);
       } catch (e) {
+        _uploadFailures.add('transaksi ${o.orderNumber}');
         debugPrint('[SyncService] push order ${o.id} failed: $e');
       }
     }
@@ -1348,6 +1408,7 @@ class SyncService {
         });
         await _db.orderDao.markItemSynced(item.id);
       } catch (e) {
+        _uploadFailures.add('item transaksi');
         debugPrint('[SyncService] push order item ${item.id} failed: $e');
       }
     }
@@ -1396,6 +1457,7 @@ class SyncService {
         });
         await _db.financeDao.markExpenseSynced(expense.id);
       } catch (e) {
+        _uploadFailures.add('pengeluaran');
         debugPrint('[SyncService] push expense ${expense.id} failed: $e');
       }
     }

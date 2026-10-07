@@ -36,6 +36,11 @@ jobs:
       - name: Run tests
         run: flutter test --dart-define=KASATA_VISUAL_REVIEW=true
 
+      - name: Verify ingredient inventory in disposable PostgreSQL
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ingredient-inventory-tests" --no-save --ignore-scripts @electric-sql/pglite@0.5.8
+          NODE_PATH="$RUNNER_TEMP/ingredient-inventory-tests/node_modules" node scripts/verify_ingredient_inventory.cjs
+
       - name: Save UI review screenshots
         if: always()
         uses: actions/upload-artifact@v4

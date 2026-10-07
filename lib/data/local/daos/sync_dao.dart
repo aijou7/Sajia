@@ -79,7 +79,7 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
 
   Future<int> getPendingCount() async {
     final row = await customSelect(
-      'SELECT COUNT(*) AS pending_count FROM sync_queue WHERE retry_count < ?',
+      "SELECT COUNT(*) AS pending_count FROM sync_queue WHERE retry_count < ? OR sync_table_name = 'internal_usage'",
       variables: [Variable<int>(5)],
       readsFrom: {syncQueue},
     ).getSingle();

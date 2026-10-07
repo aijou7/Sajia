@@ -4,12 +4,14 @@ import 'package:uuid/uuid.dart';
 import '../../core/numeric_input_formatter.dart';
 import '../../core/theme.dart';
 import '../../domain/costing.dart';
+import '../../domain/ingredient_inventory.dart';
 
 Future<List<CostingComponent>?> showHppCalculator({
   required BuildContext context,
   required String outletId,
   required String productId,
   required List<CostingComponent> initial,
+  List<Ingredient>? ingredients,
 }) {
   return showModalBottomSheet<List<CostingComponent>>(
     context: context,
@@ -20,6 +22,7 @@ Future<List<CostingComponent>?> showHppCalculator({
       outletId: outletId,
       productId: productId,
       initial: initial,
+      ingredients: ingredients,
     ),
   );
 }
@@ -30,11 +33,13 @@ class HppCalculatorSheet extends StatefulWidget {
     required this.outletId,
     required this.productId,
     required this.initial,
+    this.ingredients,
   });
 
   final String outletId;
   final String productId;
   final List<CostingComponent> initial;
+  final List<Ingredient>? ingredients;
 
   @override
   State<HppCalculatorSheet> createState() => _HppCalculatorSheetState();
@@ -59,6 +64,7 @@ class _HppCalculatorSheetState extends State<HppCalculatorSheet> {
         outletId: widget.outletId,
         productId: widget.productId,
         initial: current,
+        ingredients: widget.ingredients,
       ),
     );
     if (!mounted || result == null) return;
@@ -100,7 +106,7 @@ class _HppCalculatorSheetState extends State<HppCalculatorSheet> {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'Masukkan ukuran beli dan takaran resep per porsi.',
+                        'Pilih bahan dan isi takaran untuk satu porsi.',
                         style: TextStyle(
                           color: AppTheme.textSecondary,
                           fontSize: 12,
@@ -134,7 +140,8 @@ class _HppCalculatorSheetState extends State<HppCalculatorSheet> {
                       return _CostingLineCard(
                         component: component,
                         onEdit: () => _edit(index),
-                        onDelete: () => setState(() => _components.removeAt(index)),
+                        onDelete: () =>
+                            setState(() => _components.removeAt(index)),
                       );
                     },
                   ),
@@ -202,7 +209,8 @@ class _EmptyCostingState extends StatelessWidget {
       ),
       child: Column(
         children: [
-          const Icon(Icons.calculate_outlined, size: 34, color: AppTheme.primary),
+          const Icon(Icons.calculate_outlined,
+              size: 34, color: AppTheme.primary),
           const SizedBox(height: 10),
           const Text(
             'Belum ada bahan resep',
@@ -212,12 +220,14 @@ class _EmptyCostingState extends StatelessWidget {
           const Text(
             'Contoh: beli beans 1 kg Rp190.000, lalu pakai 18 gram per porsi.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, height: 1.4),
+            style: TextStyle(
+                color: AppTheme.textSecondary, fontSize: 12, height: 1.4),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () {
-              final state = context.findAncestorStateOfType<_HppCalculatorSheetState>();
+              final state =
+                  context.findAncestorStateOfType<_HppCalculatorSheetState>();
               state?._edit();
             },
             icon: const Icon(Icons.add_rounded),
@@ -258,17 +268,24 @@ class _CostingLineCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(component.materialName, style: const TextStyle(fontWeight: FontWeight.w800)),
+                Text(component.materialName,
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 4),
                 Text(
                   '${_number(component.recipeQuantity)} ${component.recipeUnit.shortLabel} / porsi · '
                   'beli ${_number(component.packageQuantity)} ${component.packageUnit.shortLabel} seharga ${_money(component.packagePrice)}',
-                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, height: 1.35),
+                  style: const TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 11,
+                      height: 1.35),
                 ),
                 if (invalid)
                   const Text(
                     'Satuan beli dan resep harus sama jenisnya.',
-                    style: TextStyle(color: AppTheme.warning, fontSize: 11, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                        color: AppTheme.warning,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700),
                   ),
               ],
             ),
@@ -295,11 +312,13 @@ class _CostingLineDialog extends StatefulWidget {
     required this.outletId,
     required this.productId,
     this.initial,
+    this.ingredients,
   });
 
   final String outletId;
   final String productId;
   final CostingComponent? initial;
+  final List<Ingredient>? ingredients;
 
   @override
   State<_CostingLineDialog> createState() => _CostingLineDialogState();
@@ -313,6 +332,24 @@ class _CostingLineDialogState extends State<_CostingLineDialog> {
   late CostingUnit _packageUnit;
   late CostingUnit _recipeUnit;
   String? _error;
+  String? _ingredientId;
+  Ingredient? get _ingredient {
+    for (final item in widget.ingredients ?? const <Ingredient>[]) {
+      if (item.id == _ingredientId) return item;
+    }
+    return null;
+  }
+
+  void _selectIngredient(String? id) {
+    _ingredientId = id;
+    final item = _ingredient;
+    if (item == null) return;
+    _name.text = item.name;
+    _packageQuantity.text = '1';
+    _packagePrice.text = item.unitCost.toString();
+    _packageUnit = item.unit;
+    if (_recipeUnit.family != item.unit.family) _recipeUnit = item.unit;
+  }
 
   @override
   void initState() {
@@ -330,6 +367,10 @@ class _CostingLineDialogState extends State<_CostingLineDialog> {
     );
     _packageUnit = initial?.packageUnit ?? CostingUnit.gram;
     _recipeUnit = initial?.recipeUnit ?? CostingUnit.gram;
+    _selectIngredient(initial?.ingredientId ??
+        (initial == null && (widget.ingredients?.isNotEmpty ?? false)
+            ? widget.ingredients!.first.id
+            : null));
   }
 
   @override
@@ -352,7 +393,8 @@ class _CostingLineDialogState extends State<_CostingLineDialog> {
         packagePrice < 0 ||
         recipeQuantity == null ||
         recipeQuantity <= 0) {
-      setState(() => _error = 'Lengkapi nama, ukuran beli, harga, dan takaran resep.');
+      setState(() =>
+          _error = 'Lengkapi nama, ukuran beli, harga, dan takaran resep.');
       return;
     }
     if (_packageUnit.family != _recipeUnit.family) {
@@ -366,6 +408,8 @@ class _CostingLineDialogState extends State<_CostingLineDialog> {
         outletId: widget.outletId,
         productId: widget.productId,
         materialName: _name.text.trim(),
+        ingredientId: _ingredient?.id ??
+            (widget.ingredients == null ? widget.initial?.ingredientId : null),
         packageQuantity: packageQuantity,
         packageUnit: _packageUnit,
         packagePrice: packagePrice,
@@ -379,76 +423,125 @@ class _CostingLineDialogState extends State<_CostingLineDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.initial == null ? 'Tambah bahan resep' : 'Edit bahan resep'),
+      title: Text(
+          widget.initial == null ? 'Tambah bahan resep' : 'Edit bahan resep'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: _name,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Nama bahan', hintText: 'Contoh: Beans'),
-            ),
-            const SizedBox(height: 10),
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text('Kemasan yang dibeli', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-            ),
-            Row(
-              children: [
-                Expanded(child: _numberField(_packageQuantity, 'Jumlah')),
-                const SizedBox(width: 8),
-                Expanded(child: _unitField(_packageUnit, (value) => setState(() => _packageUnit = value))),
-              ],
-            ),
-            TextField(
-              controller: _packagePrice,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: const [NormalizedNumberInputFormatter(allowDecimal: true)],
-              decoration: const InputDecoration(labelText: 'Harga kemasan (Rp)', prefixText: 'Rp '),
-            ),
+            if (widget.ingredients != null) ...[
+              DropdownButtonFormField<String>(
+                initialValue: _ingredient?.id ?? '',
+                isExpanded: true,
+                decoration:
+                    const InputDecoration(labelText: 'Bahan baku tersimpan'),
+                items: [
+                  const DropdownMenuItem(
+                      value: '',
+                      child: Text('Bahan manual · stok tidak dilacak')),
+                  for (final item in widget.ingredients!)
+                    DropdownMenuItem(
+                        value: item.id,
+                        child:
+                            Text(item.name, overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (id) =>
+                    setState(() => _selectIngredient(id == '' ? null : id)),
+              ),
+              const SizedBox(height: 12),
+              if (_ingredient != null)
+                Text(
+                    '${_money(_ingredient!.unitCost)} / ${_ingredient!.unit.shortLabel} · harga dari belanja bahan.'
+                    '${_ingredient!.unitCost == 0 ? ' Belum ada harga beli.' : ''}'),
+            ],
+            if (_ingredient == null) ...[
+              TextField(
+                controller: _name,
+                autofocus: true,
+                decoration: const InputDecoration(
+                    labelText: 'Nama bahan', hintText: 'Contoh: Beans'),
+              ),
+              const SizedBox(height: 10),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Kemasan yang dibeli',
+                    style:
+                        TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+              ),
+              Row(
+                children: [
+                  Expanded(child: _numberField(_packageQuantity, 'Jumlah')),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: _unitField(_packageUnit,
+                          (value) => setState(() => _packageUnit = value))),
+                ],
+              ),
+              TextField(
+                controller: _packagePrice,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: const [
+                  NormalizedNumberInputFormatter(allowDecimal: true)
+                ],
+                decoration: const InputDecoration(
+                    labelText: 'Harga kemasan (Rp)', prefixText: 'Rp '),
+              ),
+            ],
             const SizedBox(height: 12),
             const Align(
               alignment: Alignment.centerLeft,
-              child: Text('Takaran untuk 1 porsi', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+              child: Text('Takaran untuk 1 porsi',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
             ),
             Row(
               children: [
                 Expanded(child: _numberField(_recipeQuantity, 'Jumlah')),
                 const SizedBox(width: 8),
-                Expanded(child: _unitField(_recipeUnit, (value) => setState(() => _recipeUnit = value))),
+                Expanded(
+                    child: _unitField(_recipeUnit,
+                        (value) => setState(() => _recipeUnit = value))),
               ],
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+                child: Text(_error!,
+                    style:
+                        const TextStyle(color: AppTheme.danger, fontSize: 12)),
               ),
             ],
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal')),
         FilledButton(onPressed: _submit, child: const Text('Simpan bahan')),
       ],
     );
   }
 
-  Widget _numberField(TextEditingController controller, String label) => TextField(
+  Widget _numberField(TextEditingController controller, String label) =>
+      TextField(
         controller: controller,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        inputFormatters: const [NormalizedNumberInputFormatter(allowDecimal: true)],
+        inputFormatters: const [
+          NormalizedNumberInputFormatter(allowDecimal: true)
+        ],
         decoration: InputDecoration(labelText: label),
       );
 
-  Widget _unitField(CostingUnit value, ValueChanged<CostingUnit> onChanged) => DropdownButtonFormField<CostingUnit>(
+  Widget _unitField(CostingUnit value, ValueChanged<CostingUnit> onChanged) =>
+      DropdownButtonFormField<CostingUnit>(
         initialValue: value,
         isExpanded: true,
         decoration: const InputDecoration(labelText: 'Satuan'),
         items: CostingUnit.values
-            .map((unit) => DropdownMenuItem(value: unit, child: Text(unit.shortLabel)))
+            .map((unit) =>
+                DropdownMenuItem(value: unit, child: Text(unit.shortLabel)))
             .toList(),
         onChanged: (next) {
           if (next != null) onChanged(next);
@@ -456,10 +549,14 @@ class _CostingLineDialogState extends State<_CostingLineDialog> {
       );
 }
 
-double? _parse(String value) => double.tryParse(value.trim().replaceAll(',', '.'));
+double? _parse(String value) =>
+    double.tryParse(value.trim().replaceAll(',', '.'));
 
 String _number(double value) => value == value.roundToDouble()
     ? value.toInt().toString()
-    : value.toStringAsFixed(3).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+    : value
+        .toStringAsFixed(3)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
 
 String _money(double value) => 'Rp ${value.round().toString()}';

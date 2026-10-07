@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../domain/entities/entities.dart';
 import '../shared/polish_widgets.dart';
+import 'internal_usage.dart';
 
 String _formatStock(double value) => value == value.roundToDouble()
     ? value.toInt().toString()
@@ -123,13 +124,18 @@ class CartPanel extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.receipt_long_outlined, size: 40, color: AppTheme.textSecondary),
+          const Icon(Icons.receipt_long_outlined,
+              size: 40, color: AppTheme.textSecondary),
           const SizedBox(height: 12),
           Text('Belum ada pesanan',
-              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+              style: const TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text('Pilih menu untuk mulai pesanan',
-              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+              style:
+                  const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
         ],
       ),
     );
@@ -277,15 +283,117 @@ class CartPanel extends ConsumerWidget {
     WidgetRef ref,
     Cart cart,
   ) async {
-    final result = await showModalBottomSheet<double>(
+    final outlet = ref.read(currentOutletProvider).value;
+    final canUseInternally = ref.read(currentUserProvider)?.isOwner == true &&
+        outlet?.cloudExpiry?.isAfter(DateTime.now()) == true;
+    final result = await showModalBottomSheet<Object>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _DiscountSheet(initialPercent: cart.discountPercent),
+      builder: (_) => _DiscountSheet(
+          initialPercent: cart.discountPercent,
+          allowInternalUsage: canUseInternally),
     );
     if (result == null) return;
-    ref.read(cartProvider.notifier).setDiscount(percent: result);
+    if (result is double) {
+      ref.read(cartProvider.notifier).setDiscount(percent: result);
+      return;
+    }
+    if (result is! String || !context.mounted) return;
+    final user = ref.read(currentUserProvider);
+    final outletId = ref.read(currentOutletIdProvider);
+    if (user?.isOwner != true || cart.items.isEmpty) return;
+    if (cart.tableId != null) {
+      AppNotice.show(
+          context,
+          const SnackBar(
+              content: Text(
+                  'Lepaskan meja dari keranjang sebelum mencatat pemakaian internal.')));
+      return;
+    }
+    final hpp = cart.items
+        .fold<double>(0, (sum, item) => sum + item.unitCogs * item.quantity);
+    var saving = false;
+    String? error;
+    final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+            builder: (dialogContext, updateDialog) => PopScope(
+                canPop: !saving,
+                child: AlertDialog(
+                  title: Text(result == 'rnd'
+                      ? 'Catat R&D / kalibrasi?'
+                      : 'Catat pemakaian sendiri?'),
+                  content: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Text(
+                        'Perkiraan HPP ${hpp.toRupiah}. Tanpa pembayaran dan tidak menambah omzet. Bahan serta biaya pemakaian tercatat di Cloud setelah sinkronisasi.'),
+                    if (error != null)
+                      Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(error!,
+                              style: const TextStyle(color: AppTheme.danger))),
+                  ]),
+                  actions: [
+                    TextButton(
+                        onPressed: saving
+                            ? null
+                            : () => Navigator.pop(dialogContext, false),
+                        child: const Text('Batal')),
+                    FilledButton(
+                        onPressed: saving
+                            ? null
+                            : () async {
+                                if (saving) return;
+                                if (ref.read(cartProvider) != cart ||
+                                    ref.read(currentOutletIdProvider) !=
+                                        outletId ||
+                                    ref.read(currentUserProvider) != user) {
+                                  updateDialog(() => error =
+                                      'Keranjang atau sesi berubah. Batalkan dan periksa kembali.');
+                                  return;
+                                }
+                                updateDialog(() {
+                                  saving = true;
+                                  error = null;
+                                });
+                                try {
+                                  await enqueueInternalUsage(
+                                      db: ref.read(databaseProvider),
+                                      cart: cart,
+                                      outletId: outletId,
+                                      purpose: result);
+                                  if (!context.mounted) return;
+                                  if (ref.read(cartProvider) == cart &&
+                                      ref.read(currentOutletIdProvider) ==
+                                          outletId &&
+                                      ref.read(currentUserProvider) == user) {
+                                    ref.read(cartProvider.notifier).clear();
+                                  }
+                                  ref.read(syncServiceProvider).requestSync();
+                                  if (dialogContext.mounted) {
+                                    Navigator.pop(dialogContext, true);
+                                  }
+                                } catch (_) {
+                                  if (dialogContext.mounted) {
+                                    updateDialog(() {
+                                      saving = false;
+                                      error =
+                                          'Belum dapat mencatat. Periksa stok menu dan coba lagi.';
+                                    });
+                                  }
+                                }
+                              },
+                        child: Text(saving ? 'Mencatat…' : 'Catat pemakaian'))
+                  ],
+                ))));
+    if (!context.mounted || confirmed != true) return;
+    AppNotice.show(
+        context,
+        const SnackBar(
+            content: Text(
+                'Pemakaian tersimpan di perangkat dan menunggu sinkronisasi.')));
   }
 
   void _confirmClear(BuildContext context, WidgetRef ref) {
@@ -323,7 +431,9 @@ String _formatPercent(double value) {
 class _DiscountSheet extends StatefulWidget {
   final double initialPercent;
 
-  const _DiscountSheet({required this.initialPercent});
+  final bool allowInternalUsage;
+  const _DiscountSheet(
+      {required this.initialPercent, this.allowInternalUsage = false});
 
   @override
   State<_DiscountSheet> createState() => _DiscountSheetState();
@@ -420,6 +530,22 @@ class _DiscountSheetState extends State<_DiscountSheet> {
               ),
             ),
             const SizedBox(height: 20),
+            if (widget.allowInternalUsage) ...[
+              const Text('Pemakaian internal · tanpa pembayaran',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                OutlinedButton.icon(
+                    onPressed: () => Navigator.pop(context, 'rnd'),
+                    icon: const Icon(Icons.science_outlined),
+                    label: const Text('R&D / Kalibrasi · HPP')),
+                OutlinedButton.icon(
+                    onPressed: () => Navigator.pop(context, 'personal'),
+                    icon: const Icon(Icons.person_outline),
+                    label: const Text('Pakai sendiri · HPP')),
+              ]),
+              const SizedBox(height: 16),
+            ],
             TextField(
               controller: _controller,
               autofocus: true,
@@ -569,13 +695,15 @@ class _CartItemTile extends ConsumerWidget {
                     if (item.trackStock &&
                         item.availableStock != null &&
                         item.quantity >= item.availableStock!) {
-                      AppNotice.show(context, SnackBar(
-                        content: Text(
-                          'Stok ${item.productName} hanya ${_formatStock(item.availableStock!)}.',
-                        ),
-                        backgroundColor: AppTheme.danger,
-                        behavior: SnackBarBehavior.floating,
-                      ));
+                      AppNotice.show(
+                          context,
+                          SnackBar(
+                            content: Text(
+                              'Stok ${item.productName} hanya ${_formatStock(item.availableStock!)}.',
+                            ),
+                            backgroundColor: AppTheme.danger,
+                            behavior: SnackBarBehavior.floating,
+                          ));
                       return;
                     }
                     ref.read(cartProvider.notifier).incrementQty(index);

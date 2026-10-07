@@ -589,7 +589,9 @@ class _OwnerWorkspaceState extends State<_OwnerWorkspace> {
     );
   }
 
-  void _reload() => setState(() => _dashboard = _loadDashboard());
+  void _reload() => setState(() {
+        _dashboard = _loadDashboard();
+      });
 
   void _showAllTimeReport() {
     if (_reportPeriod.isAllTime) return;
