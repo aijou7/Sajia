@@ -6,12 +6,14 @@ class Ingredient {
       required this.name,
       required this.unit,
       required this.quantity,
-      required this.unitCost});
+      required this.unitCost,
+      this.updatedAt});
   final String id;
   final String name;
   final CostingUnit unit;
   final double quantity;
   final double unitCost;
+  final String? updatedAt;
 
   factory Ingredient.fromJson(Map<String, dynamic> row) => Ingredient(
         id: row['id'].toString(),
@@ -19,6 +21,7 @@ class Ingredient {
         unit: costingUnitFromStorage(row['unit']?.toString()),
         quantity: double.tryParse(row['quantity'].toString()) ?? 0,
         unitCost: double.tryParse(row['unit_cost'].toString()) ?? 0,
+        updatedAt: row['updated_at']?.toString(),
       );
 }
 

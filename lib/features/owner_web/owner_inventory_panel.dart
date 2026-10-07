@@ -19,12 +19,22 @@ String _purpose(String? value) => switch (value) {
       'rnd' => 'R&D / Kalibrasi',
       'personal' => 'Pakai sendiri',
       'waste' => 'Terbuang',
+      'pre_tracking_sales' => 'Penjualan sebelumnya',
       _ => 'Pemakaian'
     };
 String inventoryError(Object error) {
   if (error is PostgrestException) {
     if (error.message.contains('CLOUD_REQUIRED')) {
       return 'Aktifkan atau perpanjang Cloud untuk mencatat bahan di cabang ini.';
+    }
+    if (error.message.contains('INGREDIENT_STOCK_CHANGED_RELOAD')) {
+      return 'Stok atau harga bahan sudah berubah. Tutup dialog, muat ulang, lalu periksa kembali sebelum mengonfirmasi.';
+    }
+    if (error.message.contains('INGREDIENT_ALREADY_EMPTY')) {
+      return 'Stok bahan sudah nol atau negatif. Muat ulang dan periksa riwayat stok.';
+    }
+    if (error.message.contains('LINKED_RECIPE_REQUIRED')) {
+      return 'Hubungkan bahan baku di resep menu terlebih dahulu agar stok bisa dikurangi.';
     }
     if (const {'PGRST202', 'PGRST205', '42P01', '42703'}.contains(error.code)) {
       return 'Fitur ini membutuhkan migration bahan baku terbaru.';
@@ -56,9 +66,13 @@ class OwnerInventoryPanel extends StatefulWidget {
 
 class _InventoryData {
   const _InventoryData(this.ingredients, this.purchases, this.usage,
-      this.movements, this.products);
+      this.movements, this.products, this.depletions);
   final List<Ingredient> ingredients;
-  final List<Map<String, dynamic>> purchases, usage, movements, products;
+  final List<Map<String, dynamic>> purchases,
+      usage,
+      movements,
+      products,
+      depletions;
 }
 
 class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
@@ -108,14 +122,16 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
       _rows('internal_material_usage', dateColumn: 'occurred_at'),
       _rows('ingredient_movements', dateColumn: 'occurred_at'),
       _rows('products'),
+      _rows('ingredient_depletions', dateColumn: 'occurred_at'),
     ]);
-    for (final index in [1, 2, 3]) {
+    for (final index in [1, 2, 3, 5]) {
       rows[index].sort((a, b) =>
           b['occurred_at'].toString().compareTo(a['occurred_at'].toString()));
     }
     final ingredients = rows[0].map(Ingredient.fromJson).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
-    return _InventoryData(ingredients, rows[1], rows[2], rows[3], rows[4]);
+    return _InventoryData(
+        ingredients, rows[1], rows[2], rows[3], rows[4], rows[5]);
   }
 
   void _reload() => setState(() {
@@ -185,6 +201,7 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
           final purchaseTotal = data.purchases
               .fold<double>(0, (sum, row) => sum + _value(row['total']));
           final usageTotal = data.usage
+              .where((row) => row['purpose'] != 'pre_tracking_sales')
               .fold<double>(0, (sum, row) => sum + _value(row['total_cogs']));
           return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -199,6 +216,13 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
                 Wrap(spacing: 12, runSpacing: 12, children: [
                   _stat('Belanja · periode terpilih', _money(purchaseTotal)),
                   _stat('Pemakaian internal · HPP', _money(usageTotal)),
+                  _stat(
+                      'Beban bahan habis',
+                      _money(data.depletions
+                          .where(
+                              (row) => row['purpose'] != 'pre_tracking_sales')
+                          .fold<double>(0,
+                              (sum, row) => sum + _value(row['total_cost'])))),
                   _stat('Jenis bahan', '${data.ingredients.length}'),
                 ]),
                 const SizedBox(height: 16),
@@ -229,7 +253,8 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
                   for (final entry in const {
                     'ingredients': 'Stok bahan',
                     'purchases': 'Laporan belanja',
-                    'usage': 'Pemakaian internal',
+                    'usage': 'Pemakaian & penyesuaian',
+                    'depletions': 'Bahan habis',
                     'movements': 'Riwayat stok'
                   }.entries)
                     ChoiceChip(
@@ -275,29 +300,48 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
                         'Tambah bahan pertama, lalu catat jumlah dan harga belanjanya.'),
                   for (final ingredient in data.ingredients)
                     Card(
-                        child: ListTile(
-                      title: Text(ingredient.name,
-                          style: const TextStyle(fontWeight: FontWeight.w700)),
-                      subtitle: Text(
-                          'Harga rata-rata ${_money(ingredient.unitCost)} / ${ingredient.unit.shortLabel}'),
-                      trailing: Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
-                                '${_number(ingredient.quantity)} ${ingredient.unit.shortLabel}',
-                                style: TextStyle(
-                                    color: ingredient.quantity < 0
-                                        ? Colors.red.shade700
-                                        : null,
-                                    fontWeight: FontWeight.w700)),
-                            IconButton(
-                                tooltip: 'Ubah nama bahan',
-                                onPressed: () => _edit(_IngredientDialog(
-                                    outletId: widget.outletId,
-                                    initial: ingredient)),
-                                icon: const Icon(Icons.edit_outlined)),
-                          ]),
-                    )),
+                        child: Column(children: [
+                      ListTile(
+                        title: Text(ingredient.name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w700)),
+                        subtitle: Text(
+                            'Harga rata-rata ${_money(ingredient.unitCost)} / ${ingredient.unit.shortLabel}'),
+                        trailing: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                  '${_number(ingredient.quantity)} ${ingredient.unit.shortLabel}',
+                                  style: TextStyle(
+                                      color: ingredient.quantity < 0
+                                          ? Colors.red.shade700
+                                          : null,
+                                      fontWeight: FontWeight.w700)),
+                              IconButton(
+                                  tooltip: 'Ubah nama bahan',
+                                  onPressed: () => _edit(_IngredientDialog(
+                                      outletId: widget.outletId,
+                                      initial: ingredient)),
+                                  icon: const Icon(Icons.edit_outlined)),
+                            ]),
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                            padding:
+                                const EdgeInsets.only(right: 12, bottom: 8),
+                            child: TextButton.icon(
+                              onPressed: ingredient.quantity > 0 &&
+                                      ingredient.updatedAt != null
+                                  ? () => _edit(_DepletionDialog(
+                                      outletId: widget.outletId,
+                                      ingredient: ingredient))
+                                  : null,
+                              icon: const Icon(Icons.remove_circle_outline),
+                              label: const Text('Bahan habis'),
+                            )),
+                      ),
+                    ])),
                 ],
                 if (_tab == 'purchases') ...[
                   const Text(
@@ -325,7 +369,7 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
                 ],
                 if (_tab == 'usage') ...[
                   const Text(
-                      'Tanpa pembayaran dan tidak menambah omzet. Nilai HPP masuk biaya pemakaian internal; bahan resep mengurangi stok.'),
+                      'Bahan resep mengurangi stok. Pakai sendiri / R&D masuk biaya operasional. Penjualan sebelumnya hanya menyesuaikan stok, tanpa menambah omzet atau HPP lagi.'),
                   const SizedBox(height: 10),
                   if (data.usage.isEmpty)
                     const _Empty(
@@ -342,6 +386,9 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w700)),
                                   Text(_date(row['occurred_at'])),
+                                  if (row['purpose'] == 'pre_tracking_sales')
+                                    const Text(
+                                        'Penyesuaian memakai resep saat pencatatan. Tanpa omzet atau beban tambahan.'),
                                   if (row['note'] != null)
                                     Text(row['note'].toString()),
                                   for (final item in row['items'] as List)
@@ -353,6 +400,33 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
                                         style: TextStyle(
                                             color: Colors.deepOrange)),
                                 ]))),
+                ],
+                if (_tab == 'depletions') ...[
+                  const Text(
+                      'Konfirmasi stok fisik nol. Penjualan sebelum tracking dicatat sebagai penyesuaian awal; pemakaian pribadi, bahan terbuang atau selisih stok masuk biaya operasional.'),
+                  const SizedBox(height: 10),
+                  if (data.depletions.isEmpty)
+                    const _Empty(
+                        'Belum ada konfirmasi bahan habis pada periode ini.'),
+                  for (final row in data.depletions)
+                    Card(
+                        child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                    '${row['ingredient_name']} · ${_number(_value(row['quantity']))} ${costingUnitFromStorage(row['unit']).shortLabel} → 0',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700)),
+                                Text(_date(row['occurred_at'])),
+                                Text(row['purpose'] == 'pre_tracking_sales'
+                                    ? 'Penjualan sebelum tracking · Nilai bahan ${_money(_value(row['total_cost']))} · Tanpa beban tambahan'
+                                    : '${row['purpose'] == 'personal' ? 'Pakai sendiri' : 'Terbuang / selisih stok'} · Beban ${_money(_value(row['total_cost']))}'),
+                                if (row['note'] != null)
+                                  Text(row['note'].toString()),
+                              ],
+                            ))),
                 ],
                 if (_tab == 'movements') ...[
                   if (data.movements.isEmpty)
@@ -369,6 +443,8 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
                         'purchase' => 'Belanja',
                         'sale' => 'Penjualan',
                         'void' => 'Pembatalan penjualan',
+                        'depletion' => 'Konfirmasi bahan habis',
+                        'manual_sale' => 'Penjualan sebelumnya (manual)',
                         _ => 'Pemakaian internal'
                       }} · ${_date(row['occurred_at'])}'),
                       trailing: Text(
@@ -400,6 +476,146 @@ class _Empty extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
       child: Padding(padding: const EdgeInsets.all(24), child: Text(message)));
+}
+
+class _DepletionDialog extends StatefulWidget {
+  const _DepletionDialog({required this.outletId, required this.ingredient});
+  final String outletId;
+  final Ingredient ingredient;
+  @override
+  State<_DepletionDialog> createState() => _DepletionDialogState();
+}
+
+class _DepletionDialogState extends State<_DepletionDialog> {
+  final _id = const Uuid().v4();
+  final _note = TextEditingController();
+  String? _purpose;
+  bool _synced = false;
+  bool _saving = false;
+  String? _error;
+  Map<String, dynamic>? _submittedParams;
+  bool get _locked => _saving || _submittedParams != null;
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving || _purpose == null || !_synced) return;
+    if (widget.ingredient.updatedAt == null) {
+      setState(() => _error = 'Muat ulang stok bahan sebelum mengonfirmasi.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+      // An uncertain network response must retry exactly the same receipt.
+      _submittedParams ??= {
+        'p_id': _id,
+        'p_outlet_id': widget.outletId,
+        'p_ingredient_id': widget.ingredient.id,
+        'p_purpose': _purpose,
+        'p_expected_updated_at': widget.ingredient.updatedAt,
+        'p_sync_confirmed': true,
+        'p_note': _note.text.trim().isEmpty ? null : _note.text.trim(),
+      };
+    });
+    try {
+      await Supabase.instance.client
+          .rpc('confirm_owner_ingredient_empty', params: _submittedParams);
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = inventoryError(error);
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+      canPop: !_saving,
+      child: AlertDialog(
+        title: Text('Bahan ${widget.ingredient.name} habis?'),
+        content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+                child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(
+                      'Stok tercatat ${_number(widget.ingredient.quantity)} ${widget.ingredient.unit.shortLabel} akan menjadi 0.',
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  Text(
+                      'Nilai bahan ${_money(widget.ingredient.quantity * widget.ingredient.unitCost)} berdasarkan harga rata-rata tersimpan.'),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: _purpose,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                        labelText: 'Penyebab bahan habis',
+                        hintText: 'Pilih penyebab'),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'pre_tracking_sales',
+                          child: Text('Penjualan sebelum tracking')),
+                      DropdownMenuItem(
+                          value: 'waste',
+                          child: Text('Terbuang / selisih stok')),
+                      DropdownMenuItem(
+                          value: 'personal', child: Text('Pakai sendiri')),
+                    ],
+                    onChanged: _locked
+                        ? null
+                        : (value) => setState(() => _purpose = value),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_purpose != null)
+                    Text(_purpose != 'pre_tracking_sales'
+                        ? 'Beban operasional bertambah ${_money(widget.ingredient.quantity * widget.ingredient.unitCost)}. Bahan ini benar-benar sudah habis secara fisik.'
+                        : 'Untuk bahan yang terpakai saat resep dan stok belum ditracking. Stok disesuaikan ke 0, tanpa beban operasional tambahan. HPP transaksi lama tetap seperti saat penjualan dicatat.'),
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: _note,
+                      enabled: !_locked,
+                      maxLength: 1000,
+                      minLines: 1,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                          labelText: 'Catatan (opsional)')),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: _synced,
+                    title: const Text(
+                        'Semua perangkat kasir sudah selesai sinkron.'),
+                    subtitle: const Text(
+                        'Pastikan penjualan sudah tersimpan di cloud agar stok yang dikonfirmasi sesuai.'),
+                    onChanged: _locked
+                        ? null
+                        : (value) => setState(() => _synced = value == true),
+                  ),
+                  if (_error != null)
+                    Text(_error!, style: const TextStyle(color: Colors.red)),
+                ]))),
+        actions: [
+          TextButton(
+              onPressed: _saving ? null : () => Navigator.pop(context),
+              child: const Text('Batal')),
+          FilledButton(
+              onPressed: !_saving && _purpose != null && _synced ? _save : null,
+              child: Text(_saving
+                  ? 'Menyimpan…'
+                  : _submittedParams != null
+                      ? 'Coba lagi'
+                      : 'Konfirmasi habis')),
+        ],
+      ));
 }
 
 class _IngredientDialog extends StatefulWidget {
@@ -724,8 +940,14 @@ class _UsageDialogState extends State<_UsageDialog> {
   final _note = TextEditingController();
   late String _productId = widget.products.first['id'].toString();
   String _purposeValue = 'rnd';
+  late DateTime _saleDate =
+      DateTime(_occurredAt.year, _occurredAt.month, _occurredAt.day);
+  bool _untrackedConfirmed = false;
   bool _saving = false;
   String? _error;
+  Map<String, dynamic>? _submittedParams;
+  bool get _isPreviousSale => _purposeValue == 'pre_tracking_sales';
+  bool get _locked => _saving || _submittedParams != null;
   @override
   void dispose() {
     _quantity.dispose();
@@ -734,7 +956,7 @@ class _UsageDialogState extends State<_UsageDialog> {
   }
 
   Future<void> _save() async {
-    if (_saving) return;
+    if (_saving || (_isPreviousSale && !_untrackedConfirmed)) return;
     final quantity = double.tryParse(_quantity.text);
     if (quantity == null || !quantity.isFinite || quantity <= 0) {
       setState(() => _error = 'Isi jumlah pemakaian yang valid.');
@@ -743,19 +965,26 @@ class _UsageDialogState extends State<_UsageDialog> {
     setState(() {
       _saving = true;
       _error = null;
-    });
-    try {
-      await Supabase.instance.client
-          .rpc('record_internal_material_usage', params: {
+      _submittedParams ??= {
         'p_id': _id,
         'p_outlet_id': widget.outletId,
-        'p_purpose': _purposeValue,
+        if (!_isPreviousSale) 'p_purpose': _purposeValue,
+        if (_isPreviousSale) 'p_untracked_confirmed': true,
         'p_items': [
           {'product_id': _productId, 'quantity': quantity}
         ],
-        'p_occurred_at': _occurredAt.toUtc().toIso8601String(),
-        'p_note': _note.text.trim().isEmpty ? null : _note.text.trim()
-      });
+        'p_occurred_at': (_isPreviousSale ? _saleDate : _occurredAt)
+            .toUtc()
+            .toIso8601String(),
+        'p_note': _note.text.trim().isEmpty ? null : _note.text.trim(),
+      };
+    });
+    try {
+      await Supabase.instance.client.rpc(
+          _isPreviousSale
+              ? 'record_previous_sale_material_usage'
+              : 'record_internal_material_usage',
+          params: _submittedParams);
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) {
@@ -773,7 +1002,9 @@ class _UsageDialogState extends State<_UsageDialog> {
     return PopScope(
         canPop: !_saving,
         child: AlertDialog(
-            title: const Text('Pemakaian tanpa pembayaran'),
+            title: Text(_isPreviousSale
+                ? 'Penjualan sebelumnya'
+                : 'Pemakaian tanpa pembayaran'),
             content: SizedBox(
                 width: 420,
                 child: SingleChildScrollView(
@@ -789,32 +1020,74 @@ class _UsageDialogState extends State<_UsageDialog> {
                               child: Text(p['name'].toString(),
                                   overflow: TextOverflow.ellipsis))
                       ],
-                      onChanged: _saving
+                      onChanged: _locked
                           ? null
                           : (id) => setState(() => _productId = id!)),
                   const SizedBox(height: 12),
-                  _numberField(_quantity, 'Jumlah porsi', !_saving,
+                  _numberField(_quantity, 'Jumlah porsi', !_locked,
                       onChanged: (_) => setState(() {})),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                       initialValue: _purposeValue,
+                      isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Keperluan'),
                       items: [
-                        for (final p in ['rnd', 'personal', 'waste'])
+                        for (final p in [
+                          'rnd',
+                          'personal',
+                          'waste',
+                          'pre_tracking_sales'
+                        ])
                           DropdownMenuItem(value: p, child: Text(_purpose(p)))
                       ],
-                      onChanged: _saving
+                      onChanged: _locked
                           ? null
                           : (p) => setState(() => _purposeValue = p!)),
+                  if (_isPreviousSale) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                        onPressed: _locked
+                            ? null
+                            : () async {
+                                final date = await showDatePicker(
+                                    context: context,
+                                    initialDate: _saleDate,
+                                    firstDate: DateTime(2020),
+                                    lastDate: _occurredAt);
+                                if (mounted && date != null) {
+                                  setState(() => _saleDate = date);
+                                }
+                              },
+                        icon: const Icon(Icons.calendar_today_outlined),
+                        label: Text(
+                            'Tanggal penjualan: ${DateFormat('d MMM y', 'id_ID').format(_saleDate)}')),
+                    const SizedBox(height: 8),
+                    const Text(
+                        'Mengurangi bahan sesuai resep yang terhubung saat ini. Tidak membuat transaksi, omzet, atau biaya HPP tambahan. Pastikan resepnya sesuai penjualan lama.'),
+                    CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        title: const Text(
+                            'Penjualan ini belum mengurangi stok bahan.'),
+                        subtitle: const Text(
+                            'Sinkronkan semua kasir dulu. Jangan catat penjualan yang stok bahannya sudah terpotong otomatis.'),
+                        value: _untrackedConfirmed,
+                        onChanged: _locked
+                            ? null
+                            : (value) => setState(
+                                () => _untrackedConfirmed = value == true)),
+                  ],
                   const SizedBox(height: 12),
                   TextField(
                       controller: _note,
-                      enabled: !_saving,
+                      enabled: !_locked,
+                      maxLength: 1000,
                       decoration: const InputDecoration(
                           labelText: 'Catatan (opsional)')),
                   const SizedBox(height: 12),
-                  Text(
-                      'Perkiraan HPP ${_money(_value(product['cogs']) * _value(_quantity.text))}. Nilai final mengikuti resep tersimpan. Tidak ada pembayaran atau omzet.'),
+                  Text(_isPreviousSale
+                      ? 'Perkiraan nilai bahan / HPP ${_money(_value(product['cogs']) * _value(_quantity.text))}. Hanya sebagai informasi, tidak dibebankan lagi.'
+                      : 'Perkiraan HPP ${_money(_value(product['cogs']) * _value(_quantity.text))}. Nilai final mengikuti resep tersimpan. Tidak ada pembayaran atau omzet.'),
                   if (_error != null)
                     Text(_error!, style: const TextStyle(color: Colors.red)),
                 ]))),
@@ -823,8 +1096,17 @@ class _UsageDialogState extends State<_UsageDialog> {
                   onPressed: _saving ? null : () => Navigator.pop(context),
                   child: const Text('Batal')),
               FilledButton(
-                  onPressed: _saving ? null : _save,
-                  child: Text(_saving ? 'Menyimpan…' : 'Catat pemakaian'))
+                  onPressed:
+                      _saving || (_isPreviousSale && !_untrackedConfirmed)
+                          ? null
+                          : _save,
+                  child: Text(_saving
+                      ? 'Menyimpan…'
+                      : _submittedParams != null
+                          ? 'Coba lagi'
+                          : _isPreviousSale
+                              ? 'Catat penjualan sebelumnya'
+                              : 'Catat pemakaian'))
             ]));
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -22,6 +23,8 @@ bool _operationsMode = false;
 bool _failLoad = false;
 List<Map<String, dynamic>> _menuRows = [];
 final _rpcCalls = <Map<String, dynamic>>[];
+String? _nextRpcError;
+Completer<void>? _rpcWait;
 
 final _tables = <String, List<Map<String, dynamic>>>{
   'ingredients': [
@@ -30,7 +33,8 @@ final _tables = <String, List<Map<String, dynamic>>>{
       'name': 'Beans Arabica Robusta',
       'unit': 'gram',
       'quantity': 1000,
-      'unit_cost': 190
+      'unit_cost': 190,
+      'updated_at': '2026-10-07T01:00:00.123456Z',
     }
   ],
   'ingredient_purchases': [
@@ -45,6 +49,7 @@ final _tables = <String, List<Map<String, dynamic>>>{
   ],
   'internal_material_usage': [],
   'ingredient_movements': [],
+  'ingredient_depletions': [],
   'products': [
     {'id': 'coffee', 'name': 'Kopi Susu', 'cogs': '5000'}
   ],
@@ -72,6 +77,15 @@ void main() {
               'rpc': table,
               ...jsonDecode(request.body) as Map<String, dynamic>
             });
+            if (_rpcWait != null) await _rpcWait!.future;
+            final error = _nextRpcError;
+            _nextRpcError = null;
+            if (error != null) {
+              return http.Response(
+                  jsonEncode({'code': 'P0001', 'message': error}), 400,
+                  request: request,
+                  headers: {'content-type': 'application/json'});
+            }
             return http.Response('true', 200,
                 request: request,
                 headers: {'content-type': 'application/json'});
@@ -94,6 +108,9 @@ void main() {
     _failLoad = false;
     _rpcCalls.clear();
     _menuRows = [];
+    _nextRpcError = null;
+    _rpcWait = null;
+    _tables['ingredients']!.single['quantity'] = 1000;
   });
   tearDownAll(() async => Supabase.instance.dispose());
   tearDown(AppNotice.dismiss);
@@ -161,6 +178,157 @@ void main() {
       AppNotice.dismiss();
     });
   }
+  for (final size in [const Size(1280, 900), const Size(390, 844)]) {
+    testWidgets(
+        'previous sale and personal depletion require confirmation at $size',
+        (tester) async {
+      final capture = GlobalKey();
+      await _pumpInventory(tester, size, capture: capture);
+      await tester
+          .ensureVisible(find.widgetWithText(TextButton, 'Bahan habis'));
+      await tester.tap(find.widgetWithText(TextButton, 'Bahan habis'));
+      await tester.pumpAndSettle();
+      expect(
+          tester
+              .widget<FilledButton>(
+                  find.widgetWithText(FilledButton, 'Konfirmasi habis'))
+              .onPressed,
+          isNull);
+      await _chooseDialogPurpose(tester, 'Pakai sendiri');
+      expect(find.textContaining('Beban operasional bertambah Rp 190.000'),
+          findsOneWidget);
+      expect(
+          tester
+              .widget<FilledButton>(
+                  find.widgetWithText(FilledButton, 'Konfirmasi habis'))
+              .onPressed,
+          isNull);
+      await tester.ensureVisible(find.byType(CheckboxListTile));
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.pumpAndSettle();
+      await _capture(tester, capture, 'depletion-${size.width.toInt()}');
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Batal'));
+      await tester.pumpAndSettle();
+      expect(_rpcCalls, isEmpty);
+      await tester
+          .ensureVisible(find.widgetWithText(OutlinedButton, 'Catat pemakaian'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Catat pemakaian'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, '12');
+      await _chooseDialogPurpose(tester, 'Penjualan sebelumnya');
+      final save =
+          find.widgetWithText(FilledButton, 'Catat penjualan sebelumnya');
+      expect(tester.widget<FilledButton>(save).onPressed, isNull);
+      await tester.ensureVisible(find.textContaining('Tanggal penjualan:'));
+      await tester.tap(find.textContaining('Tanggal penjualan:'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DatePickerDialog), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byType(CheckboxListTile));
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.pumpAndSettle();
+      await _capture(tester, capture, 'previous-sale-${size.width.toInt()}');
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await tester.pumpAndSettle();
+      expect(_rpcCalls.single['rpc'], 'record_previous_sale_material_usage');
+      expect((_rpcCalls.single['p_items'] as List).single['quantity'], 12);
+      expect(_rpcCalls.single['p_untracked_confirmed'], true);
+      expect(_rpcCalls.single.containsKey('p_purpose'), false);
+      expect(find.byType(AlertDialog), findsNothing);
+      AppNotice.dismiss();
+    });
+  }
+  testWidgets(
+      'depletion retry keeps exact request and blocks double submission',
+      (tester) async {
+    await _pumpInventory(tester, const Size(1280, 900));
+    await tester.tap(find.widgetWithText(TextButton, 'Bahan habis'));
+    await tester.pumpAndSettle();
+    await _chooseDialogPurpose(tester, 'Terbuang / selisih stok');
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.enterText(find.byType(TextField), 'Rusak');
+    await tester.pumpAndSettle();
+    _nextRpcError = 'connection uncertain';
+    _rpcWait = Completer<void>();
+    await tester.tap(find.text('Konfirmasi habis'));
+    await tester.pump();
+    expect(
+        tester
+            .widget<FilledButton>(
+                find.widgetWithText(FilledButton, 'Menyimpan…'))
+            .onPressed,
+        isNull);
+    await tester.pump();
+    expect(_rpcCalls.length, 1);
+    _rpcWait!.complete();
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, false);
+    expect(find.textContaining('Belum dapat menyimpan'), findsOneWidget);
+    await tester.tap(find.text('Coba lagi'));
+    await tester.pumpAndSettle();
+    expect(_rpcCalls.length, 2);
+    expect(_rpcCalls[1], _rpcCalls[0]);
+    expect(
+        _rpcCalls[0]['p_expected_updated_at'], '2026-10-07T01:00:00.123456Z');
+    expect(find.byType(AlertDialog), findsNothing);
+    AppNotice.dismiss();
+  });
+  testWidgets('stale depletion reports reload and never claims saved',
+      (tester) async {
+    await _pumpInventory(tester, const Size(1280, 900));
+    await tester.tap(find.widgetWithText(TextButton, 'Bahan habis'));
+    await tester.pumpAndSettle();
+    await _chooseDialogPurpose(tester, 'Penjualan sebelum tracking');
+    expect(find.textContaining('tanpa beban operasional tambahan'),
+        findsOneWidget);
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.pumpAndSettle();
+    _nextRpcError = 'INGREDIENT_STOCK_CHANGED_RELOAD';
+    await tester.tap(find.text('Konfirmasi habis'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Stok atau harga bahan sudah berubah'),
+        findsOneWidget);
+    expect(find.text('Pencatatan tersimpan.'), findsNothing);
+    expect(_rpcCalls.single['p_purpose'], 'pre_tracking_sales');
+    await tester.tap(find.text('Batal'));
+    await tester.pumpAndSettle();
+  });
+  for (final quantity in [0, -20]) {
+    testWidgets('depletion disabled for stock $quantity', (tester) async {
+      _tables['ingredients']!.single['quantity'] = quantity;
+      await _pumpInventory(tester, const Size(1280, 900));
+      expect(
+          tester
+              .widget<TextButton>(
+                  find.widgetWithText(TextButton, 'Bahan habis'))
+              .onPressed,
+          isNull);
+    });
+  }
+  testWidgets('previous sale retry keeps stable recipe correction request',
+      (tester) async {
+    await _pumpInventory(tester, const Size(1280, 900));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Catat pemakaian'));
+    await tester.pumpAndSettle();
+    await _chooseDialogPurpose(tester, 'Penjualan sebelumnya');
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.pumpAndSettle();
+    _nextRpcError = 'LINKED_RECIPE_REQUIRED';
+    await tester.tap(find.text('Catat penjualan sebelumnya'));
+    await tester.pumpAndSettle();
+    expect(
+        find.textContaining('Hubungkan bahan baku di resep'), findsOneWidget);
+    expect(
+        tester.widget<TextField>(find.byType(TextField).first).enabled, false);
+    await tester.tap(find.text('Coba lagi'));
+    await tester.pumpAndSettle();
+    expect(_rpcCalls[1], _rpcCalls[0]);
+    AppNotice.dismiss();
+  });
   testWidgets('menu refresh retains data, skips dialogs and cancels timer',
       (tester) async {
     _operationsMode = true;
@@ -267,5 +435,49 @@ void main() {
     expect(tester.takeException(), isNull);
     AppNotice.dismiss();
     await tester.pumpWidget(const SizedBox());
+  });
+}
+
+Future<void> _pumpInventory(WidgetTester tester, Size size,
+    {GlobalKey? capture}) async {
+  await tester.binding.setSurfaceSize(size);
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await tester.pumpWidget(RepaintBoundary(
+      key: capture,
+      child: MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+              body: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child:
+                      OwnerInventoryPanel(outletId: 'a', onChanged: () {}))))));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _chooseDialogPurpose(WidgetTester tester, String label) async {
+  final picker = find
+      .descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(DropdownButtonFormField<String>))
+      .last;
+  await tester.ensureVisible(picker);
+  await tester.tap(picker);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(label).last);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _capture(
+    WidgetTester tester, GlobalKey capture, String name) async {
+  if (!const bool.fromEnvironment('KASATA_VISUAL_REVIEW')) return;
+  await tester.runAsync(() async {
+    final boundary =
+        capture.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+    final image = await boundary.toImage(pixelRatio: 1);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    await Directory('build/visual-review').create(recursive: true);
+    await File('build/visual-review/$name.png')
+        .writeAsBytes(bytes!.buffer.asUint8List());
+    image.dispose();
   });
 }

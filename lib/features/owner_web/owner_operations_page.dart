@@ -1006,6 +1006,8 @@ class _OwnerExpense {
   final String? description;
   final String amount;
   final DateTime occurredAt;
+  bool get isInventoryExpense =>
+      id.startsWith('internal:') || id.startsWith('depletion:');
 
   const _OwnerExpense({
     required this.id,
@@ -1376,13 +1378,12 @@ class _ExpenseDataPanel extends StatelessWidget {
                               style:
                                   const TextStyle(fontWeight: FontWeight.w800)),
                           IconButton(
-                            tooltip: expenses[index].id.startsWith('internal:')
-                                ? 'HPP otomatis dari pemakaian bahan'
+                            tooltip: expenses[index].isInventoryExpense
+                                ? 'Biaya otomatis dari pencatatan bahan'
                                 : 'Ubah pengeluaran',
-                            onPressed:
-                                expenses[index].id.startsWith('internal:')
-                                    ? null
-                                    : () => onEdit(expenses[index]),
+                            onPressed: expenses[index].isInventoryExpense
+                                ? null
+                                : () => onEdit(expenses[index]),
                             icon: const Icon(Icons.edit_outlined),
                           ),
                         ],

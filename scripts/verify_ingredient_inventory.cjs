@@ -26,14 +26,21 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
       '20260926100000_owner_managed_product_costing.sql',
       '20261007100000_owner_menu_deletion.sql',
       '20261007110000_ingredient_inventory.sql',
+      '20261007130000_ingredient_depletion.sql',
     ]) await db.exec(read(`supabase/migrations/${file}`));
     await db.exec(read('supabase/tests/ingredient_inventory.sql'));
+    await db.exec(read('supabase/tests/ingredient_depletion.sql'));
     const before = await db.query('select id,quantity,unit_cost from public.ingredients order by id');
-    for (const file of ['20261007100000_owner_menu_deletion.sql', '20261007110000_ingredient_inventory.sql']) {
+    const receiptsBefore = await db.query('select id,total_cost,purpose from public.ingredient_depletions order by id');
+    const expensesBefore = await db.query('select id,amount from public.expenses order by id');
+    for (const file of ['20261007100000_owner_menu_deletion.sql', '20261007110000_ingredient_inventory.sql', '20261007130000_ingredient_depletion.sql']) {
       await db.exec(read(`supabase/migrations/${file}`));
     }
     const after = await db.query('select id,quantity,unit_cost from public.ingredients order by id');
     if (JSON.stringify(before.rows) !== JSON.stringify(after.rows)) throw new Error('Migration replay changed inventory');
-    console.log('PASS: purchase units/valuation, duplicate retries, recipe history, sale/void, internal expenses, tenant access, helper permissions, menu deletion.');
+    const receiptsAfter = await db.query('select id,total_cost,purpose from public.ingredient_depletions order by id');
+    const expensesAfter = await db.query('select id,amount from public.expenses order by id');
+    if (JSON.stringify(receiptsBefore.rows) !== JSON.stringify(receiptsAfter.rows) || JSON.stringify(expensesBefore.rows) !== JSON.stringify(expensesAfter.rows)) throw new Error('Migration replay changed financial receipts');
+    console.log('PASS: purchases, recipes, sale/void, internal use, ingredient depletion, stale stock, duplicate retries, tenant access, expense protection and migration replay.');
   } finally { await db.close(); }
 })().catch((error) => { console.error(error.message); process.exitCode = 1; });
