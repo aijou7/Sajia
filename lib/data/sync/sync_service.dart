@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/legacy_outlet.dart';
+import '../../core/onboarding_service.dart';
 import '../local/app_database.dart';
 import '../../domain/costing.dart';
 import 'costing_sync_coordinator.dart';
@@ -17,6 +18,7 @@ enum SyncPhase {
   syncing,
   synced,
   offline,
+  deferred,
   failed,
 }
 
@@ -53,6 +55,8 @@ class SyncService {
   StreamSubscription? _connectivitySub;
   Timer? _periodicSync;
   bool _isSyncing = false;
+  bool _accountChangePaused = false;
+  Completer<void>? _activeSync;
   bool _started = false;
   SyncStatus _status = const SyncStatus();
   final StreamController<SyncStatus> _statusController =
@@ -109,13 +113,28 @@ class SyncService {
     unawaited(syncAll());
   }
 
+  /// Finish the current worker before changing its Supabase session. A timeout
+  /// aborts logout/login rather than letting old writes use a new owner's token.
+  Future<void> pauseForAccountChange() async {
+    _accountChangePaused = true;
+    await _activeSync?.future.timeout(const Duration(seconds: 25));
+  }
+
+  void resumeAfterAccountChange() {
+    _accountChangePaused = false;
+  }
+
   Future<void> syncAll() async {
-    if (!isEnabled) return;
-    if (_isSyncing) return;
+    if (!isEnabled || _accountChangePaused) return;
+    if (_isSyncing) {
+      await _activeSync?.future;
+      return;
+    }
     _isSyncing = true;
+    final completion = _activeSync = Completer<void>();
     _uploadFailures.clear();
-    await _publishStatus(SyncPhase.syncing);
     try {
+      await _publishStatus(SyncPhase.syncing);
       final connected = await _isConnected();
       if (!connected) {
         await _publishStatus(SyncPhase.offline);
@@ -126,13 +145,16 @@ class SyncService {
         return;
       }
 
-      // Resolve tenant ownership before pushing anything. A device can be
-      // reused for another verified owner; stale local PINs/outlets must never
-      // be uploaded under the new Supabase session.
+      await OnboardingService().requireLocalAccount(
+        database: _db,
+        authUserId: _supabase.auth.currentUser!.id,
+      );
       final verifiedOutletIds = await _authenticatedOwnerOutletIds();
-      if (verifiedOutletIds.isNotEmpty) {
-        await _db.retainOnlyOutlets(verifiedOutletIds);
-      }
+      // A first-time setup has a locally bound outlet awaiting registration.
+      // Otherwise an incomplete/mismatched remote scope must stop, not purge.
+      await _db.requireLocalOutletScope(verifiedOutletIds.isNotEmpty
+          ? verifiedOutletIds
+          : await OnboardingService().getVerifiedOwnerOutletIds());
 
       // Account recovery data is backed up for every verified owner. This is
       // what allows a replacement device to restore the original owner PIN,
@@ -153,7 +175,11 @@ class SyncService {
         debugPrint(
           '[SyncService] Recovery data synced; operational Cloud sync skipped',
         );
-        await _publishStatus(SyncPhase.synced, lastSyncedAt: DateTime.now());
+        await _publishStatus(
+          SyncPhase.deferred,
+          errorMessage: 'Penjualan belum dikirim. Pastikan Cloud aktif pada '
+              'outlet yang sama dan masuk ke kasir.',
+        );
         return;
       }
       await _pushOperationalData(scopedCloudOutletIds);
@@ -172,6 +198,8 @@ class SyncService {
       );
     } finally {
       _isSyncing = false;
+      if (!completion.isCompleted) completion.complete();
+      if (identical(_activeSync, completion)) _activeSync = null;
     }
   }
 
@@ -182,15 +210,21 @@ class SyncService {
   }) async {
     var pendingCount = _status.pendingCount;
     try {
-      pendingCount = await _db.syncDao.getPendingCount();
+      pendingCount = await _db.syncDao.getPendingCount() +
+          await _db.pendingFinancialChanges();
     } catch (_) {
       // Status must never interfere with the actual sync worker.
     }
+    final incomplete = phase == SyncPhase.synced && pendingCount > 0;
     final next = SyncStatus(
-      phase: phase,
+      phase: incomplete ? SyncPhase.deferred : phase,
       pendingCount: pendingCount,
       lastSyncedAt: lastSyncedAt ?? _status.lastSyncedAt,
-      errorMessage: errorMessage,
+      errorMessage: errorMessage ??
+          (incomplete
+              ? 'Masih ada data lokal yang belum terkirim. Periksa Cloud pada '
+                  'setiap outlet, lalu coba sinkronisasi lagi.'
+              : null),
     );
     _status = next;
     if (!_statusController.isClosed) _statusController.add(next);
@@ -203,10 +237,21 @@ class SyncService {
   }
 
   Future<bool> pullAllForLogin(String outletId) async {
+    // Device recovery and background upload share the same database worker.
+    // Do not pull stale cloud snapshots over a concurrently pending upload.
+    while (_activeSync != null) {
+      await _activeSync!.future;
+    }
+    _isSyncing = true;
+    final completion = _activeSync = Completer<void>();
     try {
       final connected = await _isConnected();
       if (!connected) return false;
       if (_supabase.auth.currentUser?.email == null) return false;
+      await OnboardingService().requireLocalAccount(
+        database: _db,
+        authUserId: _supabase.auth.currentUser!.id,
+      );
 
       // Explicit device recovery must work even when a build was produced
       // with background cloud sync disabled.
@@ -226,6 +271,9 @@ class SyncService {
       return false;
     } finally {
       _strictRecoveryPull = false;
+      _isSyncing = false;
+      if (!completion.isCompleted) completion.complete();
+      if (identical(_activeSync, completion)) _activeSync = null;
     }
   }
 
@@ -543,15 +591,17 @@ class SyncService {
     final pulled = <String>{};
     try {
       final response = await _supabase.rpc('get_authenticated_owner_outlets');
-      for (final row in response as List? ?? const []) {
-        final map = _asMap(row);
+      final rows = (response as List? ?? const []).map(_asMap).toList();
+      final remoteIds =
+          rows.map((row) => row['id']).whereType<String>().toSet();
+      if (remoteIds.isNotEmpty) await _db.requireLocalOutletScope(remoteIds);
+      for (final map in rows) {
         await _upsertOutletFromMap(map);
         final id = map['id'] as String?;
         if (id != null) pulled.add(id);
       }
-      if (pulled.isNotEmpty) {
-        await _db.retainOnlyOutlets(pulled);
-      }
+    } on LocalDataSafetyException {
+      rethrow;
     } catch (e) {
       debugPrint('[SyncService] owner outlet rpc unavailable: $e');
     }
@@ -588,18 +638,13 @@ class SyncService {
   }
 
   Future<Set<String>> _authenticatedOwnerOutletIds() async {
-    try {
-      final response = await _supabase.rpc('get_authenticated_owner_outlets');
-      return (response as List? ?? const [])
-          .map(_asMap)
-          .map((row) => row['id'] as String?)
-          .whereType<String>()
-          .where((id) => id.isNotEmpty)
-          .toSet();
-    } catch (e) {
-      debugPrint('[SyncService] owner scope unavailable: $e');
-      return const <String>{};
-    }
+    final response = await _supabase.rpc('get_authenticated_owner_outlets');
+    return (response as List? ?? const [])
+        .map(_asMap)
+        .map((row) => row['id'] as String?)
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet();
   }
 
   Future<bool> _pullOutlet(String outletId) async {
@@ -722,37 +767,44 @@ class SyncService {
 
       for (final row in response as List? ?? const []) {
         final map = _asMap(row);
-        await _db.into(_db.orders).insertOnConflictUpdate(OrdersCompanion(
-              id: Value(map['id'] as String),
-              outletId: Value(map['outlet_id'] as String),
-              orderNumber: Value(map['order_number'] as String),
-              type: Value(map['type'] as String? ?? 'dine_in'),
-              status: Value(map['status'] as String? ?? 'paid'),
-              tableId: Value(map['table_id'] as String?),
-              tableLabel: Value(map['table_label'] as String?),
-              cashierId: Value(map['cashier_id'] as String? ?? ''),
-              cashierName: Value(map['cashier_name'] as String? ?? ''),
-              customerName: Value(map['customer_name'] as String?),
-              customerCount: Value(map['customer_count']?.toString()),
-              notes: Value(map['notes'] as String?),
-              subtotal: Value(map['subtotal']?.toString() ?? '0'),
-              discountAmount: Value(map['discount_amount']?.toString() ?? '0'),
-              discountPercent:
-                  Value(map['discount_percent']?.toString() ?? '0'),
-              taxAmount: Value(map['tax_amount']?.toString() ?? '0'),
-              serviceCharge: Value(map['service_charge']?.toString() ?? '0'),
-              total: Value(map['total']?.toString() ?? '0'),
-              paymentMethod: Value(map['payment_method'] as String?),
-              paidAmount: Value(map['paid_amount']?.toString()),
-              changeAmount: Value(map['change_amount']?.toString()),
-              paymentRef: Value(map['payment_ref'] as String?),
-              paidAt: Value(_date(map['paid_at'])),
-              voidReason: Value(map['void_reason'] as String?),
-              voidedBy: Value(map['voided_by'] as String?),
-              createdAt: Value(_date(map['created_at']) ?? DateTime.now()),
-              updatedAt: Value(_date(map['updated_at']) ?? DateTime.now()),
-              isSynced: const Value(true),
-            ));
+        await _db.transaction(() async {
+          final local = await (_db.select(_db.orders)
+                ..where((order) => order.id.equals(map['id'] as String)))
+              .getSingleOrNull();
+          if (local != null && !local.isSynced) return;
+          await _db.into(_db.orders).insertOnConflictUpdate(OrdersCompanion(
+                id: Value(map['id'] as String),
+                outletId: Value(map['outlet_id'] as String),
+                orderNumber: Value(map['order_number'] as String),
+                type: Value(map['type'] as String? ?? 'dine_in'),
+                status: Value(map['status'] as String? ?? 'paid'),
+                tableId: Value(map['table_id'] as String?),
+                tableLabel: Value(map['table_label'] as String?),
+                cashierId: Value(map['cashier_id'] as String? ?? ''),
+                cashierName: Value(map['cashier_name'] as String? ?? ''),
+                customerName: Value(map['customer_name'] as String?),
+                customerCount: Value(map['customer_count']?.toString()),
+                notes: Value(map['notes'] as String?),
+                subtotal: Value(map['subtotal']?.toString() ?? '0'),
+                discountAmount:
+                    Value(map['discount_amount']?.toString() ?? '0'),
+                discountPercent:
+                    Value(map['discount_percent']?.toString() ?? '0'),
+                taxAmount: Value(map['tax_amount']?.toString() ?? '0'),
+                serviceCharge: Value(map['service_charge']?.toString() ?? '0'),
+                total: Value(map['total']?.toString() ?? '0'),
+                paymentMethod: Value(map['payment_method'] as String?),
+                paidAmount: Value(map['paid_amount']?.toString()),
+                changeAmount: Value(map['change_amount']?.toString()),
+                paymentRef: Value(map['payment_ref'] as String?),
+                paidAt: Value(_date(map['paid_at'])),
+                voidReason: Value(map['void_reason'] as String?),
+                voidedBy: Value(map['voided_by'] as String?),
+                createdAt: Value(_date(map['created_at']) ?? DateTime.now()),
+                updatedAt: Value(_date(map['updated_at']) ?? DateTime.now()),
+                isSynced: const Value(true),
+              ));
+        });
       }
     } catch (e) {
       _markRecoveryPullFailed();
@@ -769,24 +821,30 @@ class SyncService {
           .limit(2000);
       for (final row in response as List? ?? const []) {
         final map = _asMap(row);
-        await _db.orderDao.upsertOrderItem(OrderItemsCompanion(
-          id: Value(map['id'] as String),
-          orderId: Value(map['order_id'] as String),
-          productId: Value(map['product_id'] as String),
-          productName: Value(map['product_name'] as String),
-          variantSummary: Value(map['variant_summary'] as String?),
-          unitPrice: Value(map['unit_price']?.toString() ?? '0'),
-          unitCogs: Value(map['unit_cogs']?.toString()),
-          categoryId: Value(map['category_id'] as String?),
-          categoryName: Value(map['category_name'] as String?),
-          quantity: Value(map['quantity']?.toString() ?? '0'),
-          discount: Value(map['discount']?.toString() ?? '0'),
-          subtotal: Value(map['subtotal']?.toString() ?? '0'),
-          notes: Value(map['notes'] as String?),
-          status: Value(map['status'] as String? ?? 'pending'),
-          createdAt: Value(_date(map['created_at']) ?? DateTime.now()),
-          isSynced: const Value(true),
-        ));
+        await _db.transaction(() async {
+          final local = await (_db.select(_db.orderItems)
+                ..where((item) => item.id.equals(map['id'] as String)))
+              .getSingleOrNull();
+          if (local != null && !local.isSynced) return;
+          await _db.orderDao.upsertOrderItem(OrderItemsCompanion(
+            id: Value(map['id'] as String),
+            orderId: Value(map['order_id'] as String),
+            productId: Value(map['product_id'] as String),
+            productName: Value(map['product_name'] as String),
+            variantSummary: Value(map['variant_summary'] as String?),
+            unitPrice: Value(map['unit_price']?.toString() ?? '0'),
+            unitCogs: Value(map['unit_cogs']?.toString()),
+            categoryId: Value(map['category_id'] as String?),
+            categoryName: Value(map['category_name'] as String?),
+            quantity: Value(map['quantity']?.toString() ?? '0'),
+            discount: Value(map['discount']?.toString() ?? '0'),
+            subtotal: Value(map['subtotal']?.toString() ?? '0'),
+            notes: Value(map['notes'] as String?),
+            status: Value(map['status'] as String? ?? 'pending'),
+            createdAt: Value(_date(map['created_at']) ?? DateTime.now()),
+            isSynced: const Value(true),
+          ));
+        });
       }
     } catch (e) {
       _markRecoveryPullFailed();
@@ -1004,16 +1062,22 @@ class SyncService {
             await _supabase.from('expenses').select().eq('outlet_id', outletId);
         for (final row in response as List? ?? const []) {
           final map = _asMap(row);
-          await _db.financeDao.upsertExpense(ExpensesCompanion(
-            id: Value(map['id'] as String),
-            outletId: Value(map['outlet_id'] as String),
-            category: Value(map['category'] as String? ?? 'Operasional'),
-            description: Value(map['description'] as String?),
-            amount: Value(map['amount']?.toString() ?? '0'),
-            occurredAt: Value(_date(map['occurred_at']) ?? DateTime.now()),
-            createdAt: Value(_date(map['created_at']) ?? DateTime.now()),
-            isSynced: const Value(true),
-          ));
+          await _db.transaction(() async {
+            final local = await (_db.select(_db.expenses)
+                  ..where((expense) => expense.id.equals(map['id'] as String)))
+                .getSingleOrNull();
+            if (local != null && !local.isSynced) return;
+            await _db.financeDao.upsertExpense(ExpensesCompanion(
+              id: Value(map['id'] as String),
+              outletId: Value(map['outlet_id'] as String),
+              category: Value(map['category'] as String? ?? 'Operasional'),
+              description: Value(map['description'] as String?),
+              amount: Value(map['amount']?.toString() ?? '0'),
+              occurredAt: Value(_date(map['occurred_at']) ?? DateTime.now()),
+              createdAt: Value(_date(map['created_at']) ?? DateTime.now()),
+              isSynced: const Value(true),
+            ));
+          });
         }
       }
     } catch (e) {
@@ -1033,26 +1097,32 @@ class SyncService {
 
       for (final row in response as List? ?? const []) {
         final map = _asMap(row);
-        await _db.into(_db.sessions).insertOnConflictUpdate(
-              SessionsCompanion(
-                id: Value(map['id'] as String),
-                outletId: Value(map['outlet_id'] as String),
-                cashierId: Value(map['cashier_id'] as String),
-                cashierName: Value(map['cashier_name'] as String),
-                openingCash: Value(map['opening_cash']?.toString() ?? '0'),
-                closingCash: Value(map['closing_cash']?.toString()),
-                totalCashSales:
-                    Value(map['total_cash_sales']?.toString() ?? '0'),
-                totalQrisSales:
-                    Value(map['total_qris_sales']?.toString() ?? '0'),
-                totalOrders: Value(map['total_orders'] as int? ?? 0),
-                totalVoids: Value(map['total_voids'] as int? ?? 0),
-                notes: Value(map['notes'] as String?),
-                openedAt: Value(_date(map['opened_at']) ?? DateTime.now()),
-                closedAt: Value(_date(map['closed_at'])),
-                isSynced: const Value(true),
-              ),
-            );
+        await _db.transaction(() async {
+          final local = await (_db.select(_db.sessions)
+                ..where((session) => session.id.equals(map['id'] as String)))
+              .getSingleOrNull();
+          if (local != null && !local.isSynced) return;
+          await _db.into(_db.sessions).insertOnConflictUpdate(
+                SessionsCompanion(
+                  id: Value(map['id'] as String),
+                  outletId: Value(map['outlet_id'] as String),
+                  cashierId: Value(map['cashier_id'] as String),
+                  cashierName: Value(map['cashier_name'] as String),
+                  openingCash: Value(map['opening_cash']?.toString() ?? '0'),
+                  closingCash: Value(map['closing_cash']?.toString()),
+                  totalCashSales:
+                      Value(map['total_cash_sales']?.toString() ?? '0'),
+                  totalQrisSales:
+                      Value(map['total_qris_sales']?.toString() ?? '0'),
+                  totalOrders: Value(map['total_orders'] as int? ?? 0),
+                  totalVoids: Value(map['total_voids'] as int? ?? 0),
+                  notes: Value(map['notes'] as String?),
+                  openedAt: Value(_date(map['opened_at']) ?? DateTime.now()),
+                  closedAt: Value(_date(map['closed_at'])),
+                  isSynced: const Value(true),
+                ),
+              );
+        });
       }
     } catch (e) {
       _markRecoveryPullFailed();
@@ -1375,7 +1445,13 @@ class SyncService {
           'created_at': o.createdAt.toUtc().toIso8601String(),
           'updated_at': o.updatedAt.toUtc().toIso8601String(),
         });
-        await _db.orderDao.markOrderSynced(o.id);
+        // A successful request acknowledges only the uploaded snapshot, not
+        // a payment/void edited locally while the network request was running.
+        await _db.transaction(() async {
+          if (await _db.orderDao.getOrder(o.id) == o) {
+            await _db.orderDao.markOrderSynced(o.id);
+          }
+        });
       } catch (e) {
         _uploadFailures.add('transaksi ${o.orderNumber}');
         debugPrint('[SyncService] push order ${o.id} failed: $e');
@@ -1406,7 +1482,12 @@ class SyncService {
           'status': item.status,
           'created_at': item.createdAt.toUtc().toIso8601String(),
         });
-        await _db.orderDao.markItemSynced(item.id);
+        await _db.transaction(() async {
+          final current = await (_db.select(_db.orderItems)
+                ..where((row) => row.id.equals(item.id)))
+              .getSingleOrNull();
+          if (current == item) await _db.orderDao.markItemSynced(item.id);
+        });
       } catch (e) {
         _uploadFailures.add('item transaksi');
         debugPrint('[SyncService] push order item ${item.id} failed: $e');
@@ -1434,7 +1515,12 @@ class SyncService {
           'opened_at': s.openedAt.toUtc().toIso8601String(),
           'closed_at': s.closedAt?.toUtc().toIso8601String(),
         });
-        await _db.sessionDao.markSessionSynced(s.id);
+        await _db.transaction(() async {
+          final current = await (_db.select(_db.sessions)
+                ..where((row) => row.id.equals(s.id)))
+              .getSingleOrNull();
+          if (current == s) await _db.sessionDao.markSessionSynced(s.id);
+        });
       } catch (e) {
         debugPrint('[SyncService] push session ${s.id} failed: $e');
       }
@@ -1455,7 +1541,14 @@ class SyncService {
           'occurred_at': expense.occurredAt.toUtc().toIso8601String(),
           'created_at': expense.createdAt.toUtc().toIso8601String(),
         });
-        await _db.financeDao.markExpenseSynced(expense.id);
+        await _db.transaction(() async {
+          final current = await (_db.select(_db.expenses)
+                ..where((row) => row.id.equals(expense.id)))
+              .getSingleOrNull();
+          if (current == expense) {
+            await _db.financeDao.markExpenseSynced(expense.id);
+          }
+        });
       } catch (e) {
         _uploadFailures.add('pengeluaran');
         debugPrint('[SyncService] push expense ${expense.id} failed: $e');
@@ -1486,7 +1579,9 @@ class SyncService {
           body: {'outlet_id': outlet.id},
         );
         final data = _asMap(response.data);
-        if (data['error'] is String) continue;
+        if (data['error'] is String) {
+          throw StateError('Cloud status unavailable');
+        }
 
         final isPro = data['is_pro'] == true;
         final isCloud = data['is_cloud'] == true;
@@ -1505,6 +1600,8 @@ class SyncService {
         debugPrint(
           '[SyncService] cloud entitlement check failed for ${outlet.id}: $e',
         );
+        throw Exception('Status Cloud belum dapat diperiksa. '
+            'Data lokal tidak dihapus; coba lagi saat koneksi stabil.');
       }
     }
 

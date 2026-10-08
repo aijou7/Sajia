@@ -41,7 +41,7 @@ void main() {
     expect(ownerAUsers.single.id, 'user-owner-a-outlet');
   });
 
-  test('switching verified owner removes previous business and pending writes',
+  test('explicit local pruning removes business rows and pending writes',
       () async {
     for (final outletId in ['owner-a-outlet', 'owner-b-outlet']) {
       await database.into(database.outlets).insert(

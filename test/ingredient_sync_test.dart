@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:pos_mobile/core/onboarding_service.dart';
 import 'package:pos_mobile/data/local/app_database.dart';
 import 'package:pos_mobile/data/sync/sync_service.dart';
 import 'package:pos_mobile/domain/entities/entities.dart';
@@ -16,6 +18,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('dev.fluttercommunity.plus/connectivity');
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (_) async => ['wifi']);
   });
@@ -120,6 +123,11 @@ void main() {
       addTearDown(client.dispose);
       await client.auth.signInWithPassword(
           email: 'owner@example.test', password: 'test-only');
+      await OnboardingService().bindVerifiedAccount(
+        authUserId: client.auth.currentUser!.id,
+        email: 'owner@example.test',
+        outletIds: ['a'],
+      );
       final sync = SyncService(db, client);
       addTearDown(sync.dispose);
       if (missingProfiles) {

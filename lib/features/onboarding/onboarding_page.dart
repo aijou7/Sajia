@@ -16,6 +16,7 @@ import '../../core/utils.dart';
 import '../../core/onboarding_service.dart';
 import '../../core/pin_numpad_layout.dart';
 import '../../data/local/app_database.dart';
+import '../../data/sync/sync_service.dart';
 
 enum _Step { welcome, email, otp, outlet, pin }
 
@@ -38,7 +39,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
   final _otpCtrl = TextEditingController();
   String? _emailError;
   bool _isDeviceRecovery = false;
-  String? _authUserIdBeforeOtp;
+  SyncService? _accountSync;
+  bool _verifyingSession = false;
   String? _recoveryPrimaryOutletId;
   Set<String> _recoveryOutletIds = const <String>{};
   Timer? _otpCooldownTimer;
@@ -69,6 +71,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
 
   @override
   void dispose() {
+    if (!_verifyingSession) _accountSync?.resumeAfterAccountChange();
     _otpCooldownTimer?.cancel();
     _slideCtrl.dispose();
     _nameCtrl.dispose();
@@ -117,7 +120,6 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
       _emailCtrl.text = email;
       _otpCtrl.clear();
     });
-    _authUserIdBeforeOtp = service.authenticatedUserId;
     final result =
         await service.sendOtp(email, shouldCreateUser: !_isDeviceRecovery);
     if (!mounted) return;
@@ -166,10 +168,30 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
       _emailError = null;
     });
     final service = OnboardingService();
-    final result = await service.verifyOtp(
-      service.normalizeEmail(_emailCtrl.text),
-      _otpCtrl.text,
-    );
+    try {
+      _accountSync ??= ref.read(syncServiceProvider);
+      await _accountSync!.pauseForAccountChange();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _emailError =
+            'Sinkronisasi masih berjalan. Tunggu lalu coba login lagi.';
+      });
+      return;
+    }
+    if (!mounted) return;
+    _verifyingSession = true;
+    late final OtpVerifyResult result;
+    try {
+      result = await service.verifyOtp(
+        service.normalizeEmail(_emailCtrl.text),
+        _otpCtrl.text,
+      );
+    } finally {
+      _verifyingSession = false;
+      if (!mounted) _accountSync?.resumeAfterAccountChange();
+    }
     if (!mounted) return;
     if (result == OtpVerifyResult.success) {
       final accountReady = await _prepareVerifiedAccount();
@@ -210,32 +232,24 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
 
     try {
       final db = ref.read(databaseProvider);
-      final boundUserId = await service.getVerifiedAuthUserId();
-      final hasLocalData = await db.hasBusinessData();
-      final setupDone = await service.isSetupDone();
-      final accountChanged =
-          boundUserId != null && boundUserId != verifiedUserId;
-      final otpChangedSession = _authUserIdBeforeOtp != null &&
-          _authUserIdBeforeOtp != verifiedUserId;
-      final legacyUnboundData =
-          boundUserId == null && hasLocalData && !setupDone;
-
-      if (accountChanged || otpChangedSession || legacyUnboundData) {
-        await db.clearBusinessData();
-        ref.read(cartProvider.notifier).clear();
-        ref.read(currentUserProvider.notifier).state = null;
-        ref.read(activeShiftProvider.notifier).state = null;
-        ref.read(currentOutletIdProvider.notifier).state = 'default-outlet';
-      }
-
-      await service.bindVerifiedAccount(
+      await service.prepareLocalAccount(
+        database: db,
         authUserId: verifiedUserId,
         email: verifiedEmail,
-        outletIds: accountChanged || otpChangedSession || legacyUnboundData
-            ? const <String>[]
-            : null,
+        verifyLegacyOutletScope: () async =>
+            (await service.getAuthenticatedOwnerOutlets())
+                .map((outlet) => outlet['id'])
+                .whereType<String>()
+                .toSet(),
       );
       return true;
+    } on LocalDataSafetyException catch (e) {
+      if (!mounted) return false;
+      setState(() {
+        _isLoading = false;
+        _emailError = e.message;
+      });
+      return false;
     } catch (_) {
       if (!mounted) return false;
       setState(() {
@@ -292,7 +306,11 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
         return;
       }
 
-      final outletId = ownerOutlets.first['id'] as String?;
+      final savedOutletId = await service.getCurrentOutletId();
+      final savedOutlet = ownerOutlets.where((row) => row['id'] == savedOutletId);
+      final outletId = (savedOutlet.isNotEmpty
+          ? savedOutlet.first
+          : ownerOutlets.first)['id'] as String?;
       if (outletId == null || outletId.isEmpty) {
         throw StateError('ID outlet akun tidak valid');
       }
@@ -303,7 +321,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
           .where((id) => id.isNotEmpty)
           .toSet();
       final db = ref.read(databaseProvider);
-      await db.retainOnlyOutlets(restoredOutletIds);
+      await db.requireLocalOutletScope(restoredOutletIds);
       await service.saveVerifiedOwnerOutletIds(restoredOutletIds);
 
       final restored =
@@ -340,6 +358,12 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
 
       if (!mounted) return;
       context.go('/login');
+    } on LocalDataSafetyException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _emailError = e.message;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -461,6 +485,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
 
       // OTP email sudah membuktikan kepemilikan outlet. Simpan PIN baru ke
       // cloud agar perangkat berikutnya dapat dipulihkan tanpa perangkat lama.
+      _accountSync?.resumeAfterAccountChange();
       await ref.read(syncServiceProvider).syncAll();
 
       if (!mounted) return;
@@ -532,6 +557,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
       // Store the owner identity, staff PINs, and business configuration in
       // the verified account as soon as setup completes. syncAll handles an
       // offline device gracefully and retries in the background.
+      _accountSync?.resumeAfterAccountChange();
       await ref.read(syncServiceProvider).syncAll();
 
       if (!mounted) return;

@@ -22,6 +22,7 @@ import '../../core/app_notice.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
 import '../../data/local/app_database.dart';
+import '../../data/sync/sync_service.dart';
 import '../shared/polish_widgets.dart';
 import '../shared/app_update_dialog.dart';
 import 'pro_checkout_page.dart';
@@ -485,10 +486,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   final sync = ref.read(syncServiceProvider);
                   await sync.syncAll();
                   if (context.mounted) {
-                    AppNotice.show(context, const SnackBar(
-                      content: Text('Sinkronisasi selesai'),
-                      backgroundColor: AppTheme.success,
-                    ));
+                    final status = sync.status;
+                    final success =
+                        status.phase == SyncPhase.synced && !status.hasPending;
+                    AppNotice.show(
+                        context,
+                        SnackBar(
+                          content: Text(success
+                              ? 'Sinkronisasi selesai'
+                              : status.errorMessage ??
+                                  (status.phase == SyncPhase.syncing
+                                      ? 'Sinkronisasi masih berjalan.'
+                                      : 'Data belum seluruhnya terkirim. Periksa status sinkronisasi.')),
+                          backgroundColor:
+                              success ? AppTheme.success : AppTheme.warning,
+                        ));
                   }
                 },
               ),
@@ -705,13 +717,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ),
     );
 
+    final sync = ref.read(syncServiceProvider);
+    final auth = ref.read(supabaseProvider).auth;
     try {
+      await sync.pauseForAccountChange();
       // Supabase menghapus sesi lokal sebelum mencoba revoke token ke server.
       // Logout perangkat tetap dilanjutkan saat revoke gagal karena offline.
       try {
-        await ref.read(supabaseProvider).auth.signOut();
+        await auth.signOut();
       } catch (_) {}
       await OnboardingService().resetSetup();
+      sync.resumeAfterAccountChange();
       if (!context.mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
       ref.read(cartProvider.notifier).clear();
@@ -721,9 +737,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ref.invalidate(isSetupDoneProvider);
       context.go('/onboarding');
     } catch (_) {
+      sync.resumeAfterAccountChange();
       if (!context.mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      AppNotice.show(context,
+      AppNotice.show(
+        context,
         const SnackBar(
           content: Text(
             'Akun belum berhasil dilogout. Periksa koneksi lalu coba lagi.',
@@ -2627,7 +2645,12 @@ class _SettingsCard extends StatelessWidget {
           border: Border.all(color: AppTheme.subtleBorder),
           boxShadow: AppTheme.softShadow,
         ),
-        child: Column(children: children),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+          clipBehavior: Clip.antiAlias,
+          child: Column(children: children),
+        ),
       );
 }
 

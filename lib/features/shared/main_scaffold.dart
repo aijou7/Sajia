@@ -209,6 +209,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         content: Text(_syncDescription(snapshot)),
         actions: [
           if (snapshot.phase == SyncPhase.offline ||
+              snapshot.phase == SyncPhase.deferred ||
               snapshot.phase == SyncPhase.failed ||
               snapshot.hasPending)
             TextButton(
@@ -295,6 +296,7 @@ IconData _syncIcon(SyncPhase phase) => switch (phase) {
       SyncPhase.syncing => Icons.cloud_upload_outlined,
       SyncPhase.synced => Icons.cloud_done_outlined,
       SyncPhase.offline => Icons.cloud_off_outlined,
+      SyncPhase.deferred => Icons.cloud_sync_outlined,
       SyncPhase.failed => Icons.sync_problem_rounded,
       SyncPhase.idle => Icons.cloud_outlined,
     };
@@ -303,6 +305,7 @@ Color _syncColor(SyncPhase phase) => switch (phase) {
       SyncPhase.syncing => AppTheme.action,
       SyncPhase.synced => AppTheme.success,
       SyncPhase.offline => AppTheme.warning,
+      SyncPhase.deferred => AppTheme.warning,
       SyncPhase.failed => AppTheme.danger,
       SyncPhase.idle => AppTheme.textSecondary,
     };
@@ -317,6 +320,8 @@ String _syncDescription(SyncStatus status) {
     SyncPhase.synced =>
       'Data lokal aman. Sinkronisasi terakhir berhasil. $pendingText',
     SyncPhase.offline => 'Perangkat sedang offline. $pendingText',
+    SyncPhase.deferred =>
+      '${status.errorMessage ?? 'Penjualan belum terkirim ke Cloud.'} $pendingText',
     SyncPhase.failed =>
       'Sinkronisasi belum berhasil. ${status.errorMessage ?? 'Coba lagi saat koneksi stabil.'} $pendingText',
     SyncPhase.idle => 'Sinkronisasi belum berjalan.',

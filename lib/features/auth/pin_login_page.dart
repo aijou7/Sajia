@@ -59,6 +59,15 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
 
     if (service.authenticatedUserId != null) {
       try {
+        await service.requireLocalAccount(
+          database: db,
+          authUserId: service.authenticatedUserId!,
+        );
+      } on LocalDataSafetyException catch (e) {
+        if (mounted) setState(() => _errorMessage = e.message);
+        return const <String>{};
+      }
+      try {
         final remoteOutlets = await service
             .getAuthenticatedOwnerOutlets()
             .timeout(const Duration(seconds: 10));
@@ -68,7 +77,7 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
             .where((id) => id.isNotEmpty)
             .toSet();
         if (remoteScope.isNotEmpty) {
-          await db.retainOnlyOutlets(remoteScope);
+          await db.requireLocalOutletScope(remoteScope);
           await service.saveVerifiedOwnerOutletIds(remoteScope);
           final email = service.authenticatedEmail;
           if (email != null) {
@@ -86,6 +95,9 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
           }
           return remoteScope;
         }
+      } on LocalDataSafetyException catch (e) {
+        if (mounted) setState(() => _errorMessage = e.message);
+        return const <String>{};
       } catch (_) {
         // Offline PIN login remains available using the last verified scope.
       }
@@ -211,6 +223,15 @@ class _PinLoginPageState extends ConsumerState<PinLoginPage>
     final db = ref.read(databaseProvider);
     final currentOutletId = ref.read(currentOutletIdProvider);
     final accountOutletIds = await _accountOutletScope;
+    if (!mounted) return;
+    if (accountOutletIds.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _pin = '';
+        _errorMessage ??= 'Verifikasi email pemilik sebelum masuk ke kasir.';
+      });
+      return;
+    }
     final users =
         await db.sessionDao.getActiveUsersForOutlets(accountOutletIds);
     final matchingUsers = <User>[];

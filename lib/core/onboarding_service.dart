@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../data/local/app_database.dart';
+
 class OnboardingService {
   static final OnboardingService _instance = OnboardingService._internal();
   factory OnboardingService() => _instance;
@@ -111,6 +113,51 @@ class OnboardingService {
     final prefs = await SharedPreferences.getInstance();
     final ids = outletIds.where((id) => id.isNotEmpty).toSet().toList()..sort();
     await prefs.setStringList(_keyOwnerOutletIds, ids);
+  }
+
+  /// Only a verified email session may bind local data. A different account or
+  /// unproven legacy binding must never trigger an automatic database wipe.
+  Future<void> prepareLocalAccount({
+    required AppDatabase database,
+    required String authUserId,
+    required String email,
+    Future<Set<String>> Function()? verifyLegacyOutletScope,
+  }) async {
+    final hasData = await database.hasBusinessData();
+    final boundId = await getVerifiedAuthUserId();
+    Set<String>? scope;
+    if (hasData && boundId != authUserId) {
+      if (boundId != null || verifyLegacyOutletScope == null) {
+        throw const LocalDataSafetyException(
+          'Perangkat masih menyimpan data akun lain atau belum terverifikasi. '
+          'Data tidak dihapus. Masuk dengan akun pemilik data lokal.',
+        );
+      }
+      // Older logout versions erased the binding. Reclaim only after the
+      // authenticated server proves every local outlet belongs to this owner.
+      scope = await verifyLegacyOutletScope();
+      await database.requireLocalOutletScope(scope, requireFullAttribution: true);
+    } else if (!hasData && boundId != authUserId) {
+      scope = const <String>{};
+    }
+    await bindVerifiedAccount(
+      authUserId: authUserId,
+      email: email,
+      outletIds: scope,
+    );
+  }
+
+  Future<void> requireLocalAccount({
+    required AppDatabase database,
+    required String authUserId,
+  }) async {
+    if (await database.hasBusinessData() &&
+        await getVerifiedAuthUserId() != authUserId) {
+      throw const LocalDataSafetyException(
+        'Akun Cloud tidak cocok dengan pemilik data lokal. '
+        'Data tidak dihapus; verifikasi kembali akun pemilik.',
+      );
+    }
   }
 
   // ── OTP via Supabase Auth ─────────────────────
@@ -254,10 +301,9 @@ class OnboardingService {
   Future<void> resetSetup() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyIsSetupDone, false);
-    await prefs.remove(_keyCurrentOutletId);
-    await prefs.remove(_keyOwnerEmail);
-    await prefs.remove(_keyVerifiedAuthUserId);
-    await prefs.remove(_keyOwnerOutletIds);
+    // Logout removes the usable session, not the ownership of encrypted local
+    // records. Keeping this binding prevents same-owner OTP login from treating
+    // unsynced sales as unowned legacy data and deleting them.
   }
 }
 

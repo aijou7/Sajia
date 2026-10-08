@@ -201,17 +201,92 @@ class AppDatabase extends _$AppDatabase {
 
   /// Whether this device still contains a configured business.
   Future<bool> hasBusinessData() async {
-    final outlet = await (select(outlets)..limit(1)).getSingleOrNull();
-    if (outlet != null) return true;
-    final user = await (select(users)..limit(1)).getSingleOrNull();
-    return user != null;
+    if ((await localBusinessOutletIds()).isNotEmpty) return true;
+    final row = await customSelect('''
+      SELECT EXISTS(SELECT 1 FROM sync_queue) OR
+        EXISTS(SELECT 1 FROM order_items) AS has_data
+    ''').getSingle();
+    return row.read<int>('has_data') != 0;
+  }
+
+  /// Include orphaned financial rows too; a missing outlet record is not proof
+  /// that this installation is empty or safe to attach to another account.
+  Future<Set<String>> localBusinessOutletIds() async {
+    final rows = await customSelect('''
+      SELECT id AS outlet_id FROM outlets
+      UNION SELECT outlet_id FROM users
+      UNION SELECT outlet_id FROM orders
+      UNION SELECT outlet_id FROM sessions
+      UNION SELECT outlet_id FROM expenses
+      UNION SELECT outlet_id FROM products
+      UNION SELECT outlet_id FROM categories
+      UNION SELECT outlet_id FROM restaurant_tables
+      UNION SELECT outlet_id FROM user_outlet_accesses
+      UNION SELECT outlet_id FROM product_cost_components
+    ''').get();
+    final ids = rows.map((row) => row.read<String>('outlet_id')).toSet();
+    for (final queued in await select(syncQueue).get()) {
+      final outletId = _queuedOutletId(queued);
+      if (outletId != null) ids.add(outletId);
+    }
+    return ids;
+  }
+
+  String? _queuedOutletId(SyncQueueData queued) {
+    try {
+      final payload = jsonDecode(queued.payload);
+      final id = payload is Map ? payload['outlet_id'] : null;
+      return id is String && id.isNotEmpty ? id : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Remote scope changes are not deletion instructions. Stop before any
+  /// upload/pull when ownership cannot be reconciled, preserving local evidence.
+  Future<void> requireLocalOutletScope(
+    Set<String> allowedOutletIds, {
+    bool requireFullAttribution = false,
+  }) async {
+    final localIds = await localBusinessOutletIds();
+    if (localIds.difference(allowedOutletIds).isNotEmpty) {
+      throw const LocalDataSafetyException(
+        'Outlet lokal tidak cocok dengan akun Cloud. Data tidak dihapus. '
+        'Simpan backup dan periksa akun/outlet sebelum melanjutkan.',
+      );
+    }
+    if (requireFullAttribution) {
+      final queue = await select(syncQueue).get();
+      final orphanedItems = await customSelect('''
+        SELECT EXISTS(SELECT 1 FROM order_items AS item
+          WHERE NOT EXISTS(SELECT 1 FROM orders WHERE id = item.order_id)) AS orphaned
+      ''').getSingle();
+      if (queue.any((item) => _queuedOutletId(item) == null) ||
+          orphanedItems.read<int>('orphaned') != 0) {
+        throw const LocalDataSafetyException(
+          'Pemilik sebagian data lokal belum dapat diverifikasi. '
+          'Data tidak dihapus. Simpan backup sebelum memulihkan akun.',
+        );
+      }
+    }
+  }
+
+  Future<int> pendingFinancialChanges() async {
+    final row = await customSelect('''
+      SELECT
+        (SELECT COUNT(*) FROM orders WHERE is_synced = 0) +
+        (SELECT COUNT(*) FROM order_items WHERE is_synced = 0) +
+        (SELECT COUNT(*) FROM sessions WHERE is_synced = 0) +
+        (SELECT COUNT(*) FROM expenses WHERE is_synced = 0) AS pending
+    ''').getSingle();
+    return row.read<int>('pending');
   }
 
   /// Keeps local rows only for the verified owner's outlets.
   ///
   /// Kasata uses one encrypted local database per installation. A change of
-  /// Supabase owner must remove previous-account rows before PIN lookup or a
-  /// recovery push can run.
+  /// Supabase owner must not trigger this destructive operation automatically.
+  /// Call only for an explicitly authorized local-data removal.
   Future<void> retainOnlyOutlets(Set<String> allowedOutletIds) async {
     final localOutlets = await select(outlets).get();
     final removedOutletIds = localOutlets
@@ -289,6 +364,14 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> clearBusinessData() => retainOnlyOutlets(const <String>{});
+}
+
+class LocalDataSafetyException implements Exception {
+  final String message;
+  const LocalDataSafetyException(this.message);
+
+  @override
+  String toString() => message;
 }
 
 LazyDatabase _openConnection() {

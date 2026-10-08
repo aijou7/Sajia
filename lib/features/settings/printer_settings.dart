@@ -76,7 +76,7 @@ class _PrinterSettingsCardState extends State<PrinterSettingsCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Ink(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
