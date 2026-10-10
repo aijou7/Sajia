@@ -21,6 +21,8 @@ import 'package:pos_mobile/features/owner_web/owner_operations_page.dart';
 
 bool _operationsMode = false;
 bool _failLoad = false;
+String? _failedTable;
+bool _missingPriceCorrections = false;
 List<Map<String, dynamic>> _menuRows = [];
 final _rpcCalls = <Map<String, dynamic>>[];
 String? _nextRpcError;
@@ -43,13 +45,20 @@ final _tables = <String, List<Map<String, dynamic>>>{
       'occurred_at': '2026-10-07T01:00:00Z',
       'total': 190000,
       'items': [
-        {'name': 'Beans', 'quantity': 1, 'unit': 'kilogram', 'price': 190000}
+        {
+          'ingredient_id': 'beans',
+          'name': 'Beans',
+          'quantity': 1,
+          'unit': 'kilogram',
+          'price': 190000
+        }
       ]
     }
   ],
   'internal_material_usage': [],
   'ingredient_movements': [],
   'ingredient_depletions': [],
+  'ingredient_purchase_price_corrections': [],
   'products': [
     {'id': 'coffee', 'name': 'Kopi Susu', 'cogs': '5000'}
   ],
@@ -72,6 +81,21 @@ void main() {
             autoRefreshToken: false, detectSessionInUri: false),
         httpClient: MockClient((request) async {
           final table = request.url.pathSegments.last;
+          if (_missingPriceCorrections &&
+              table == 'ingredient_purchase_price_corrections') {
+            return http.Response(
+                jsonEncode({'code': 'PGRST205', 'message': 'table missing'}),
+                404,
+                request: request,
+                headers: {'content-type': 'application/json'});
+          }
+          if (table == _failedTable) {
+            return http.Response(
+                jsonEncode({'code': 'SERVER_ERROR', 'message': 'test failure'}),
+                500,
+                request: request,
+                headers: {'content-type': 'application/json'});
+          }
           if (request.url.path.contains('/rpc/')) {
             _rpcCalls.add({
               'rpc': table,
@@ -85,6 +109,27 @@ void main() {
                   jsonEncode({'code': 'P0001', 'message': error}), 400,
                   request: request,
                   headers: {'content-type': 'application/json'});
+            }
+            if (table == 'correct_ingredient_purchase_prices') {
+              final params = jsonDecode(request.body) as Map<String, dynamic>;
+              final purchase = _tables['ingredient_purchases']!
+                  .firstWhere((row) => row['id'] == params['p_purchase_id']);
+              final prices = params['p_prices'] as List;
+              _tables['ingredient_purchase_price_corrections']!.add({
+                'id': params['p_id'],
+                'purchase_id': purchase['id'],
+                'revision': (params['p_expected_revision'] as int) + 1,
+                'total':
+                    prices.fold<num>(0, (sum, item) => sum + item['price']),
+                'corrected_items': [
+                  for (final item in purchase['items'] as List)
+                    {
+                      ...item as Map<String, dynamic>,
+                      'price': prices.firstWhere((p) =>
+                          p['ingredient_id'] == item['ingredient_id'])['price']
+                    }
+                ],
+              });
             }
             return http.Response('true', 200,
                 request: request,
@@ -106,14 +151,194 @@ void main() {
   setUp(() {
     _operationsMode = false;
     _failLoad = false;
+    _failedTable = null;
+    _missingPriceCorrections = false;
     _rpcCalls.clear();
     _menuRows = [];
     _nextRpcError = null;
     _rpcWait = null;
     _tables['ingredients']!.single['quantity'] = 1000;
+    _tables['ingredient_purchase_price_corrections']!.clear();
+    _tables['ingredient_purchases'] = [
+      {
+        'id': 'buy',
+        'occurred_at': '2026-10-07T01:00:00Z',
+        'total': 190000,
+        'items': [
+          {
+            'ingredient_id': 'beans',
+            'name': 'Beans',
+            'quantity': 1,
+            'unit': 'kilogram',
+            'price': 190000
+          }
+        ],
+      }
+    ];
   });
   tearDownAll(() async => Supabase.instance.dispose());
   tearDown(AppNotice.dismiss);
+  for (final size in [const Size(1280, 900), const Size(390, 844)]) {
+    testWidgets('correct purchase total without changing quantity at $size',
+        (tester) async {
+      _seedMilkPurchase();
+      final capture = GlobalKey();
+      await _pumpInventory(tester, size, capture: capture);
+      await _openPriceCorrection(tester);
+      expect(find.text('Susu · 3 L'), findsOneWidget);
+      expect(_rpcCalls, isEmpty);
+      expect(
+          tester
+              .widget<FilledButton>(
+                  find.widgetWithText(FilledButton, 'Simpan koreksi'))
+              .onPressed,
+          isNull);
+      await tester.enterText(find.byType(TextField).first, '66000');
+      await tester.pumpAndSettle();
+      expect(find.text('Rp 22.000 / L'), findsOneWidget);
+      expect(find.text('Total setelah koreksi: Rp 66.000'), findsOneWidget);
+      await _capture(
+          tester, capture, 'purchase-price-correction-${size.width.toInt()}');
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('Simpan koreksi'));
+      await tester.tap(find.text('Simpan koreksi'));
+      await tester.pumpAndSettle();
+      expect(_rpcCalls.single['rpc'], 'correct_ingredient_purchase_prices');
+      expect(_rpcCalls.single['p_expected_revision'], 0);
+      expect(_rpcCalls.single['p_purchase_id'], 'buy');
+      expect(_rpcCalls.single['p_prices'], [
+        {'ingredient_id': 'beans', 'price': 66000}
+      ]);
+      expect(find.textContaining('Harga dikoreksi · total awal Rp 22.000'),
+          findsOneWidget);
+      expect(find.textContaining('Susu · 3 L · Rp 66.000'), findsOneWidget);
+      expect(
+          (_tables['ingredient_purchases']!.single['items'] as List)
+              .single['price'],
+          22000);
+      expect(tester.takeException(), isNull);
+      AppNotice.dismiss();
+    });
+  }
+  testWidgets(
+      'uncertain price correction retries frozen request, no double click',
+      (tester) async {
+    _seedMilkPurchase();
+    await _pumpInventory(tester, const Size(1280, 900));
+    await _openPriceCorrection(tester);
+    await tester.enterText(find.byType(TextField).first, '66000');
+    await tester.pump();
+    _nextRpcError = 'CONNECTION_FAILED';
+    _rpcWait = Completer<void>();
+    final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Simpan koreksi'));
+    button.onPressed!();
+    button.onPressed!();
+    await tester.pump();
+    expect(_rpcCalls.length, 1);
+    _rpcWait!.complete();
+    await tester.pumpAndSettle();
+    expect(
+        tester.widget<TextField>(find.byType(TextField).first).enabled, false);
+    expect(find.text('Coba lagi'), findsOneWidget);
+    _rpcWait = null;
+    await tester.tap(find.text('Coba lagi'));
+    await tester.pumpAndSettle();
+    expect(_rpcCalls.length, 2);
+    expect(_rpcCalls[1], _rpcCalls[0]);
+    expect(find.byType(AlertDialog), findsNothing);
+    AppNotice.dismiss();
+  });
+  testWidgets('price correction stale revision refreshes on close',
+      (tester) async {
+    _seedMilkPurchase();
+    await _pumpInventory(tester, const Size(1280, 900));
+    await _openPriceCorrection(tester);
+    await tester.enterText(find.byType(TextField).first, '66000');
+    await tester.pump();
+    _nextRpcError = 'PURCHASE_PRICE_CHANGED_RELOAD';
+    await tester.tap(find.text('Simpan koreksi'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Harga belanja sudah dikoreksi dari sesi lain'),
+        findsOneWidget);
+    expect(
+        tester
+            .widget<FilledButton>(
+                find.widgetWithText(FilledButton, 'Coba lagi'))
+            .onPressed,
+        isNull);
+    _tables['ingredient_purchase_price_corrections']!.add({
+      'purchase_id': 'buy',
+      'revision': 2,
+      'total': 69000,
+      'corrected_items': [
+        {
+          'ingredient_id': 'beans',
+          'name': 'Susu',
+          'quantity': 3,
+          'unit': 'liter',
+          'price': 69000
+        }
+      ],
+    });
+    await tester.tap(find.text('Tutup'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Susu · 3 L · Rp 69.000'), findsOneWidget);
+    await _openPriceCorrection(tester, switchTab: false);
+    expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        '69000');
+    await tester.enterText(find.byType(TextField).first, '66000');
+    await tester.pump();
+    await tester.tap(find.text('Simpan koreksi'));
+    await tester.pumpAndSettle();
+    expect(_rpcCalls.last['p_expected_revision'], 2);
+    AppNotice.dismiss();
+  });
+  testWidgets('old schema keeps inventory readable and correction disabled',
+      (tester) async {
+    _missingPriceCorrections = true;
+    await _pumpInventory(tester, const Size(1280, 900));
+    expect(find.text('Beans Arabica Robusta'), findsOneWidget);
+    await tester.tap(find.text('Laporan belanja'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Koreksi harga membutuhkan migration'),
+        findsOneWidget);
+    expect(
+        tester
+            .widget<TextButton>(
+                find.widgetWithText(TextButton, 'Koreksi harga'))
+            .onPressed,
+        isNull);
+  });
+  testWidgets('price correction fits narrow screen with keyboard open',
+      (tester) async {
+    _seedMilkPurchase();
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    await _pumpInventory(tester, const Size(390, 844));
+    await _openPriceCorrection(tester);
+    await tester.enterText(find.byType(TextField).first, '66000');
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text('Simpan koreksi'));
+    await tester.tap(find.text('Simpan koreksi'));
+    await tester.pumpAndSettle();
+    expect(_rpcCalls.single['p_prices'], [
+      {'ingredient_id': 'beans', 'price': 66000}
+    ]);
+    expect(tester.takeException(), isNull);
+    AppNotice.dismiss();
+  });
+  testWidgets('correction fetch failure cannot show old prices as current',
+      (tester) async {
+    _failedTable = 'ingredient_purchase_price_corrections';
+    await _pumpInventory(tester, const Size(1280, 900));
+    expect(find.text('Beans Arabica Robusta'), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, 'Coba lagi'), findsOneWidget);
+  });
   for (final size in [const Size(1280, 900), const Size(390, 844)]) {
     testWidgets('inventory controls and reports render at $size',
         (tester) async {
@@ -211,8 +436,8 @@ void main() {
       await tester.tap(find.text('Batal'));
       await tester.pumpAndSettle();
       expect(_rpcCalls, isEmpty);
-      await tester
-          .ensureVisible(find.widgetWithText(OutlinedButton, 'Catat pemakaian'));
+      await tester.ensureVisible(
+          find.widgetWithText(OutlinedButton, 'Catat pemakaian'));
       await tester.tap(find.widgetWithText(OutlinedButton, 'Catat pemakaian'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).first, '12');
@@ -451,6 +676,37 @@ Future<void> _pumpInventory(WidgetTester tester, Size size,
                   padding: const EdgeInsets.all(16),
                   child:
                       OwnerInventoryPanel(outletId: 'a', onChanged: () {}))))));
+  await tester.pumpAndSettle();
+}
+
+void _seedMilkPurchase() {
+  _tables['ingredient_purchases'] = [
+    {
+      'id': 'buy',
+      'occurred_at': '2026-10-07T01:00:00Z',
+      'total': 22000,
+      'items': [
+        {
+          'ingredient_id': 'beans',
+          'name': 'Susu',
+          'quantity': 3,
+          'unit': 'liter',
+          'price': 22000
+        }
+      ],
+    }
+  ];
+}
+
+Future<void> _openPriceCorrection(WidgetTester tester,
+    {bool switchTab = true}) async {
+  if (switchTab) {
+    await tester.ensureVisible(find.text('Laporan belanja'));
+    await tester.tap(find.text('Laporan belanja'));
+    await tester.pumpAndSettle();
+  }
+  await tester.ensureVisible(find.text('Koreksi harga'));
+  await tester.tap(find.text('Koreksi harga'));
   await tester.pumpAndSettle();
 }
 

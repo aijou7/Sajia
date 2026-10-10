@@ -27,13 +27,16 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
       '20261007100000_owner_menu_deletion.sql',
       '20261007110000_ingredient_inventory.sql',
       '20261007130000_ingredient_depletion.sql',
+      '20261009100000_ingredient_purchase_price_corrections.sql',
     ]) await db.exec(read(`supabase/migrations/${file}`));
     await db.exec(read('supabase/tests/ingredient_inventory.sql'));
     await db.exec(read('supabase/tests/ingredient_depletion.sql'));
+    await db.exec(read('supabase/tests/ingredient_purchase_price_corrections.sql'));
     const before = await db.query('select id,quantity,unit_cost from public.ingredients order by id');
     const receiptsBefore = await db.query('select id,total_cost,purpose from public.ingredient_depletions order by id');
     const expensesBefore = await db.query('select id,amount from public.expenses order by id');
-    for (const file of ['20261007100000_owner_menu_deletion.sql', '20261007110000_ingredient_inventory.sql', '20261007130000_ingredient_depletion.sql']) {
+    const correctionsBefore = await db.query('select * from public.ingredient_purchase_price_corrections order by id');
+    for (const file of ['20261007100000_owner_menu_deletion.sql', '20261007110000_ingredient_inventory.sql', '20261007130000_ingredient_depletion.sql', '20261009100000_ingredient_purchase_price_corrections.sql']) {
       await db.exec(read(`supabase/migrations/${file}`));
     }
     const after = await db.query('select id,quantity,unit_cost from public.ingredients order by id');
@@ -41,6 +44,8 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
     const receiptsAfter = await db.query('select id,total_cost,purpose from public.ingredient_depletions order by id');
     const expensesAfter = await db.query('select id,amount from public.expenses order by id');
     if (JSON.stringify(receiptsBefore.rows) !== JSON.stringify(receiptsAfter.rows) || JSON.stringify(expensesBefore.rows) !== JSON.stringify(expensesAfter.rows)) throw new Error('Migration replay changed financial receipts');
-    console.log('PASS: purchases, recipes, sale/void, internal use, ingredient depletion, stale stock, duplicate retries, tenant access, expense protection and migration replay.');
+    const correctionsAfter = await db.query('select * from public.ingredient_purchase_price_corrections order by id');
+    if (JSON.stringify(correctionsBefore.rows) !== JSON.stringify(correctionsAfter.rows)) throw new Error('Migration replay changed purchase price correction audit');
+    console.log('PASS: inventory, depletion and purchase price corrections; retries, stale revisions, valuation, historical snapshots, tenant/cloud access, restricted grants and migration replay.');
   } finally { await db.close(); }
 })().catch((error) => { console.error(error.message); process.exitCode = 1; });

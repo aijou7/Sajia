@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/legacy_outlet.dart';
 import '../../core/onboarding_service.dart';
+import '../../core/local_account_safety.dart';
 import '../local/app_database.dart';
 import '../../domain/costing.dart';
 import 'costing_sync_coordinator.dart';

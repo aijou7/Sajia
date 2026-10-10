@@ -36,6 +36,21 @@ String inventoryError(Object error) {
     if (error.message.contains('LINKED_RECIPE_REQUIRED')) {
       return 'Hubungkan bahan baku di resep menu terlebih dahulu agar stok bisa dikurangi.';
     }
+    if (error.message.contains('PURCHASE_PRICE_CHANGED_RELOAD')) {
+      return 'Harga belanja sudah dikoreksi dari sesi lain. Tutup dialog dan buka kembali untuk memakai harga terbaru.';
+    }
+    if (error.message.contains('INGREDIENT_LEDGER_REVIEW_REQUIRED')) {
+      return 'Riwayat dan saldo stok bahan belum cocok. Koreksi tidak disimpan; periksa riwayat stok terlebih dahulu.';
+    }
+    if (error.message.contains('INVALID_PURCHASE_PRICE_CORRECTION')) {
+      return 'Isi harga total yang valid untuk setiap bahan. Jumlah dan satuan pembelian tidak dapat diubah lewat koreksi harga.';
+    }
+    if (error.message.contains('PURCHASE_PRICES_UNCHANGED')) {
+      return 'Harga masih sama. Ubah harga total bahan yang salah sebelum menyimpan.';
+    }
+    if (error.message.contains('PURCHASE_CORRECTION_ID_CONFLICT')) {
+      return 'Permintaan koreksi berbeda dari catatan sebelumnya. Tutup dialog dan periksa harga terbaru.';
+    }
     if (const {'PGRST202', 'PGRST205', '42P01', '42703'}.contains(error.code)) {
       return 'Fitur ini membutuhkan migration bahan baku terbaru.';
     }
@@ -65,8 +80,15 @@ class OwnerInventoryPanel extends StatefulWidget {
 }
 
 class _InventoryData {
-  const _InventoryData(this.ingredients, this.purchases, this.usage,
-      this.movements, this.products, this.depletions);
+  const _InventoryData(
+      this.ingredients,
+      this.purchases,
+      this.usage,
+      this.movements,
+      this.products,
+      this.depletions,
+      this.priceCorrectionsAvailable);
+  final bool priceCorrectionsAvailable;
   final List<Ingredient> ingredients;
   final List<Map<String, dynamic>> purchases,
       usage,
@@ -116,6 +138,19 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
   }
 
   Future<_InventoryData> _load() async {
+    var correctionsAvailable = true;
+    Future<List<Map<String, dynamic>>> corrections() async {
+      try {
+        return await _rows('ingredient_purchase_price_corrections');
+      } on PostgrestException catch (error) {
+        // An additive rollout must not hide all inventory on the old schema.
+        // Network/access failures are NOT treated as an empty correction list.
+        if (!const {'PGRST205', '42P01'}.contains(error.code)) rethrow;
+        correctionsAvailable = false;
+        return [];
+      }
+    }
+
     final rows = await Future.wait([
       _rows('ingredients'),
       _rows('ingredient_purchases', dateColumn: 'occurred_at'),
@@ -123,6 +158,7 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
       _rows('ingredient_movements', dateColumn: 'occurred_at'),
       _rows('products'),
       _rows('ingredient_depletions', dateColumn: 'occurred_at'),
+      corrections(),
     ]);
     for (final index in [1, 2, 3, 5]) {
       rows[index].sort((a, b) =>
@@ -131,18 +167,25 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
     final ingredients = rows[0].map(Ingredient.fromJson).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
     return _InventoryData(
-        ingredients, rows[1], rows[2], rows[3], rows[4], rows[5]);
+        ingredients,
+        applyPurchasePriceCorrections(rows[1], rows[6]),
+        rows[2],
+        rows[3],
+        rows[4],
+        rows[5],
+        correctionsAvailable);
   }
 
   void _reload() => setState(() {
         _data = _load();
       });
-  Future<void> _edit(Widget dialog) async {
+  Future<void> _edit(Widget dialog, {bool reloadOnCancel = false}) async {
     final saved = await showDialog<bool>(
         context: context, barrierDismissible: false, builder: (_) => dialog);
-    if (!mounted || saved != true) return;
+    if (!mounted || (saved != true && !reloadOnCancel)) return;
     _reload();
     widget.onChanged();
+    if (saved != true) return;
     AppNotice.show(
         context, const SnackBar(content: Text('Pencatatan tersimpan.')));
   }
@@ -347,6 +390,11 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
                   const Text(
                       'Belanja dicatat sebagai penambahan persediaan dan uang keluar. Tidak dikurangkan lagi sebagai biaya operasional.'),
                   const SizedBox(height: 10),
+                  if (!data.priceCorrectionsAvailable)
+                    const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: Text(
+                            'Koreksi harga membutuhkan migration belanja terbaru. Catatan belanja tetap tersedia.')),
                   if (data.purchases.isEmpty)
                     const _Empty('Belum ada belanja pada periode ini.'),
                   for (final row in data.purchases)
@@ -365,6 +413,27 @@ class _OwnerInventoryPanelState extends State<OwnerInventoryPanel> {
                                   for (final item in row['items'] as List)
                                     Text(
                                         '${item['name']} · ${_number(_value(item['quantity']))} ${costingUnitFromStorage(item['unit']).shortLabel} · ${_money(_value(item['price']))}'),
+                                  if (_value(row['correction_revision']) > 0)
+                                    Padding(
+                                        padding: const EdgeInsets.only(top: 8),
+                                        child: Text(
+                                            'Harga dikoreksi · total awal ${_money(_value(row['original_total']))}',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall)),
+                                  Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton.icon(
+                                          onPressed: !data
+                                                  .priceCorrectionsAvailable
+                                              ? null
+                                              : () => _edit(
+                                                  _PurchasePriceCorrectionDialog(
+                                                      outletId: widget.outletId,
+                                                      purchase: row),
+                                                  reloadOnCancel: true),
+                                          icon: const Icon(Icons.edit_outlined),
+                                          label: const Text('Koreksi harga'))),
                                 ]))),
                 ],
                 if (_tab == 'usage') ...[
@@ -921,6 +990,183 @@ class _PurchaseDialogState extends State<_PurchaseDialog> {
           FilledButton(
               onPressed: _saving ? null : _save,
               child: Text(_saving ? 'Menyimpan…' : 'Simpan belanja'))
+        ],
+      ));
+}
+
+class _PurchasePriceCorrectionDialog extends StatefulWidget {
+  const _PurchasePriceCorrectionDialog(
+      {required this.outletId, required this.purchase});
+  final String outletId;
+  final Map<String, dynamic> purchase;
+  @override
+  State<_PurchasePriceCorrectionDialog> createState() =>
+      _PurchasePriceCorrectionDialogState();
+}
+
+class _PurchasePriceCorrectionDialogState
+    extends State<_PurchasePriceCorrectionDialog> {
+  final _id = const Uuid().v4();
+  final _note = TextEditingController();
+  late final _items = (widget.purchase['items'] as List)
+      .map((item) => Map<String, dynamic>.from(item as Map))
+      .toList();
+  late final _prices = [
+    for (final item in _items)
+      TextEditingController(text: item['price'].toString()),
+  ];
+  bool _saving = false;
+  bool _needsReload = false;
+  String? _error;
+  Map<String, dynamic>? _submittedParams;
+  bool get _locked => _saving || _submittedParams != null;
+  double? _price(int index) =>
+      double.tryParse(_prices[index].text.replaceAll(',', '.'));
+  bool get _valid => List.generate(_prices.length, _price)
+      .every((p) => p != null && p.isFinite && p >= 0 && p < 1e12);
+  bool get _changed => List.generate(
+          _prices.length, (i) => _price(i) != _value(_items[i]['price']))
+      .any((changed) => changed);
+
+  @override
+  void dispose() {
+    _note.dispose();
+    for (final price in _prices) {
+      price.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving ||
+        _needsReload ||
+        (!_valid || !_changed) && _submittedParams == null) {
+      return;
+    }
+    _submittedParams ??= {
+      'p_id': _id,
+      'p_outlet_id': widget.outletId,
+      'p_purchase_id': widget.purchase['id'],
+      'p_expected_revision':
+          int.parse(widget.purchase['correction_revision'].toString()),
+      'p_prices': [
+        for (var i = 0; i < _items.length; i++)
+          {'ingredient_id': _items[i]['ingredient_id'], 'price': _price(i)},
+      ],
+      'p_note': _note.text.trim().isEmpty ? null : _note.text.trim(),
+    };
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await Supabase.instance.client
+          .rpc('correct_ingredient_purchase_prices', params: _submittedParams!);
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      debugPrint('[PurchasePriceCorrection] save failed: '
+          '${error is PostgrestException ? error.code : error.runtimeType}');
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = inventoryError(error);
+          _needsReload = error is PostgrestException &&
+              (const {'PGRST202', 'PGRST205', '42P01', '42501'}
+                      .contains(error.code) ||
+                  const [
+                    'PURCHASE_PRICE_CHANGED_RELOAD',
+                    'INGREDIENT_LEDGER_REVIEW_REQUIRED',
+                    'INVALID_PURCHASE_PRICE_CORRECTION',
+                    'PURCHASE_PRICES_UNCHANGED',
+                    'PURCHASE_CORRECTION_ID_CONFLICT',
+                    'OWNER_ACCESS_REQUIRED',
+                    'CLOUD_REQUIRED',
+                  ].any(error.message.contains));
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+      canPop: !_saving,
+      child: AlertDialog(
+        title: const Text('Koreksi harga belanja'),
+        content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+                child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(_date(widget.purchase['occurred_at'])),
+                  const SizedBox(height: 12),
+                  const Text(
+                      'Ubah total harga bahan yang salah, bukan harga per liter/kg. Jumlah stok tidak berubah.'),
+                  const SizedBox(height: 16),
+                  for (var i = 0; i < _items.length; i++) ...[
+                    Text(
+                        '${_items[i]['name']} · ${_number(_value(_items[i]['quantity']))} ${costingUnitFromStorage(_items[i]['unit']).shortLabel}',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 8),
+                    TextField(
+                        controller: _prices[i],
+                        enabled: !_locked,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        inputFormatters: const [
+                          NormalizedNumberInputFormatter(allowDecimal: true)
+                        ],
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                            labelText: 'Harga total (Rp)',
+                            helperText: _price(i) != null &&
+                                    _value(_items[i]['quantity']) > 0
+                                ? '${_money(_price(i)! / _value(_items[i]['quantity']))} / ${costingUnitFromStorage(_items[i]['unit']).shortLabel}'
+                                : 'Isi total harga untuk seluruh jumlah di atas')),
+                    const SizedBox(height: 16),
+                  ],
+                  Text(
+                      'Total sebelumnya: ${_money(_value(widget.purchase['total']))}'),
+                  Text(
+                      'Total setelah koreksi: ${_valid ? _money(List.generate(_prices.length, (i) => _price(i)!).fold<double>(0, (sum, price) => sum + price)) : 'Isi harga yang valid'}',
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 16),
+                  TextField(
+                      controller: _note,
+                      enabled: !_locked,
+                      maxLength: 1000,
+                      decoration: const InputDecoration(
+                          labelText: 'Alasan koreksi (opsional)')),
+                  const SizedBox(height: 8),
+                  const Text(
+                      'Harga rata-rata stok dan HPP resep diperbarui. HPP transaksi dan pemakaian lama tetap seperti saat dicatat. Riwayat harga awal tetap disimpan.'),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(_error!,
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error)),
+                    const SizedBox(height: 8),
+                    if (!_needsReload)
+                      const Text(
+                          'Jika koneksi terputus, coba lagi memakai koreksi yang sama; stok tidak ditambahkan ulang.'),
+                  ],
+                ]))),
+        actions: [
+          TextButton(
+              onPressed: _saving ? null : () => Navigator.pop(context),
+              child: Text(_submittedParams == null ? 'Batal' : 'Tutup')),
+          FilledButton(
+              onPressed: _saving ||
+                      _needsReload ||
+                      (!_valid || !_changed) && _submittedParams == null
+                  ? null
+                  : _save,
+              child: Text(_saving
+                  ? 'Menyimpan…'
+                  : _submittedParams != null
+                      ? 'Coba lagi'
+                      : 'Simpan koreksi')),
         ],
       ));
 }

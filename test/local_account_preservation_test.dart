@@ -3,6 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pos_mobile/core/onboarding_service.dart';
+import 'package:pos_mobile/core/local_account_safety.dart';
 import 'package:pos_mobile/data/local/app_database.dart';
 
 void main() {

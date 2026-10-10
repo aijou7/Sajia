@@ -25,6 +25,40 @@ class Ingredient {
       );
 }
 
+/// Original purchase receipts stay immutable so old-client retries still work.
+/// Reports display the latest audited price revision, retaining purchase dates
+/// and quantities. A correction's creation date is not another purchase date.
+List<Map<String, dynamic>> applyPurchasePriceCorrections(
+  Iterable<Map<String, dynamic>> purchases,
+  Iterable<Map<String, dynamic>> corrections,
+) {
+  final latest = <String, Map<String, dynamic>>{};
+  for (final row in corrections) {
+    final revision = int.tryParse(row['revision'].toString());
+    if (revision == null || revision <= 0 || row['corrected_items'] is! List) {
+      throw const FormatException('Catatan koreksi harga tidak valid.');
+    }
+    final id = row['purchase_id'].toString();
+    if (revision >
+        (int.tryParse(latest[id]?['revision'].toString() ?? '') ?? 0)) {
+      latest[id] = row;
+    }
+  }
+  return [
+    for (final purchase in purchases)
+      {
+        ...purchase,
+        'original_total': purchase['total'],
+        'correction_revision': latest[purchase['id']]?['revision'] ?? 0,
+        if (latest[purchase['id']] case final correction?) ...{
+          'items': correction['corrected_items'],
+          'total': correction['total'],
+          'price_corrected_at': correction['created_at'],
+        },
+      },
+  ];
+}
+
 /// Variants use the same menu recipe, so internal usage groups them by menu.
 List<Map<String, dynamic>> aggregateUsageItems(
   Iterable<({String productId, double quantity})> items,

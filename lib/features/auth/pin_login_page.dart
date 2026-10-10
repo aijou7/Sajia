@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/providers.dart';
 import '../../core/brand.dart';
 import '../../core/onboarding_service.dart';
+import '../../core/local_account_safety.dart';
 import '../../core/pin_numpad_layout.dart';
 import '../../core/theme.dart';
 import '../../core/utils.dart';
